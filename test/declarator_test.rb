@@ -4,7 +4,7 @@ require_relative 'base_test'
 
 class Declarator_Test < Base_Test
 	def test_top_level_func_is_declared
-		decls = Lost.declare "add { a, b; a + b }"
+		decls = Lost.declare "add ( a, b; a + b )"
 		assert decls.key? 'add'
 	end
 
@@ -25,7 +25,7 @@ class Declarator_Test < Base_Test
 
 	def test_conditional_branches_flatten_into_enclosing_scope
 		decls = Lost.declare <<~TAPE
-		    check {;
+		    check (;
 		    	if true
 		    		a := 1
 		    	elwhile false
@@ -33,7 +33,7 @@ class Declarator_Test < Base_Test
 		    	else
 		    		c := 3
 		    	end
-		    }
+		    )
 		TAPE
 		nested = decls['check'].expr_or_decl
 		assert_equal %w(a b c), nested.keys.sort
@@ -41,11 +41,11 @@ class Declarator_Test < Base_Test
 
 	def test_for_loop_body_does_not_leak_out
 		decls = Lost.declare <<~TAPE
-		    run {;
+		    run (;
 		    	for [1, 2, 3]
 		    		z := it
 		    	end
-		    }
+		    )
 		TAPE
 		assert_empty decls['run'].expr_or_decl
 	end
@@ -67,8 +67,8 @@ class Declarator_Test < Base_Test
 	def test_calling_a_function_before_its_definition_works
 		out = Lost.interp <<~TAPE
 		    result := main()
-		    main {; helper() }
-		    helper {; 42 }
+		    main (; helper() )
+		    helper (; 42 )
 		    result
 		TAPE
 		assert_equal 42, out
@@ -81,12 +81,12 @@ class Declarator_Test < Base_Test
 		    Point {
 		    	x,
 		    	y,
-		    	new { x, y; self.x = x, self.y = y }
+		    	new ( x, y; self.x = x, self.y = y )
 		    }
 
-		    make_point {;
+		    make_point (;
 		    	Point(3, 4)
-		    }
+		    )
 
 		    p.x
 		TAPE
@@ -97,21 +97,21 @@ class Declarator_Test < Base_Test
 		out = Lost.interp <<~TAPE
 		    result := is_even(4)
 
-		    is_even { n;
+		    is_even ( n;
 		    	if n == 0
 		    		true
 		    	else
 		    		is_odd(n - 1)
 		    	end
-		    }
+		    )
 
-		    is_odd { n;
+		    is_odd ( n;
 		    	if n == 0
 		    		false
 		    	else
 		    		is_even(n - 1)
 		    	end
-		    }
+		    )
 
 		    result
 		TAPE
@@ -129,7 +129,7 @@ class Declarator_Test < Base_Test
 		out = Lost.interp <<~TAPE
 		    p := This()
 		    This := That {}
-		    That { greet {; 'hi' } }
+		    That { greet (; 'hi' ) }
 		    p.greet()
 		TAPE
 		assert_equal 'hi', out
@@ -215,7 +215,7 @@ class Declarator_Test < Base_Test
 		assert_raises Lost::Undeclared_Identifier do
 			Lost.interp <<~TAPE
 			    main()
-			    main {; count }
+			    main (; count )
 			    count := 5
 			TAPE
 		end
@@ -225,16 +225,16 @@ class Declarator_Test < Base_Test
 		out = Lost.interp <<~TAPE
 		    calls := 0
 
-		    build_thing {;
+		    build_thing (;
 		    	calls += 1
 		    	calls
-		    }
+		    )
 
 		    result := use_before_declared()
 
-		    use_before_declared {;
+		    use_before_declared (;
 		    	build_thing()
-		    }
+		    )
 
 		    (result, calls)
 		TAPE

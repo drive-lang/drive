@@ -114,7 +114,7 @@ The type checker (`src/compiler/type_checker.rb`) runs between the parser and in
 ### What it checks
 
 - **Typed variable assignments** — `x: String = 123` raises `Type_Mismatch` (literal RHS only)
-- **Typed function parameter defaults** — `go { x: Number := 'bad'; x }` raises at the param default
+- **Typed function parameter defaults** — `go ( x: Number := 'bad'; x )` raises at the param default
 - **Call site argument types** — `add(1, 'oops')` raises if `add` has typed params and the arg is a known literal
 
 Annotations whose RHS is non-literal (an identifier, a function call, etc.) are silently skipped — only literal mismatches are caught statically.
@@ -128,7 +128,7 @@ Annotations whose RHS is non-literal (an identifier, a function call, etc.) are 
 
 `type_by_identifier` is a hash built during the walk:
 - Typed assignments (`x: String = ...`) register `'x' => 'String'`
-- Named functions with typed params (`add { a: Number; ... }`) register `'add' => ['Number', 'Number']` via `register_func`
+- Named functions with typed params (`add ( a: Number; ... )`) register `'add' => ['Number', 'Number']` via `register_func`
 
 Call site checking happens in `check_call` — it looks up the receiver name in `type_by_identifier`, retrieves the param type array, and compares each literal argument's inferred type against the expected type.
 
@@ -144,10 +144,10 @@ x = 'hello'   # raises Lost::Type_Contract_Violation
 y = 4         # raises Lost::Cannot_Assign_Undeclared_Identifier — y was never declared
 
 counter := -1
-increment {;
+increment (;
 	counter := 99   # shadows — declares a new local `counter`, doesn't touch the outer one
 	counter += 1    # `=`/compound ops still resolve outward, so this mutates the local
-}
+)
 increment()
 counter           # still -1 — the outer `counter` was never touched
 ```
@@ -180,8 +180,8 @@ Top-level function/type declarations are hoisted ahead of the point where they'r
 
 ```lost
 result := main()   # `main` hasn't been reached yet -- works anyway
-main {; helper() }
-helper {; 42 }
+main (; helper() )
+helper (; 42 )
 result             # 42
 
 @puts "`a`"        # raises Lost::Undeclared_Identifier -- `a` is a plain variable, not hoistable
@@ -266,7 +266,7 @@ Identifiers starting with `_` are considered private by convention (e.g., `_priv
 
 - Bare `self`/`Self` (no trailing `.identifier`) are handled in `#interp_identifier` (`interpreter.rb`): each does the same stack search `./`/`../` already do (`#current_instance`/nearest `Lost::Type`) and returns that Scope object as a real value — so `Self()` constructs the type (`Self() === Type_Name()`), `Self.declaration` reads a static, and passing `self`/`Self` around works like passing any other value
 - `self.x`/`Self.x` as a `:=`/`=` write target is special-cased in `#assign_dot_member` (`interpreter.rb`, `Lost::SELF_KEYWORDS`) to route around the stricter external-`.`-write rules (`Cannot_Reassign_Constant`, `#check_dot_access_permissions!`) that a real dot-write always enforces — `./`/`../` never run those checks either, so this makes both spellings behave identically for both new and already-declared members
-- `self.funk {;}`/`Self.funk {;}` (bare function declarations, no `:=`) are desugared entirely at parse time: `#parse_self_prefixed_func_name` (`parser.rb`) synthesizes the equivalent `./`/`../` scope-operator lexeme onto the function name's `Identifier_Expr`, so every downstream scope-operator-aware check (`#track_static_declaration`, the per-instance re-run skip in `#run_type_body_on_instance`) treats it identically with zero interpreter-side special-casing for this form
+- `self.funk (;)`/`Self.funk (;)` (bare function declarations, no `:=`) are desugared entirely at parse time: `#parse_self_prefixed_func_name` (`parser.rb`) synthesizes the equivalent `./`/`../` scope-operator lexeme onto the function name's `Identifier_Expr`, so every downstream scope-operator-aware check (`#track_static_declaration`, the per-instance re-run skip in `#run_type_body_on_instance`) treats it identically with zero interpreter-side special-casing for this form
 - `#static_var_declaration_expr?` (`interpreter.rb`) recognizes both the `../x := value` AST shape (scope-operator identifier) and the `Self.x := value` shape (dot-target) as static declarations that must run once, not per-instance — these are structurally different ASTs, so `#run_type_body_on_instance`'s skip-check needs to recognize both explicitly
 - `#current_instance` (`interpreter.rb`) is the nearest `Lost::Instance` in the stack (role-based, not positional) — shared by `self`/`./` resolution and `#check_dot_access_permissions!`'s privacy check. This mattered for a real bug: `#interp_func_body` always pushes a fresh per-call `Func` frame on top of the instance, so `stack.last` during any method body is never the instance itself — a privacy check that compared against `stack.last` directly would (and did) wrongly reject `self.some_private_member` read from inside that very instance's own method, until fixed to compare against `#current_instance` instead
 
@@ -297,13 +297,13 @@ Type-level (static) members are declared using the `Self.` scope operator (keywo
 Person {
     Self.count := 0      # Static variable shared across all instances
 
-    Self.increment {;  # Static method
+    Self.increment (;  # Static method
         count += 1
-    }
+    )
 
-    init {;
+    init (;
         Self.count += 1  # Access static from instance method
-    }
+    )
 }
 
 Person().init()
@@ -324,14 +324,14 @@ Person.increment()   # Call static method on type => 3 (2 from init(), 1 more fr
 A member must be declared in a type's own body — including via `./member := value` inside any of its own methods — before it can be written to from outside. `.` (external dot access) never creates a member:
 
 ```lost
-Thing { new {; ./member := 123 } }   # self-declaration via ./ inside a method -- legitimate,
+Thing { new (; ./member := 123 ) }   # self-declaration via ./ inside a method -- legitimate,
                                      # equivalent to declaring `member,` in the body directly
 t := Thing()
 t.member = 5                         # fine -- member already exists
 t.missing = 5                       # raises Lost::Cannot_Assign_Undeclared_Identifier
 ```
 
-- `./`/`../` self-declaration (`:=`) is only allowed while the instance is still under construction — the class body's own declarations, or `new{;}` itself (and anything it calls). A later method self-declaring a brand-new member this way also raises `Lost::Cannot_Assign_Undeclared_Identifier`, so an instance's shape can't keep growing after it's built. Detected via `instance.has?('new')` — `#interp_type_call` deletes the `new` declaration the moment construction finishes, so that check is true for exactly the construction window
+- `./`/`../` self-declaration (`:=`) is only allowed while the instance is still under construction — the class body's own declarations, or `new(;)` itself (and anything it calls). A later method self-declaring a brand-new member this way also raises `Lost::Cannot_Assign_Undeclared_Identifier`, so an instance's shape can't keep growing after it's built. Detected via `instance.has?('new')` — `#interp_type_call` deletes the `new` declaration the moment construction finishes, so that check is true for exactly the construction window
 - Not yet covered: the equivalent restriction for `../` creating a brand-new *static* member from outside the type's original body walk — no "still being defined" signal exists for `Type` the way `has?('new')` does for `Instance`
 - A constant-named member (`X.SOME_CONST = ...`) can never be reassigned via `.`, raising `Lost::Cannot_Reassign_Constant`
 - All three `.`-write forms — plain `=`, plain `:=`, and destructuring dot-targets (see Destructuring below) — share one implementation, `#assign_dot_member` in `interpreter.rb`. `:=` onto an *existing* member re-infers/overwrites its recorded type (same as re-running `:=` on a plain identifier); `=` checks the new value against any previously recorded type instead
@@ -350,9 +350,12 @@ Multiple operators can be chained: `Admin | Read_Permissions | Write_Permissions
 Built-in types like `Server`, `Table`, and `Dom` are composed this way:
 
 ```lost
-Web_App | Server { get:// {; "Hello" } }
-Post | Table { Self.database := ~/db; table_name := 'posts' }
-Layout | Dom { render {; Html([Body("Hello")]) } }
+Web_App | Server { get:// (; "Hello" ) }
+Post | Table {
+	Self.database := ~/db
+	table_name := 'posts'
+}
+Layout | Dom { render (; Html([Body("Hello")]) ) }
 ```
 
 ## Type Comparison Operators
@@ -417,7 +420,7 @@ x := Abc\<Number>             # reference — dup of the existing Abc type, tagg
 x: Abc\<Number>                # same, as a type annotation
 thing: <String, Number>        # bare struct, no type name at all — a standalone Lost::Struct value, unrelated to `\`
 z := Abc\<4815>                # a reference tagged with an actual value rather than a type
-z()                            # constructs Abc, with .tag bound before new{;} runs
+z()                            # constructs Abc, with .tag bound before new(;) runs
 Abc\<4815>()                   # same, in one step
 Def {}
 Def()                          # untagged types are completely unaffected
@@ -430,7 +433,7 @@ A named reference's RHS must resolve to a real `Lost::Struct` or `Lost::Type` �
 - A struct is only ever reachable via `.tag` (`.tag.types`, `.tag.some_string` for named members) — never auto-unpacked into `./`
 - A bare identifier immediately followed by `,` inside `<...>` (`<String, Number>`) is special-cased in `parse_struct` to parse as a plain identifier rather than the nil-init idiom (`ident,` ⇒ `ident = ident or nil`), which would otherwise misfire on the exact same shape
 - Reference forms (`x := Abc\<Number>`) `dup` the matched variant (see below) rather than mutating it in place — `Object#dup` is shallow, so `@declarations`/`@static_declarations` are explicitly re-forked too, otherwise tagging one reference would silently mutate every other reference sharing that variant
-- Constructing from a tagged reference binds `.tag` onto the instance *before* `type.expressions` (and therefore `new{;}`) run, so `new`'s own body can read `.tag` — but member values are never forwarded as constructor arguments; whatever `(...)` actually passes still binds to `new`'s own declared params, entirely separately
+- Constructing from a tagged reference binds `.tag` onto the instance *before* `type.expressions` (and therefore `new(;)`) run, so `new`'s own body can read `.tag` — but member values are never forwarded as constructor arguments; whatever `(...)` actually passes still binds to `new`'s own declared params, entirely separately
 - A named member's value, supplied positionally at the reference site (`Woof\<'hello', 4815>`, never `Woof\<key: 'hello'>`), gets re-associated with the *matched variant's own* `tag_declaration` names before landing on the instance, so `.tag.key` still resolves correctly
 
 ### Each declared tag is its own type
@@ -442,8 +445,8 @@ Each variant is kept in a per-scope list (`Scope#tagged_type_variants`, keyed by
 A reference resolves by inferring a type name for each supplied value and matching that against the declared variants for that base name — but the match isn't exact-name-only: `#member_candidate_type_names` returns every type a value composes (its own name first, then everything it composes), so e.g. a `Div` satisfies a member declared `Dom` even though nothing in `lost/html.tape` is literally named `Dom`. `Lost::Struct#satisfied_by_candidates?` checks a declared variant against those candidates (mirroring the language's own `=>=` superset operator), and `#find_tagged_type_variant` prefers an exact match before falling back to a compositional one. A lone unnamed Struct-valued member spreads at declare time but not at reference time by default (see below) — `#interp_type`'s reference branch retries with spreading applied whenever the unspread shape doesn't find anything, so a reference/composition operand can still reach a variant that was declared with spreading. A reference with no matching declared variant either auto-declares one (base name is a real Type, see above) or raises `Lost::Undeclared_Type_Structure` (base name is something else entirely).
 
 ```lost
-String\<Dictionary> { to_s {; "I'm a dict-tagged string" } }
-String\<Number>     { to_s {; "I'm a number-tagged string" } }
+String\<Dictionary> { to_s (; "I'm a dict-tagged string" ) }
+String\<Number>     { to_s (; "I'm a number-tagged string" ) }
 
 String\<{x=1}>().to_s()   # "I'm a dict-tagged string"   -- {x=1} is a Dictionary
 String\<5>().to_s()       # "I'm a number-tagged string" -- 5 is a Number
@@ -453,17 +456,17 @@ String\<5>().to_s()       # "I'm a number-tagged string" -- 5 is a Number
 
 ```lost
 String\<dict: Dictionary> {
-    new { str: String = "";
+    new ( str: String = "";
         value = str
-    }
-    to_s {;
+    )
+    to_s (;
         final := value
         final += "{"
         for tag.dict
             final += "`key`::`value`, "
         end
         final += "}"
-    }
+    )
 }
 a := String\<{x=0, y=1, z=2}>()
 b := String\<{x=0, y=1, z=2}>("My dict: ")
@@ -575,8 +578,8 @@ Slacker {
 	count := 0
 	statement: Statement
 
-	new { statement; ./statement = statement }
-	live_count {-> Number; statement() }
+	new ( statement; ./statement = statement )
+	live_count (-> Number; statement() )
 }
 
 count := 2
@@ -591,12 +594,12 @@ Slacker(dynamic).live_count()    # 4 — resolves Slacker's *own* count member i
 
 - `.use_caller_scope = true` switches a Statement from captured (predictable, closure-like) to dynamic (resolves fresh at every call site) — see `learn/advanced_statements.tape`
 - `.memoize = true` caches the first `()` result and returns it on every call after that, instead of re-running — `Memoized_Statement`/`Memoizer` no longer exist as separate types, this replaced them
-- `Statement(other)` adopts `other`'s wrapped expression, `captured_scope`, and settings rather than re-capturing "wherever this `Statement(...)` call happens to be written" — `Statement(\`x+1\`)` behaves exactly like writing `` `x+1` `` directly (`Lost::Statement#proxy_from`, called from `lost/statement.tape`'s `new{;}`)
+- `Statement(other)` adopts `other`'s wrapped expression, `captured_scope`, and settings rather than re-capturing "wherever this `Statement(...)` call happens to be written" — `Statement(x+1)` behaves exactly like writing `` `x+1` `` directly (`Lost::Statement#proxy_from`, called from `lost/statement.tape`'s `new(;)`)
 
 **Two construction paths, and why it matters.** Every Ruby-backed Lost type (`Lost::String`, `Lost::Array`, `Lost::Statement`, ...) can be built two different ways, and Statement's `captured_scope` makes the distinction concrete:
 
 1. A backtick literal (`` `expr` ``) — `#interp_statement` builds the Ruby object directly and is the *only* place that can set `captured_scope`, since it's interpreter-side code with a live `stack` to read from; Ruby's `#initialize` has no reference to the running `Interpreter` at all.
-2. An explicit `Statement(...)` call — goes through the normal Type-construction path (`#interp_type_call` -> `#build_instance_of_type`), which calls `Lost::Statement.new` with no meaningful constructor argument. Real argument binding happens afterward, separately, once `new{;}`'s own body (`lost/statement.tape`) runs. Ruby's `#initialize` only ever needs to set harmless defaults it can't get wrong.
+2. An explicit `Statement(...)` call — goes through the normal Type-construction path (`#interp_type_call` -> `#build_instance_of_type`), which calls `Lost::Statement.new` with no meaningful constructor argument. Real argument binding happens afterward, separately, once `new(;)`'s own body (`lost/statement.tape`) runs. Ruby's `#initialize` only ever needs to set harmless defaults it can't get wrong.
 
 `use_caller_scope`/`memoize`/`_memoized`/`_memoized_value` are declared as ordinary Lost members in `lost/statement.tape` (not Ruby `attr_accessor`s) so plain dot-assignment (`s.memoize = true`) works with no extra plumbing; `#invoke_statement` reads/writes them from Ruby via `Scope#[]`/`#[]=`. `captured_scope` couldn't take that route — it holds a live Ruby `Scope` object, not an Lost-representable value — so it stays a Ruby `attr_accessor` instead.
 
@@ -618,33 +621,35 @@ The language enforces naming conventions through the helper functions:
 
 ## Function Conventions
 
-Lowercase identifier, followed by a `{}` grouped block which contains `;` which separates the params and body.
+Lowercase identifier, followed by a `()` grouped block which contains `;` which separates the params and body.
 
 ```lost
-<identifier> { <args>; <body> }
+<identifier> ( <args>; <body> )
 ```
+
+`(...)` is also grouping, a call's argument list, and a Tuple, so a bare `(` alone doesn't say which one is coming. `func_declaration_follows?` (`parser.rb`) disambiguates by depth-checking the upcoming tokens for a bare `;` at nesting level 1 (the declaration's own params/body separator, not a nested one) before the matching `)` closes: `foo((a; a+1), 5)` is an ordinary call passing an anonymous func as its first argument — the inner func's `;` sits at depth 2, one level past `foo`'s own opening paren, so it doesn't make `foo(...)` itself look like a declaration.
 
 ## Labeled Function Arguments
 
 Swift/ObjC-style: a param declared with two identifiers in a row (`label name`) can be called with `label: value` at the call site.
 
 ```lost
-send_greeting { to person; person }
+send_greeting ( to person; person )
 send_greeting(to: 42)      # matches the label declared at that position
 send_greeting(42)          # labels are opt-in -- a bare positional call still works
 ```
 
 - Matching is purely positional — a labeled argument's label must match whatever's declared at that same param index; labels are never used to reorder arguments
 - A supplied label that doesn't match the declared one at that position (including "labeled when none was declared") raises `Lost::Argument_Label_Mismatch`
-- Two params can share the same label (`new { at x, at y; ... }` then `Point(at: 3, at: 4)`) — matching Swift, labels aren't required to be unique
+- Two params can share the same label (`new ( at x, at y; ... )` then `Point(at: 3, at: 4)`) — matching Swift, labels aren't required to be unique
 - Implementation: `label: value` parses as an ordinary `:` `Infix_Expr` (same production named struct members use) — `#interp_func_body` unwraps it via `#classify_argument` before interpreting, rather than letting `#interpret` try to resolve the label as an identifier
 
 ## Named Function Arguments
 
-`name := value` at a call site binds by the callee's declared param *name*, order-independent — a separate mechanism from labels (which check a *position*'s declared label, never reorder). Works for any call, including construction (`new{;}` params).
+`name := value` at a call site binds by the callee's declared param *name*, order-independent — a separate mechanism from labels (which check a *position*'s declared label, never reorder). Works for any call, including construction (`new(;)` params).
 
 ```lost
-sub { a, b; a - b }
+sub ( a, b; a - b )
 sub(a := 1, b := 2)  #=> -1
 sub(b := 2, a := 1)  #=> -1, same result -- order doesn't matter
 sub(1, b := 2)       #=> -1, positional then named is fine
@@ -662,7 +667,7 @@ sub(1, b := 2)       #=> -1, positional then named is fine
 A function param can be typed with an inline struct (`: <...>`) instead of a plain type name — structural, not nominal: any argument that has each named member, with a compatible type, satisfies it, regardless of what type the argument itself is actually named.
 
 ```lost
-f { right: <name: String, type: Any, value: Any>; right.name }
+f ( right: <name: String, type: Any, value: Any>; right.name )
 
 m := Member('x', String, 4)
 f(m)          #=> 'x' -- Member has all three, so it satisfies the struct annotation without being named "Member" in the annotation itself
@@ -690,10 +695,10 @@ Point {
     x,
     y,
 
-    new { x, y;
+    new ( x, y;
         ./x = x
         ./y = y
-    }
+    )
 }
 
 p := Point(3, 4)  # Calls new
@@ -710,9 +715,9 @@ Both are held **weakly** — adding an instance doesn't keep it alive. Once ever
 `@readable`/`@writable` are shorthand for `@add_readable_scope`/`@add_writable_scope`, meant specifically for function param lists, where the longer names get noisy fast.
 
 ```lost
-add { @readable vec;
+add ( @readable vec;
 	x + y   # Access vec.x and vec.y directly
-}
+)
 
 v := Vector(3, 4)
 add(v)   # Returns 7
@@ -721,11 +726,11 @@ add(v)   # Returns 7
 `@writable` unpacks the same way, but a plain write inside the body to a name the argument already has lands on that member directly instead of declaring a fresh local:
 
 ```lost
-double { @writable vec;
+double ( @writable vec;
 	x *= 2   # writes straight through to vec.x
 	y *= 2
 	vec
-}
+)
 ```
 
 ### Manual Scope Control
@@ -743,9 +748,9 @@ x := island_member           # Access members directly
 
 @remove_readable_scope island   # Remove island from the readable scope
 
-thingy { @readable island;
+thingy ( @readable island;
 	# use island.name here unpacked
-}
+)
 ```
 
 **Implementation details:**
@@ -763,11 +768,11 @@ thingy { @readable island;
 Custom operators are declared with `@operator`, a fixity directive, a precedence number, and a function body. Parsed specially in `parser.rb` (`scan_and_register_operator_overloads_before_parsing` pre-scans and registers precedence before the main parse, since fixity/precedence affects how the rest of the file parses):
 
 ```lost
-@operator -> @infix 300 { left, right;
+@operator -> @infix 300 ( left, right;
     right(left)
-}
+)
 
-double { n; n * 2 }
+double ( n; n * 2 )
 5 -> double  # => 10
 ```
 
@@ -802,8 +807,8 @@ Lost's built-in types (String, Array, Dictionary, Number) have ruby methods that
 
 ```lost
 String {
-    upcase {; @ruby }
-    downcase {; @ruby }
+    upcase (; @ruby )
+    downcase (; @ruby )
 }
 ```
 
@@ -1017,18 +1022,18 @@ end
 The `return` keyword exits a function and returns a value. It properly propagates even when used inside loops:
 
 ```lost
-find { func;
+find ( func;
     for values
         if func(it)
             return it  # Exits the function, not just the loop
         end
     end
     nil
-}
+)
 
-[1, 2, 3].find({ x;
+[1, 2, 3].find(( x;
     x > 1
-})  # Returns 2
+))  # Returns 2
 ```
 
 **Implementation:**
@@ -1109,10 +1114,11 @@ The `Table` type (`lost/table.tape`) provides ActiveRecord-style ORM functionali
 @load 'lost/table.tape'
 
 User | Table {
-    Self.database := ~/db     # Set database (static declaration)
-    table_name := 'users'   # or call self.infer_table_name_from_class!() instead — derives it from the composed type name, e.g. "User" -> "users"
+    Self.database := ~/db  # Set database (static declaration)
 }
 ```
+
+`table_name` self-infers on first read from the composed type's own name (`User` -> `users`, singular Capitalcase to plural lowercase — `proxy_infer_table_name_from_class!`, `table.rb`) — no manual declaration needed. Declare `table_name := 'custom_name'` in the body to override the inferred name.
 
 **Table class methods (static):**
 - `all()` - Fetch all records as an Array of records
@@ -1160,8 +1166,7 @@ db.create_table('posts', Posts_Schema)
 
 # Define model
 Post | Table {
-    Self.database := ~/db
-    table_name := 'posts'
+    Self.database := ~/db  # table_name self-infers to 'posts'
 }
 
 # Use ORM
@@ -1178,6 +1183,7 @@ end
 - Table methods are proxy methods (see `src/external/ruby/table.rb`)
 - Table methods return `Lost::Dictionary` instances, not typed model instances (see `table.rb`'s own `# todo: Convert this to a Record instance`)
 - Static declarations (`Self.database`) link models to database
+- `table_name` self-infers on first read (`Table#table_name`, `table.rb`) — checked own-declaration-first, then `enclosing_scope` (the older static pattern), same fallback order `database` already uses; a tagged `Table\<name: String, columns: Struct>` reference's `new(;)` no longer auto-creates its table on construction — call `db.create_table(...)` explicitly, same as the plain pattern above
 
 ## Web Server Features
 
@@ -1202,14 +1208,14 @@ Lost has built-in web server support:
 - `response.body = content` - Set response body
 
 ```lost
-post://login {;
+post://login (;
     if authenticate(request.body.username, request.body.password)
         response.redirect("/dashboard")
     else
         response.status = 401
         "Unauthorized"
     end
-}
+)
 ```
 
 ## HTML Rendering
@@ -1222,16 +1228,16 @@ Lost supports HTML rendering via the built-in `Dom` type (load `lost/html.tape`)
 Layout | Dom {
     title,
 
-    new { title = 'My Page';
+    new ( title = 'My Page';
         ./title = title
-    }
+    )
 
-    render {;
+    render (;
         Html([
             Head(Title(title)),
             Body(H1("Hello!"))
         ])
-    }
+    )
 }
 ```
 
@@ -1251,7 +1257,7 @@ Styled_Div | Dom {
 **Predefined elements** in `lost/html.tape`: `Html`, `Head`, `Body`, `Title`, `H1`–`H6`, `P`, `Span`, `A`, `Div`, `Form`, `Input`, `Button`, `Ul`, `Ol`, `Li`, `Table`, `Tr`, `Td`, `Th`, and more.
 
 - Routes returning a `Dom` instance automatically render to HTML string
-- HTML rendering only works when `render{;}` is called by a Server instance
+- HTML rendering only works when `render(;)` is called by a Server instance
 - `html_element` sets the tag name (default `'div'`)
 - Fence blocks starting with `html\n` are treated as raw HTML tokens by the lexer
 
@@ -1262,6 +1268,7 @@ The `@load` directive allows importing Lost files:
 - Interpreter caches parsed expressions in `@cached_expressions_by_filepath` to prevent duplicate parsing
 - Files are loaded into a specified scope via `Interpreter#load_file_into_scope`
 - Expressions are cached keyed by resolved filepath
+- Separately, running (not just parsing) a file into a given scope is deduped per-scope: `Scope#loaded_filepaths` (a `Hash`, keyed by resolved filepath) records the result the first time a file is actually loaded into that scope. A later `@load` of the same file into the *same* scope returns that stored result directly instead of re-running the file — without this, a repeated bare `@load` used to re-run the file's whole body again and could return `nil` instead of the original result. Loading the same file into a *different* scope (e.g. two separate `x := @load 'file'` namespacing calls) still runs it again, since the cache lives on the target scope, not globally — this is what makes namespace isolation actually isolated
 - Comment lexemes are filtered out before parsing, matching `#run`'s top-level behavior — otherwise a trailing comment at the end of a loaded file's function/program body would silently become that body's return value
 - The target scope depends on the call form:
   - Bare `@load 'file'` merges the file's top-level declarations directly into the current scope (`stack.last`) — `lost/preload.tape` uses this same mechanism, but `Interpreter#run`'s bootstrap passes a fresh `Standard_Library` scope as the target (not `global` itself), so e.g. `String` lands there, not as a direct Global declaration — see Readable and Writable Scopes below

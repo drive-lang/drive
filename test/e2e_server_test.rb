@@ -22,13 +22,13 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := #{@port};
+		    	new ( port := #{@port};
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get:// {; "ok" }
+		    	get:// (; "ok" )
 		    }
 
 		    app := Web_App()
@@ -49,19 +49,19 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := #{@port};
+		    	new ( port := #{@port};
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get:// {;
+		    	get:// (;
 		    		"Hello from Lost!"
-		    	}
+		    	)
 
-		    	get://hello/:name { name;
+		    	get://hello/:name ( name;
 		    		"<h1>Hello, `name`!</h1>"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -95,15 +95,15 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := #{@port};
+		    	new ( port := #{@port};
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get://search {;
+		    	get://search (;
 		    		"Query: `request.query`"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -127,15 +127,15 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := #{@port};
+		    	new ( port := #{@port};
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	post://submit {;
+		    	post://submit (;
 		    		"Form submitted"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -162,21 +162,21 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port;
+		    	new ( port;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Server_A | Server {
-		    	get://a {;
+		    	get://a (;
 		    		"Response from Server A"
-		    	}
+		    	)
 		    }
 
 		    Server_B | Server {
-		    	get://b {;
+		    	get://b (;
 		    		"Response from Server B"
-		    	}
+		    	)
 		    }
 
 		    a := Server_A(#{port_a})

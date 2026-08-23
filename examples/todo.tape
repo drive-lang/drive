@@ -11,11 +11,11 @@ Todo_Input | Textarea {}
 
 # List component that renders children as <li> elements
 Todos_Ul | Ul {
-	render {;
+	render (;
 		for children map
 			Li(it)
 		end
-	}
+	)
 }
 
 # Main todo app component
@@ -28,25 +28,25 @@ Todo_App | Div {
 	# dom.js collects all input values and sends them with the
 	# onclick request. The server updates input.value before
 	# this handler runs.
-	add_todo := {;
+	add_todo := (;
 		todos.push(input.value)
-	}
+	)
 
-	render {;
+	render (;
 		button := Button("Add Todo")
 		button.onclick = add_todo
 
 		Form([input, button, Todos_Ul(todos)])
-	}
+	)
 }
 
 # Create instance outside the server so state persists across requests
 todo_app := Todo_App()
 
 App | Server {
-	get:// home {;
+	get:// home (;
 		Html(todo_app)
-	}
+	)
 }
 
 # @start_server App()

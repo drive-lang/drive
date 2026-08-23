@@ -52,9 +52,9 @@ class ProxiesTest < Base_Test
 		out = Lost.interp <<~TAPE
 		    x := [1, 2, 3]
 		    y := []
-		    x.each({ item;
+		    x.each(( item;
 		        y << item * 2
-		    })
+		    ))
 		    y
 		TAPE
 		assert_equal [2, 4, 6], out.values
@@ -83,9 +83,9 @@ class ProxiesTest < Base_Test
 
 		assert_equal "1,2,3", Lost.interp("[1, 2, 3].join(',')")
 
-		assert_equal [2, 4, 6], Lost.interp("[1, 2, 3].map({ x, i; x * 2 })").values
-		assert_equal [2, 4], Lost.interp("[1, 2, 3, 4].filter({ x; x % 2 == 0 })").values
-		assert_equal 10, Lost.interp("[1, 2, 3, 4].accumulate(0, { acc, x; acc + x })")
+		assert_equal [2, 4, 6], Lost.interp("[1, 2, 3].map(( x, i; x * 2 ))").values
+		assert_equal [2, 4], Lost.interp("[1, 2, 3, 4].filter(( x; x % 2 == 0 ))").values
+		assert_equal 10, Lost.interp("[1, 2, 3, 4].accumulate(0, ( acc, x; acc + x ))")
 
 		assert_equal [1, 2, 3, 4, 5], Lost.interp("[1, 2, 3].concat([4, 5])")
 		assert_equal [1, 2, 3, 4], Lost.interp("[[1, 2], [3, 4]].flatten()").values
@@ -98,14 +98,14 @@ class ProxiesTest < Base_Test
 		assert Lost.interp("[].empty?()")
 		refute Lost.interp("[1].empty?()")
 
-		assert_equal 2, Lost.interp("[1, 2, 3].find({ x; x > 1 })")
-		assert_nil Lost.interp("[1, 2, 3].find({ x; x > 5 })")
+		assert_equal 2, Lost.interp("[1, 2, 3].find(( x; x > 1 ))")
+		assert_nil Lost.interp("[1, 2, 3].find(( x; x > 5 ))")
 
-		assert Lost.interp("[1, 2, 3].any?({ x; x > 2 })")
-		refute Lost.interp("[1, 2, 3].any?({ x; x > 5 })")
+		assert Lost.interp("[1, 2, 3].any?(( x; x > 2 ))")
+		refute Lost.interp("[1, 2, 3].any?(( x; x > 5 ))")
 
-		assert Lost.interp("[1, 2, 3].all?({ x; x > 0 })")
-		refute Lost.interp("[1, 2, 3].all?({ x; x > 2 })")
+		assert Lost.interp("[1, 2, 3].all?(( x; x > 0 ))")
+		refute Lost.interp("[1, 2, 3].all?(( x; x > 2 ))")
 	end
 
 	def test_include_respects_custom_equality_overload
@@ -114,14 +114,14 @@ class ProxiesTest < Base_Test
 		    	x,
 		    	y,
 
-		    	new { x, y;
+		    	new ( x, y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 
-		    	@operator == @infix 500 { left, right;
+		    	@operator == @infix 500 ( left, right;
 		    		left.x == right.x and left.y == right.y
-		    	}
+		    	)
 		    }
 
 		    a := [Point(1, 2), Point(3, 4)]
@@ -138,14 +138,14 @@ class ProxiesTest < Base_Test
 		    	x,
 		    	y,
 
-		    	new { x, y;
+		    	new ( x, y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 
-		    	@operator == @infix 500 { left, right;
+		    	@operator == @infix 500 ( left, right;
 		    		left.x == right.x and left.y == right.y
-		    	}
+		    	)
 		    }
 
 		    a := [Point(1, 2), Point(3, 4)]

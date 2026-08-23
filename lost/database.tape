@@ -10,26 +10,26 @@ Database {
 	connection, # todo: Make a type for this, currently it stores an Sequel::SQLite::Database instance
 	url,
 
-	create_table { name: String, scheme: Struct -> Table;
+	create_table ( name: String, scheme: Struct -> Table;
 		@ruby
-	}
+	)
 
-	delete_table { name; @ruby }
-	tables {; @ruby }
-	table_exists? { name; @ruby }
+	delete_table ( name; @ruby )
+	tables (; @ruby )
+	table_exists? ( name; @ruby )
 }
 
 Sqlite | Database {
-	new { url;
+	new ( url;
 		adapter = 'sqlite'
 		self.url = url
-	}
+	)
 
-	Self.local { url := './test/fixtures/sqlite_test.db';
+	Self.local ( url := './test/fixtures/sqlite_test.db';
 		Sqlite(url)
-	}
+	)
 
-	Self.memory {;
+	Self.memory (;
 		Sqlite(':memory:')
-	}
+	)
 }

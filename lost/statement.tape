@@ -11,14 +11,14 @@ Statement {
 	_memoized_value := nil
 
 	# Currently you cannot directly init this with a plain value -- you have to build it from a backtick literal such as `x := 1`, or by wrapping an existing Statement: `Statement(x)`.
-	new { literal := nil; # A literal here is --> `1+1` <-- including the backticks
+	new ( literal := nil; # A literal here is --> `1+1` <-- including the backticks
 		from(literal)
-	}
+	)
 
 	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Lost-level declaration).
-	from { other: Statement;
+	from ( other: Statement;
 		@ruby
-	}
+	)
 
-	to_s {; @ruby }
+	to_s (; @ruby )
 }

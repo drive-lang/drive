@@ -5,14 +5,14 @@ Every route body gets `request` and `response` for free, no parameter needed -- 
 @load 'lost/server.tape'
 
 Camp | Server {
-	new {;
+	new (;
 		self.port = 8081
-	}
+	)
 
-	post://join {;
+	post://join (;
 		name := request.body[:name]
 		"Welcome, `name`"
-	}
+	)
 }
 
 
@@ -21,10 +21,10 @@ Camp | Server {
 Set it to change the HTTP status code of the reply.
 ###
 Camp | Server {
-	get://restricted {;
+	get://restricted (;
 		response.status = 401
 		'Not authorized'
-	}
+	)
 }
 
 
@@ -33,10 +33,10 @@ Camp | Server {
 A Dictionary of outgoing headers -- set one by key.
 ###
 Camp | Server {
-	get://manifest {;
+	get://manifest (;
 		response.headers['Content-Type'] = 'application/json'
 		'{"supplies": ["water", "rope"]}'
-	}
+	)
 }
 
 
@@ -45,9 +45,9 @@ Camp | Server {
 Sends the client to a different path instead of returning a body directly.
 ###
 Camp | Server {
-	post://signal_fire {;
+	post://signal_fire (;
 		response.redirect('/camp')
-	}
+	)
 }
 
 
@@ -56,7 +56,7 @@ Camp | Server {
 A typical POST handler checks the submitted body, then either redirects on success or sets a status and returns an error body on failure.
 ###
 Camp | Server {
-	post://register {;
+	post://register (;
 		name := request.body[:name]
 
 		if name
@@ -65,7 +65,7 @@ Camp | Server {
 			response.status = 400
 			'Missing name'
 		end
-	}
+	)
 }
 
 camp := Camp()

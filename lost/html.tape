@@ -3,16 +3,16 @@ Dom {
 	html_element := 'div'
 	children,
 
-	new { children := [];
+	new ( children := [];
 		self.children = children
-	}
+	)
 
-	render {; children }
+	render (; children )
 
 	# Renders this element, and its children, to a string.
-	to_s {;
+	to_s (;
 		inner   := render()
-		content := if inner.?uniq # Checking whether inner responds to uniq{;}, without actually calling it.
+		content := if inner.?uniq # Checking whether inner responds to uniq(;), without actually calling it.
 			final := ''
 			for inner
 				final += it.?to_s() or it
@@ -23,7 +23,7 @@ Dom {
 		end
 
 		"<`html_element`>`content`</`html_element`>"
-	}
+	)
 }
 
 ### Predefined Dom elements ###
@@ -43,11 +43,11 @@ Title | Dom {
 	html_element := 'title'
 	title,
 
-	new { title;
+	new ( title;
 		self.title = title
-	}
+	)
 
-	render {; title }
+	render (; title )
 }
 
 # Headings
@@ -93,12 +93,12 @@ A | Dom {
 	html_href,
 	title,
 
-	new { href, title;
+	new ( href, title;
 		html_href = href
 		self.title = title
-	}
+	)
 
-	render {; title }
+	render (; title )
 }
 
 Strong | Dom {

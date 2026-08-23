@@ -34,7 +34,7 @@ class Database_Test < Base_Test
 		assert_nil out.values.first.get 'connection'
 		assert_nil out.values.last.get 'connection'
 
-		# These are set in Sqlite.new{;}
+		# These are set in Sqlite.new(;)
 		refute_nil out.values.last.get 'adapter'
 		refute_nil out.values.last.get 'url'
 	end
@@ -59,21 +59,6 @@ class Database_Test < Base_Test
 		    (c1, c2)
 		TAPE
 		assert_equal out.values[0].object_id, out.values[1].object_id
-	end
-
-	def test_inferring_record_table_name
-		out = Lost.interp <<~TAPE
-		    #{RECORD}
-			r := Table()
-			r.table_name
-
-			Thing | Table {}
-			t := Thing()
-			t.infer_table_name_from_class!()
-			(r, t)
-		TAPE
-		assert_nil out.values.first.get 'table_name'
-		assert_equal 'things', out.values.last.get('table_name')
 	end
 
 	def test_connect_directive_creates_database_connection

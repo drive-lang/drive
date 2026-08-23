@@ -2,6 +2,9 @@ module Lost
 	class Scope
 		attr_accessor :enclosing_scope, :readable_scopes, :writable_scopes, :declarations, :name, :type_by_identifier, :static_declarations, :tagged_type_variants
 
+		# {filepath => result} for every @load run in this scope, and only this scope -- keyed by resolved filepath so a second @load of the same file into the same scope skips re-running it (see #load_file_into_scope) but still returns the same result the first run produced, rather than nil. Does not recurse into the stack, though that may be useful later on.
+		attr_accessor :loaded_filepaths
+
 		def initialize name = nil
 			@name               = name
 			@declarations       = {}
@@ -10,6 +13,7 @@ module Lost
 			# Insertion order still matters here (most-recently-added wins on a name collision, like a stack -- see test_multiple_unpacks), so lookups below deliberately reverse .keys before searching. Ruby doesn't document WeakMap's iteration order the way it does Hash/Set's, but it matches insertion order in every version this has been tested against.
 			@readable_scopes     = ObjectSpace::WeakMap.new
 			@writable_scopes     = ObjectSpace::WeakMap.new
+			@loaded_filepaths    = {}
 			@static_declarations = Set.new
 			# `Type\Struct { }` declarations of the same base name (e.g. every tagged variant of "String") are kept here, separate from @declarations -- see #Interpreter#interp_tagged_type_declaration/#find_tagged_type_variant. A base name maps to every variant declared under it in this scope; matching is by real structure equality (names + types), not a mangled string key.
 			@tagged_type_variants = Hash.new { |h, k| h[k] = [] }
@@ -128,12 +132,12 @@ module Lost
 
 		def initialize name = nil
 			super name
-			@types                         = Set[name]
-			@declarations['name']          = name
+			@types                = Set[name]
+			@declarations['name'] = name
 			# Same as `.name` until/unless a tag makes this type's real display richer than its bare name (see #declare_tag) -- lets consumers (e.g. lost/member.tape's `to_s`) read one field for "how should this type be shown" without needing to know about `.tag` at all.
-			@declarations['display_name']  = name
-			@static_declarations           += %w(name display_name) # So that Type.name/Type.display_name work
-			@declaration_in_progress = false
+			@declarations['display_name'] = name
+			@static_declarations          += %w(name display_name) # So that Type.name/Type.display_name work
+			@declaration_in_progress      = false
 		end
 	end
 

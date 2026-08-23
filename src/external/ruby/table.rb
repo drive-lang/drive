@@ -15,7 +15,8 @@ module Lost
 
 		def proxy_infer_table_name_from_class!
 			require 'sequel/extensions/inflector.rb'
-			first_type                  = types.to_a.first
+			first_type = types.to_a.first
+			return nil unless first_type
 			@declarations['table_name'] = first_type.split('::').last.downcase.pluralize
 		end
 
@@ -27,6 +28,8 @@ module Lost
 
 		# @return [Symbol]
 		def table_name
+			@declarations['table_name'] ||= proxy_infer_table_name_from_class!
+
 			name = @declarations['table_name'] || enclosing_scope&.declarations&.[]('table_name')
 			name&.to_str&.to_sym
 		end

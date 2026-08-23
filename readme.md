@@ -22,29 +22,29 @@ tested? := false
 ## Functions
 
 1. Must start with a lowercase letter or `_`
-2. The function body is surrounded with `{}` braces
+2. The function body is surrounded with `()` parens
 3. The arguments are declared before the arguments/body delimiter `;`
 4. The body comes after the arguments/body delimiter `;`
 5. The last expression is the return value
 6. Return early using `return` keyword
 
 ```lost
-# func_name { [args]; [body] }
+# func_name ( [args]; [body] )
 
-func_with_args { arg1, arg2 := 1, etc := true;
+func_with_args ( arg1, arg2 := 1, etc := true;
     # body
-}
+)
 
-without_args {;
+without_args (;
     # body
-}
+)
 
-add { a, b;
+add ( a, b;
     a + b
-}
+)
 add(4, 8)  # 12
 
-_privately_do { x, y, z; }
+_privately_do ( x, y, z; )
 ```
 
 ## Labeled & Named Function Arguments
@@ -52,9 +52,9 @@ _privately_do { x, y, z; }
 **Labels** — a param declared as two identifiers in a row (`label name`) can be called `label: value`. Matches by position, never reorders. Opt-in per call; wrong label raises `Argument_Label_Mismatch`.
 
 ```lost
-send_message { to person, saying text;
+send_message ( to person, saying text;
     "To `person`: `text`"
-}
+)
 
 send_message(to: 'Jack', saying: 'Found fresh water')  # positional and labeled both work
 send_message('Sayid', 'Meet at the caves')
@@ -63,7 +63,7 @@ send_message('Sayid', 'Meet at the caves')
 **Named arguments** — `name := value` at a call site binds by the callee's declared param name, order-independent. Positional args (bare or labeled) must come first; once you name one, the rest must be named too.
 
 ```lost
-sub { a, b; a - b }
+sub ( a, b; a - b )
 
 sub(a := 1, b := 2)   # -1
 sub(b := 2, a := 1)   # -1 reordered, same result
@@ -78,7 +78,7 @@ sub(1, b := 2)        # -1 positional then named is fine
 **Struct-typed params** — `: <...>` instead of a plain type name checks *structurally*, not by name: any argument that has each listed member, with a compatible type, is accepted. `Any` matches any member type. Checked on every call, raising `Type_Contract_Violation` on a mismatch.
 
 ```lost
-f { right: <name: String, type: Any, value: Any>; right.name }
+f ( right: <name: String, type: Any, value: Any>; right.name )
 
 m := Member('x', String, 4)
 f(m)     # 'x' -- Member isn't named in the annotation, it just has all three members
@@ -90,25 +90,25 @@ f(nil)   # raises Type_Contract_Violation
 A named function is registered in its enclosing scope as it's declared, so it can call itself.
 
 ```lost
-factorial { n;
+factorial ( n;
     if n == 0 or n == 1
         1
     else
         n * factorial(n - 1)
     end
-}
+)
 factorial(8)  # 40320
 
-fib { n;
+fib ( n;
     if n <= 1
         n
     else
         fib(n - 1) + fib(n - 2)
     end
-}
+)
 fib(10)  # 55
 
-fizz_buzz { n;
+fizz_buzz ( n;
     if n % 15 == 0
         'FizzBuzz'
     elif n % 3 == 0
@@ -118,7 +118,7 @@ fizz_buzz { n;
     else
         n.to_s()
     end
-}
+)
 
 for 1...15
     @puts fizz_buzz(it)
@@ -132,28 +132,28 @@ Calling a function, or referencing a type, works even before its own declaration
 ```lost
 result := main()   # `main` hasn't been declared yet, but this still works
 
-main {; helper() }
-helper {; 42 }
+main (; helper() )
+helper (; 42 )
 
 result  # 42
 ```
 
 ```lost
-is_even { n;
+is_even ( n;
     if n == 0
         true
     else
         is_odd(n - 1)
     end
-}
+)
 
-is_odd { n;
+is_odd ( n;
     if n == 0
         false
     else
         is_even(n - 1)
     end
-}
+)
 
 is_even(4)  # true
 ```
@@ -164,7 +164,7 @@ A class-styled alias (`This := That {}`) hoists the same way, since it's declari
 p := This()
 
 This := That {}
-That { greet {; 'hi' } }
+That { greet (; 'hi' ) }
 
 p.greet()  # 'hi'
 ```
@@ -205,10 +205,10 @@ a := 123
 My_Class {
     input,
     
-    new { input;
+    new ( input;
         self.input = input  # self is the current instance, like this in other languages
         @puts 'Initted with "`input`"'
-    }
+    )
 }
 
 instance := My_Class('some input')  # Initted with "some input"
@@ -268,14 +268,14 @@ My_Class {
     Self.count := 0   # Type-level (static) variable
     value,
 
-    new { value;
+    new ( value;
         self.value = value   # Instance variable (like this.value in other languages)
         Self.count += 1      # Access static from instance
-    }
+    )
 
-    get_global {;
+    get_global (;
         ~/PI  # Access global scope constants
-    }
+    )
 }
 ```
 
@@ -289,13 +289,13 @@ My_Class {
 Counter {
     Self.count := 0
 
-    Self.increment {;
+    Self.increment (;
         count += 1
-    }
+    )
 
-    new {;
+    new (;
         Self.count += 1
-    }
+    )
 }
 
 Counter()
@@ -314,15 +314,15 @@ Counter.count  # 2
 Movable {
     x := 0
     y := 0
-    move { dx, dy;
+    move ( dx, dy;
         x += dx
         y += dy
-    }
+    )
 }
 
 Drawable {
     color := 'black'
-    draw {; "Drawing in `color`" }
+    draw (; "Drawing in `color`" )
 }
 
 # Combine types
@@ -356,18 +356,18 @@ A type can even compose with itself, to extend or override a built-in type's own
 
 ```lost
 Array | Array {
-    each { func;
+    each ( func;
         for self.values   # self.values reaches the original Array's own values, despite `each` itself now being redefined
             func(it)
         end
-    }
+    )
 }
 
 values := Array([1, 2, 3])
 doubled := []
-values.each({ it;
+values.each(( it;
     doubled.push(it * 2)
-})
+))
 doubled  # [2, 4, 6]
 ```
 
@@ -486,12 +486,12 @@ for items
     stop if it.that     # Break out
 end
 
-find_first { predicate;
+find_first ( predicate;
     for items
         return it if predicate(it)
     end
     nil
-}
+)
 ```
 
 ## Readable and Writable Scopes
@@ -510,9 +510,9 @@ Vector {
 }
 
 # Auto-unpack in parameters
-magnitude { @readable vec;
+magnitude ( @readable vec;
     (x ** 2 + y ** 2).sqrt()  # Access x, y directly
-}
+)
 
 v := Vector()
 v.x = 3
@@ -520,11 +520,11 @@ v.y = 4
 magnitude(v)  # 5
 
 # A writable unpack lets a plain write reach the unpacked instance's own member
-double { @writable vec;
+double ( @writable vec;
     x *= 2   # writes straight through to vec.x
     y *= 2
     vec
-}
+)
 doubled := double(v)  # doubled.x: 6, doubled.y: 8
 
 # Manual scope control
@@ -548,22 +548,22 @@ Point {
     a := 0
     b := 0
 
-    new { a, b;
+    new ( a, b;
         self.a = a
         self.b = b
-    }
+    )
 }
 
-outer {;
+outer (;
     p := Point(23, 42)
     @add_readable_scope p
 
-    inner {;
+    inner (;
         a + b   # a, b resolved from p via the readable scope, despite being nested inside outer
-    }
+    )
 
     inner()
-}
+)
 outer()  # 65
 ```
 
@@ -612,8 +612,8 @@ arr.reverse()
 arr.include?(3)     # true
 arr.empty?()        # false
 
-arr.map({ x; x * 2 })
-arr.filter({ x; x > 2 })
+arr.map(( x; x * 2 ))
+arr.filter(( x; x > 2 ))
 ```
 
 ## Dictionaries
@@ -756,7 +756,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 ## @load Directive
 
 1. Imports another Lost file
-2. Files are only loaded once
+2. A file is only run once per scope it's loaded into — loading the same file into the same scope again returns the first run's result instead of re-running it
 3. Imports may be scoped by assigning the @load to a variable
 
 ```lost
@@ -765,6 +765,8 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 @load './my_module.tape'
 my_mod := @load './my_module.tape'
 my_mod.Some_Type()
+
+@load './my_module.tape'   # already loaded into this scope -- returns the same result again, doesn't re-run
 ```
 
 ## @puts Directive
@@ -786,12 +788,12 @@ Lost's built-in collection types each wrap their printed contents in a different
 @puts <1, 2, 3>      # <1, 2, 3>      -- Struct
 ```
 
-A custom type prints as raw internals until it defines its own `to_s{;}` — see [Classes](#classes):
+A custom type prints as raw internals until it defines its own `to_s(;)` — see [Classes](#classes):
 
 ```lost
 Point {
     x := 1
-    greet {; 'hi' }
+    greet (; 'hi' )
 }
 @puts Point()   # #<Lost::Instance name="Point" declarations=["name", "types", "x", "greet"]>
 ```
@@ -823,17 +825,17 @@ supplies := <water: Number = 40, wood: Number = 12>
 @load 'lost/server.tape'
 
 App | Server {
-    new {;
+    new (;
         self.port = 3000
-    }
+    )
 
-    get:// {;
+    get:// (;
         'Hello, World!'
-    }
+    )
 
-    get://about {;
+    get://about (;
         'About page'
-    }
+    )
 }
 
 @start App()
@@ -848,32 +850,32 @@ App | Server {
 ```lost
 App | Server {
     # Static route
-    get://users {;
+    get://users (;
         'All users'
-    }
+    )
 
     # URL parameter
-    get://users/:id { id;
+    get://users/:id ( id;
         "User `id`"
-    }
+    )
 
     # Multiple params
-    get://posts/:post_id/comments/:id { post_id, id;
+    get://posts/:post_id/comments/:id ( post_id, id;
         "Comment `id` on post `post_id`"
-    }
+    )
 
     # Query strings: /search?q=term
-    get://search {;
+    get://search (;
         query := request.query[:q]
         "Searching for `query`"
-    }
+    )
 }
 ```
 
 ## Request & Response
 
 ```lost
-post://login {;
+post://login (;
     username := request.body[:username]
     password := request.body[:password]
 
@@ -883,12 +885,12 @@ post://login {;
         response.status = 401
         'Unauthorized'
     end
-}
+)
 
-get://api/data {;
+get://api/data (;
     response.headers['Content-Type'] = 'application/json'
     '{"status": "ok"}'
-}
+)
 ```
 
 ## Database
@@ -916,7 +918,7 @@ db.delete_table('users')
 ## Record ORM
 
 1. Compose with `Table` type
-2. Set static `Self.database` and instance `table_name` (or call `infer_table_name_from_class!()` to derive it, e.g. `User` → `'users'`)
+2. Set static `Self.database` and instance `table_name`
 
 ```lost
 @load 'lost/table.tape'
@@ -1061,65 +1063,65 @@ nil == Any        # false — the one exception
 
 ```lost
 # Redefine + only inside this function — everywhere else, + still adds
-scoped := compute {;
-    @operator + @infix 700 { left, right;
+scoped := compute (;
+    @operator + @infix 700 ( left, right;
         left * right
-    }
+    )
     3 + 4
-}
+)
 
 3 + 4      # 7 (unaffected outside)
 scoped()   # 12
 
 # Build a pipeline operator
-@operator -> @infix 300 { left, right;
+@operator -> @infix 300 ( left, right;
     right(left)
-}
+)
 
-double { n; n * 2 }
-add_fifteen { n; n + 15 }
+double ( n; n * 2 )
+add_fifteen ( n; n + 15 )
 
 4 -> double -> add_fifteen  # 23
 
 # Invent new literal syntax
 Time { hour, minute, period, }
 
-@operator : @infix 700 { hour, minute;
+@operator : @infix 700 ( hour, minute;
     t := Time()
     t.hour = hour
     t.minute = minute
     t
-}
+)
 
-@operator pm @postfix 600 { left: Time;
+@operator pm @postfix 600 ( left: Time;
     left.period = 'pm'
     left
-}
+)
 
 11:22pm  # Time(hour: 11, minute: 22, period: 'pm')
 
 # Or a prefix operator that builds a value from a bare literal
 Currency { amount, name, code, }
 
-@operator $ @prefix 900 { amount;
+@operator $ @prefix 900 ( amount;
     c := Currency()
     c.amount = amount
     c.name = 'US Dollar'
     c.code = 'USD'
     c
-}
+)
 
 $42  # Currency(amount: 42, name: 'US Dollar', code: 'USD')
 
 # A type's own overload beats a same-named global one. A fresh symbol (~>, not ->) since
 # declaring another global -> here would just overwrite the pipeline -> declared above it,
 # in the same global scope.
-@operator ~> @infix 300 { left, right; 999 }
+@operator ~> @infix 300 ( left, right; 999 )
 
 Wrapped {
     val,
-    new { v; self.val = v }
-    @operator ~> @infix 300 { left, right; left.val }
+    new ( v; self.val = v )
+    @operator ~> @infix 300 ( left, right; left.val )
 }
 
 a := Wrapped(42)
@@ -1147,21 +1149,21 @@ y = 4         # raises Lost::Cannot_Assign_Undeclared_Identifier — y was never
 
 ## Function Signatures
 
-1. `{Param, Param -> Type;}` is a signature — a value describing a function's shape (its param types and return type), with no implementation — same `-> Type` placement a real function uses, just with no body
-2. A real function always declares its own return type inside its body, with `-> Type` at the end of its param list before `;` — a self-declaring signature uses the same shape under its name (`double: {Number -> Number;}`)
+1. `(Param, Param -> Type;)` is a signature — a value describing a function's shape (its param types and return type), with no implementation — same `-> Type` placement a real function uses, just with no body
+2. A real function always declares its own return type inside its body, with `-> Type` at the end of its param list before `;` — a self-declaring signature uses the same shape under its name (`double: (Number -> Number;)`)
 3. Assigning a function to a signature-typed identifier checks its actual shape, not just a name — mismatches raise `Lost::Type_Contract_Violation`, the same runtime type contract `:=` uses
 4. Any function with a declared return type is checked on every call — what it actually returns has to match, signature or not
 
 ```lost
-Currency_Formatter := {Number -> String;}    # takes a Number, returns a String
+Currency_Formatter := (Number -> String;)    # takes a Number, returns a String
 
-format_usd { cents: Number -> String;
+format_usd ( cents: Number -> String;
     "$" + (cents / 100.0).to_s()
-}
+)
 
-format_eur { cents: Number -> String;
+format_eur ( cents: Number -> String;
     "€" + (cents / 100.0).to_s()
-}
+)
 
 formatter: Currency_Formatter = format_usd
 formatter(1050)               # "$10.5"
@@ -1169,13 +1171,13 @@ formatter(1050)               # "$10.5"
 formatter = format_eur        # ok — same shape: (Number) -> String
 formatter(1050)               # "€10.5"
 
-formatter = { cents; cents }  # raises Lost::Type_Contract_Violation — wrong shape
+formatter = ( cents; cents )  # raises Lost::Type_Contract_Violation — wrong shape
 ```
 
 A declared return type is enforced on its own, with no signature involved:
 
 ```lost
-lying { a -> Number; 'not a number' }
+lying ( a -> Number; 'not a number' )
 lying(5)   # raises Lost::Type_Contract_Violation — declared Number, actually returned String
 ```
 
@@ -1184,15 +1186,15 @@ lying(5)   # raises Lost::Type_Contract_Violation — declared Number, actually 
 1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value or a reference to an existing type. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), or `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type)
 2. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `new`/methods
 3. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Lost::Undeclared_Type_Structure`
-4. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new{;}` runs, never forwarded as constructor args
+4. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new(;)` runs, never forwarded as constructor args
 5. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
 
 ```lost
 String\<dict: Dictionary> {
-    to_s {; "dict: `tag.dict`" }
+    to_s (; "dict: `tag.dict`" )
 }
 String\<num: Number> {
-    to_s {; "number: `tag.num`" }
+    to_s (; "number: `tag.num`" )
 }
 
 String\<{x=1}>().to_s()   # "dict: {x: 1}"

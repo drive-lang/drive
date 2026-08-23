@@ -1,9 +1,9 @@
 ### Introduction
 
-Put `<...>` right after a Type name, instead of on its own, and you get something different from a plain Struct value: an independent variant of that type -- its own `new`, its own methods, completely separate from the bare type and from every other variant. This file assumes you already know what a Struct is -- see learn/structs.tape first if `<...>` alone is new to you.
+Put `\<...>` right after a Type name, instead of on its own, and you get something different from a plain Struct value: an independent variant of that type -- its own `new`, its own methods, completely separate from the bare type and from every other variant. This file assumes you already know what a Struct is -- see learn/structs.tape first if `<...>` alone is new to you.
 ###
-String\<Dictionary> { to_s {; "I'm a dict-tagged string" } }
-String\<Number>     { to_s {; "I'm a number-tagged string" } }
+String\<Dictionary> { to_s (; "I'm a dict-tagged string" ) }
+String\<Number>     { to_s (; "I'm a number-tagged string" ) }
 
 @assert String\<{x=1}>().to_s() == "I'm a dict-tagged string", '{x=1} is a Dictionary, so it should match the Dictionary-tagged variant'
 @assert String\<5>().to_s() == "I'm a number-tagged string", '5 is a Number, so it should match the Number-tagged variant'
@@ -16,8 +16,8 @@ String\<Number>     { to_s {; "I'm a number-tagged string" } }
 
 When two variants would otherwise match by type alone, name the member at the reference site (reusing the same bare `:=` idiom a plain Struct literal uses) to disambiguate:
 ###
-Table_With_Opts\<dict: Dictionary>  { to_s {; "dict-named" } }
-Table_With_Opts\<other: Dictionary> { to_s {; "other-named" } }
+Table_With_Opts\<dict: Dictionary>  { to_s (; "dict-named" ) }
+Table_With_Opts\<other: Dictionary> { to_s (; "other-named" ) }
 
 @assert Table_With_Opts\<dict := {x=1}>().to_s() == 'dict-named', 'naming the member at the reference site should pick the "dict" variant'
 @assert Table_With_Opts\<other := {x=1}>().to_s() == 'other-named', 'naming the member at the reference site should pick the "other" variant'
@@ -29,12 +29,12 @@ Table_With_Opts\<other: Dictionary> { to_s {; "other-named" } }
 
   Abc\<Number> {}      -- declaration: defines a new variant
   x := Abc\<Number>    -- reference: dups the matched variant, doesn't mutate it
-  Abc\<Number>()       -- construct: binds .tag onto the instance BEFORE new{;} runs
+  Abc\<Number>()       -- construct: binds .tag onto the instance BEFORE new(;) runs
 
-A tagged reference is a dup of the variant it matched, so tagging it can never leak back and mutate the shared declaration (or any other reference sharing that variant). `.tag` is readable inside `new{;}` itself, but member values are never forwarded as constructor arguments -- whatever you pass to `(...)` still just binds to new's own declared params, entirely separately.
+A tagged reference is a dup of the variant it matched, so tagging it can never leak back and mutate the shared declaration (or any other reference sharing that variant). `.tag` is readable inside `new(;)` itself, but member values are never forwarded as constructor arguments -- whatever you pass to `(...)` still just binds to new's own declared params, entirely separately.
 ###
 Abc\<Number> {
-	new {;}
+	new (;)
 }
 z  := Abc\<4815>
 zz := z()
@@ -61,10 +61,14 @@ The spread rule above only applies when declaring -- a reference never spreads. 
 Options := <a: String, b: Number>
 
 Widget\<opts: Options> {
-	new {;}
+	new (;)
 }
+
+Widget\Options {}
 
 widget_a := Widget\<opts: Options>()   # named reference, matches the declared "opts: Options" variant -- works
 widget_b := Widget\<Options>()         # bare reference -- Options treated as one opaque value, NOT spread -- also works
+widget_c := Widget\Options()
 @assert widget_a.tag.names == ['opts'], 'a named reference should still carry the member name from the matched variant'
 @assert widget_b.tag.types.first() == Options, 'a bare reference should hold Options as one opaque value, not spread'
+@assert widget_c.tag.types.first() == String, 'the first type inside this tag is a: String'

@@ -11,23 +11,23 @@ Counter | Div {
 	count := 0  # State persists between clicks
 
 	# Onclick handler - mutates state, triggers re-render
-	increment := {;
+	increment := (;
 		count += 1
-	}
+	)
 
 	# Called on page load and after each click
-	render {;
+	render (;
 		button.onclick = increment  # Register handler with runtime
 		[H2("The count is: `count`"), Form(button)]
-	}
+	)
 }
 
 # Server with a single route
 App | Server {
 	counter := Counter()
-	get:// home {;
+	get:// home (;
 		Html(counter)
-	}
+	)
 }
 
 # Start the server

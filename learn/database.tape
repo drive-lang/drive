@@ -1,6 +1,6 @@
 ### Introduction
 
-`lost/database.tape` isn't part of the default preload -- it needs an explicit `@load`. `Sqlite` composes with the built-in `Database` type; `':memory:'` opens a database that only lives for this run, so nothing gets left on disk. The static `Self.memory {;}` function is shorthand.
+`lost/database.tape` isn't part of the default preload -- it needs an explicit `@load`. `Sqlite` composes with the built-in `Database` type; `':memory:'` opens a database that only lives for this run, so nothing gets left on disk. The static `Self.memory (;)` function is shorthand.
 ###
 @load 'lost/database.tape'
 

@@ -273,7 +273,7 @@ module Lost
 			protocol_sep = lex_many 3, Lost::HTTP_VERB_SEPARATOR
 
 			path = ::String.new
-			while chars? && !whitespace? && !newline? && curr != '{'
+			while chars? && !whitespace? && !newline? && curr != '('
 				path << eat
 			end
 

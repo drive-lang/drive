@@ -23,11 +23,11 @@ Vector {
 	y := 0
 }
 
-double { @writable vec;
+double ( @writable vec;
 	x *= 2
 	y *= 2
 	vec
-}
+)
 
 v := Vector()
 v.x = 3
@@ -109,19 +109,19 @@ The chain above only covers *one* scope. If none of the three find anything, res
 Marker { val := 0 }
 Other { unrelated := 99 }
 
-outer {;
+outer (;
 	o := Marker()
 	o.val = 5
 	@add_readable_scope o
 
-	inner {;
+	inner (;
 		x := Other()
 		@add_readable_scope x   # inner's own chain has *something* -- just not `val`
 		val                     # falls through inner's whole chain, finds it on outer's
-	}
+	)
 
 	inner()
-}
+)
 
 @assert outer() == 5, "a nested scope's empty chain should fall through to the enclosing scope's"
 

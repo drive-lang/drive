@@ -65,15 +65,15 @@ class Type_Checker_Test < Base_Test
 	# --- Nested in function body ---
 
 	def test_mismatch_nested_in_func_body
-		assert_type_error { Lost.type_check "go {; x: Number = 'oops' }" }
+		assert_type_error { Lost.type_check "go (; x: Number = 'oops' )" }
 	end
 
 	def test_valid_annotation_nested_in_func_body
-		refute_type_error { Lost.type_check "go {; x: Number = 42 }" }
+		refute_type_error { Lost.type_check "go (; x: Number = 42 )" }
 	end
 
 	def test_mismatch_in_func_param_default_is_caught
-		assert_type_error { Lost.type_check "go { x: Number := 'bad'; x }" }
+		assert_type_error { Lost.type_check "go ( x: Number := 'bad'; x )" }
 	end
 
 	# --- Nested in type body ---
@@ -119,37 +119,37 @@ class Type_Checker_Test < Base_Test
 	# --- Call site argument type checking ---
 
 	def test_call_site_string_arg_where_number_expected
-		assert_type_error { Lost.type_check "add { a: Number, b: Number; a + b }, add(1, 'oops')" }
+		assert_type_error { Lost.type_check "add ( a: Number, b: Number; a + b ), add(1, 'oops')" }
 	end
 
 	def test_call_site_number_arg_where_string_expected
-		assert_type_error { Lost.type_check "greet { name: String; name }, greet(42)" }
+		assert_type_error { Lost.type_check "greet ( name: String; name ), greet(42)" }
 	end
 
 	def test_call_site_symbol_arg_where_number_expected
-		assert_type_error { Lost.type_check "double { x: Number; x + x }, double(:bad)" }
+		assert_type_error { Lost.type_check "double ( x: Number; x + x ), double(:bad)" }
 	end
 
 	def test_call_site_correct_args_passes
-		refute_type_error { Lost.type_check "add { a: Number, b: Number; a + b }, add(1, 2)" }
+		refute_type_error { Lost.type_check "add ( a: Number, b: Number; a + b ), add(1, 2)" }
 	end
 
 	def test_call_site_correct_string_arg_passes
-		refute_type_error { Lost.type_check "greet { name: String; name }, greet('hello')" }
+		refute_type_error { Lost.type_check "greet ( name: String; name ), greet('hello')" }
 	end
 
 	def test_call_site_unknown_arg_is_skipped
 		# Identifier arg — type unknown statically, no error
-		refute_type_error { Lost.type_check "x = 'oops', add { a: Number; a }, add(x)" }
+		refute_type_error { Lost.type_check "x = 'oops', add ( a: Number; a ), add(x)" }
 	end
 
 	def test_call_site_only_typed_params_are_checked
 		# Second param has no type annotation — should not error
-		refute_type_error { Lost.type_check "add { a: Number, b; a }, add(1, 'anything')" }
+		refute_type_error { Lost.type_check "add ( a: Number, b; a ), add(1, 'anything')" }
 	end
 
 	def test_call_site_first_arg_mismatch_caught
-		assert_type_error { Lost.type_check "add { a: Number, b: Number; a + b }, add('bad', 2)" }
+		assert_type_error { Lost.type_check "add ( a: Number, b: Number; a + b ), add('bad', 2)" }
 	end
 
 	def test_bug_that_needs_fixing

@@ -58,10 +58,10 @@ A target doesn't have to be a fresh local -- `thing.member` reassigns an existin
 ###
 Point {
 	x, y,
-	new { x, y;
+	new ( x, y;
 		self.x = x
 		self.y = y
-	}
+	)
 }
 
 p := Point(0, 0)
@@ -82,13 +82,13 @@ p2 := Point(0, 0)
 
 Since `<...>` is just a value like any other, a function can hand back several results by returning a Struct (or Tuple) literal, and the caller destructures it immediately:
 ###
-min_and_max { a, b;
+min_and_max ( a, b;
 	if a < b
 		<a, b>
 	else
 		<b, a>
 	end
-}
+)
 
 (lo, hi) := min_and_max(9, 3)
 @assert lo == 3 && hi == 9, 'a returned Struct should destructure into multiple values at the call site'

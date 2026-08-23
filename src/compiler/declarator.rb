@@ -136,7 +136,7 @@ module Lost
 					Declaration[expr.name.value, nested, expr]
 				end
 			when Func_Signature_Expr
-				# a return-type-only declaration (`double: {Number -> Number;}`) has params but no real body -- same shape as Func_Expr otherwise, just declaring the params instead
+				# a return-type-only declaration (`double: (Number -> Number;)`) has params but no real body -- same shape as Func_Expr otherwise, just declaring the params instead
 				if expr.name
 					Declaration[expr.name.value, declare_all(expr.params), expr]
 				end

@@ -6,9 +6,9 @@ Inverted_Html | Html {
 }
 
 App | Server {
-	get:// {;
+	get:// (;
 		Inverted_Html([P("Example with void HTML tags"), Hr(), Small('Expect that they don\'t have a closing /tag'), Br()])
-	}
+	)
 }
 
 # @start_server App()

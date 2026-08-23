@@ -54,25 +54,25 @@ Slacker {
 	count := 0
 	statement: Statement
 
-	new { statement;
+	new ( statement;
 		self.statement = statement
-	}
+	)
 
-	live_count {-> Number;
+	live_count (-> Number;
 		statement()
-	}
+	)
 }
 
-demo_predictable := {;
+demo_predictable := (;
 	count       := 2
 	captured    := `count += 4`
 	predictable := Slacker(captured)
 
 	@assert predictable.live_count() == 6, 'a captured Statement should resolve the outer count it closed over'
 	@assert count == 6, "the outer count should be mutated since the Statement resolved it, not Slacker's own"
-}
+)
 
-demo_caller_scope := {;
+demo_caller_scope := (;
 	count          := 2
 	dynamic        := `count += 4`
 	dynamic.use_caller_scope = true
@@ -80,7 +80,7 @@ demo_caller_scope := {;
 
 	@assert scope_agnostic.live_count() == 4, "use_caller_scope should resolve Slacker's own count instead of the outer one"
 	@assert count == 2, "the outer count should be untouched since Slacker's own count was mutated instead"
-}
+)
 
 demo_predictable()
 demo_caller_scope()

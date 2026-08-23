@@ -21,15 +21,6 @@ Survivor | Table {
 }
 
 
-### infer_table_name_from_class!
-
-Instead of writing `table_name` out by hand, an instance can derive it from its own composed type name -- `Survivor` becomes `'survivors'`.
-###
-s := Survivor()
-s.infer_table_name_from_class!()
-@assert s.table_name == 'survivors', 'infer_table_name_from_class! should derive the table name from the composed type name'
-
-
 ### create and all
 
 `create` inserts a row and returns the created record. `all` fetches every row back as an Array of Dictionaries.

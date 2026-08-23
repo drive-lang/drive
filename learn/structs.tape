@@ -5,9 +5,9 @@ Sometimes you want to attach a small bundle of typed data to something without d
 This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see learn/tagged_types.tape for that.
 ###
 pair := <String, Number>
-type_names := pair.types.values.map({it;
+type_names := pair.types.values.map((it;
 	it.name
-}).join(', ')
+)).join(', ')
 @assert type_names == 'String, Number', "a struct's member types should list each declared type"
 
 
@@ -76,7 +76,7 @@ Anonymous := <String, Number>
 @assert Anonymous.name == nil, 'a struct built with no name in front has no .name of its own'
 
 Named <String, Number>
-n := Named<String, Number>
+n := Named <String, Number>
 @assert n.name == 'Named', 'Ident<...> builds a real struct with .name taken from Ident'
 
 

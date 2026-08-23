@@ -86,7 +86,7 @@ class Regression_Test < Base_Test
 	def test_instance_does_not_have_new_function_regression
 		out = Lost.interp '
 		Atom {
-			new {;}
+			new (;)
 		}
 		a := Atom()
 		b := Atom.new()
@@ -99,9 +99,9 @@ class Regression_Test < Base_Test
 		out = Lost.interp 'Number {
 			numerator := 8
 
-			new { num;
+			new ( num;
 				self.numerator = num
-			}
+			)
 		}
 		x := Number.new(15)
 		x.numerator'
@@ -113,9 +113,9 @@ class Regression_Test < Base_Test
 		Number {
 			numerator := -100
 
-			new { num;
+			new ( num;
 				self.numerator = num
-			}
+			)
 		}
 		x := Number(4)
 		x.numerator'
@@ -127,13 +127,13 @@ class Regression_Test < Base_Test
 		Box {
 			kind := "NONE"
 
-			new { new_kind;
+			new ( new_kind;
 				self.kind = new_kind
-			}
+			)
 
-			to_s {;
+			to_s (;
 				"`kind`-box"
-			}
+			)
 		}
 
 		b1 := Box("Big")
@@ -149,25 +149,25 @@ class Regression_Test < Base_Test
 
 	def test_identifier_lookup_regression
 		out = Lost.interp "x := 123
-		funk {;
+		funk (;
 			~/x + 2
-		}
+		)
 		funk()"
 		assert_equal 125, out
 
 		out = Lost.interp "y := 0
-		add { amount_to_add := 1;
+		add ( amount_to_add := 1;
 			~/y + amount_to_add
-		}
+		)
 		(a := add(4))
 
 		(a, add(a * 2))"
 		assert_equal [4, 8], out.values
 
 		out = Lost.interp "y := 0
-		add { amount_to_add := 1;
+		add ( amount_to_add := 1;
 			y += amount_to_add
-		}
+		)
 		a := add(4)
 
 		(y, a)"
@@ -179,10 +179,10 @@ class Regression_Test < Base_Test
 				id,
 				name := 'Thingy'
 
-				new { new_name := '', id := 123;
+				new ( new_name := '', id := 123;
 					self.name = new_name
 					self.id = id
-				}
+				)
 			}
 
 			t1 := Thing()
@@ -198,10 +198,10 @@ class Regression_Test < Base_Test
 				id,
 				name := 'Thingy',
 
-				new { new_name, id;
+				new ( new_name, id;
 					self.name = new_name
 					self.id = id
-				}
+				)
 			}
 
 			t := Thing() # This will raise
@@ -211,63 +211,63 @@ class Regression_Test < Base_Test
 
 		assert_raises Lost::Missing_Argument do
 			Lost.interp "
-	        funk { it;
+	        funk ( it;
 				it == true
-			}
+			)
 			funk() # This will raise
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { it;
+			funk ( it;
 				it == true
-			}
+			)
 			funk(true), funk(false)
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { it := \"true\";
+			funk ( it := \"true\";
 				it == true
-			}
+			)
 			funk(true), funk()
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { it := \"false\";
+			funk ( it := \"false\";
 				it == true
-			}
+			)
 			funk(true), funk()
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { it := true;
+			funk ( it := true;
 				it == true
-			}
+			)
 			funk(true), funk()
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { funkit := false;
+			funk ( funkit := false;
 				funkit == true
-			}
+			)
 			funk(true), funk()
 			"
 		end
 
 		refute_raises Lost::Undeclared_Identifier do
 			Lost.interp "
-			funk { it := nil;
+			funk ( it := nil;
 				it == true
-			}
+			)
 			funk(true), funk()
 			"
 		end
@@ -289,25 +289,25 @@ class Regression_Test < Base_Test
 		    Outer {
 		    	name,
 
-		    	new { name;
+		    	new ( name;
 		    		self.name = name
-		    	}
+		    	)
 
-		    	make_inner {;
+		    	make_inner (;
 		    		Inner("inner_value")
-		    	}
+		    	)
 		    }
 
 		    Inner {
 		    	name,
 
-		    	new { name;
+		    	new ( name;
 		    		self.name = name
-		    	}
+		    	)
 
-		    	get_name {;
+		    	get_name (;
 		    		name
-		    	}
+		    	)
 		    }
 
 		    outer := Outer("outer_value")
@@ -322,21 +322,21 @@ class Regression_Test < Base_Test
 		# note: Composing Array with itself allows extending or overriding behavior of Array. Notice how `values` is accessible despite being declared on the original Array type.
 		without_prefix = <<~CODE
 		    Array | Array {
-		        each { func;
+		        each ( func;
 		        	for values
 		        		func(it)
 		        	end
-		        }
+		        )
 		    }
 		CODE
 
 		with_prefix = <<~CODE
 		    Array | Array {
-		        each { func;
+		        each ( func;
 		        	for self.values
 		        		func(it)
 		        	end
-		        }
+		        )
 		    }
 		CODE
 
@@ -344,9 +344,9 @@ class Regression_Test < Base_Test
 		    values := Array([1,2,3])
 		    #{without_prefix}
 		    values2 := []
-		    values.each({it;
+		    values.each((it;
 		    	values2.push(it)
-		    })
+		    ))
 		    values2
 		CODE
 		assert_equal [1, 2, 3], out.values
@@ -355,9 +355,9 @@ class Regression_Test < Base_Test
 		    values := Array([1,2,3])
 		    #{with_prefix}
 		    values2 := []
-		    values.each({it;
+		    values.each((it;
 		    	values2.push(it)
-		    })
+		    ))
 		    values2
 		CODE
 		assert_equal [1, 2, 3], out.values
@@ -368,7 +368,7 @@ class Regression_Test < Base_Test
 			Lost.interp <<~TAPE
 			    Thing {
 			    	Self.abc,
-			    	Self.def {;}
+			    	Self.def (;)
 			    }
 
 			    Thing.abc
@@ -433,6 +433,22 @@ class Regression_Test < Base_Test
 		assert_equal 42, out
 	end
 
+	# Regression: a bare `@load` of a file already loaded into the same scope used to re-run the file's
+	# top level a second time (double-incrementing `counter`), and separately, that second @load's own
+	# result was silently `nil` instead of what the file actually produced -- both from
+	# Interpreter#load_file_into_scope not tracking loads per-scope at all.
+	def test_double_load_into_same_scope_only_runs_once
+		out = Lost.interp <<~TAPE
+		    counter := 0
+		    @load 'test/fixtures/increment_counter.tape'
+		    @load 'test/fixtures/increment_counter.tape'
+		TAPE
+		# 1, not 2 -- the second @load must not re-run the file (which would increment `counter` again).
+		# 1, not nil -- the second @load's own result must still be what the file produced, not nil, even
+		# though it didn't actually re-run it.
+		assert_equal 1, out
+	end
+
 	# Regression: subscript should bind after dot, so a.b[c] parses as (a.b)[c] not a.(b[c])
 	def test_subscript_precedence_with_dot_access
 		# Parser test: verify AST structure
@@ -479,13 +495,13 @@ class Regression_Test < Base_Test
 	# Regression: interp_func_body used to push the single, shared Func object (registered once at declaration time) as the call frame for every invocation. Two calls to the same function overlapping in time (e.g. tree recursion, where a function calls itself twice and combines the results) stomped on each other's param bindings, since they were all declaring onto the same shared scope. Each call now gets a fresh scope, so recursive calls stay isolated.
 	def test_tree_recursion_does_not_share_call_frame
 		out = Lost.interp <<~TAPE
-		    fib { n;
+		    fib ( n;
 		        if n <= 1
 		            n
 		        else
 		            fib(n - 1) + fib(n - 2)
 		        end
-		    }
+		    )
 		    [fib(0), fib(1), fib(2), fib(3), fib(4), fib(5), fib(10)]
 		TAPE
 		assert_equal [0, 1, 1, 2, 3, 5, 55], out.values
@@ -497,17 +513,17 @@ class Regression_Test < Base_Test
 		    Counter {
 		        n,
 
-		        new { n;
+		        new ( n;
 					self.n = n
-				}
+				)
 
-		        fib {;
+		        fib (;
 		            if n <= 1
 		                n
 		            else
 		                Counter(n - 1).fib() + Counter(n - 2).fib()
 		            end
-		        }
+		        )
 		    }
 		    Counter(10).fib()
 		TAPE
@@ -517,9 +533,9 @@ class Regression_Test < Base_Test
 	# The comment string value was being returned by the Interpreter lol.
 	def test_comment_as_last_expression_bug
 		out = Lost.interp "
-			add { a, b;
+			add ( a, b;
 				a + b # sum me
-			}
+			)
 			add(4, 8)"
 		refute_kind_of Lost::String_Expr, out
 	end
@@ -550,18 +566,18 @@ class Regression_Test < Base_Test
 
 	def test_operator_overload_with_omitted_precedence_falls_back_to_default_regression
 		out = Lost.interp '
-			@operator <+> @infix { left, right;
+			@operator <+> @infix ( left, right;
 				left + right
-			}
+			)
 			2 <+> 3 + 1
 		'
 		assert_equal 6, out
 
 		# A real, explicit precedence must still work exactly as before.
 		out = Lost.interp '
-			@operator <-> @infix 500 { left, right;
+			@operator <-> @infix 500 ( left, right;
 				left - right
-			}
+			)
 			10 <-> 4
 		'
 		assert_equal 6, out
@@ -569,9 +585,9 @@ class Regression_Test < Base_Test
 
 	def test_bare_return_with_no_expression_yields_nil_regression
 		out = Lost.interp '
-			foo { ;
+			foo (;
 				return
-			}
+			)
 			foo()
 		'
 		assert_nil out
@@ -610,14 +626,14 @@ class Regression_Test < Base_Test
 		    	x,
 		    	y,
 
-		    	new { x, y;
+		    	new ( x, y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 
-		    	@operator == @infix 500 { left, right;
+		    	@operator == @infix 500 ( left, right;
 		    		left.x == right.x and left.y == right.y
-		    	}
+		    	)
 		    }
 
 		    a := Point(1, 2)
@@ -652,8 +668,8 @@ class Regression_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		    	x,
-		    	new { x; self.x = x }
-		    	to_s {; "Thing(`x`)" }
+		    	new ( x; self.x = x )
+		    	to_s (; "Thing(`x`)" )
 		    }
 		    t := Thing(5)
 		    "value: `t`"
@@ -662,7 +678,7 @@ class Regression_Test < Base_Test
 
 		# A type with no to_s still falls back to the raw dump -- no change there.
 		out = Lost.interp <<~CODE
-		    Bare { x, new { x; self.x = x } }
+		    Bare { x, new ( x; self.x = x ) }
 		    b := Bare(5)
 		    "value: `b`"
 		CODE
@@ -687,7 +703,7 @@ class Regression_Test < Base_Test
 		result      = interpreter.run '[].push([1,2,3])'
 		assert_equal '[[1, 2, 3]]', interpreter.stringify_for_display(result)
 
-		# String had no to_s{;} at all until this fix -- an array of strings would have raised Undeclared_Identifier trying to call .to_s() on each element. Always double-quoted (not matching each literal's own quote char -- Array elements aren't wrapped with quotation_style at construction, see #interp_circumfix's `[]` case), so no longer indistinguishable from Symbols/identifiers in display.
+		# String had no to_s(;) at all until this fix -- an array of strings would have raised Undeclared_Identifier trying to call .to_s() on each element. Always double-quoted (not matching each literal's own quote char -- Array elements aren't wrapped with quotation_style at construction, see #interp_circumfix's `[]` case), so no longer indistinguishable from Symbols/identifiers in display.
 		assert_equal '["a", "b", "c"]', Lost.interp("['a',\"b\",'c'].to_s()")
 	end
 
@@ -725,8 +741,8 @@ class Regression_Test < Base_Test
 
 	def test_anonymous_composition_regression
 		src = <<~CODE
-		    A { x := 1, shared {; 'from A' } }
-		    B { y := 2, shared {; 'from B' } }
+		    A { x := 1, shared (; 'from A' ) }
+		    B { y := 2, shared (; 'from B' ) }
 
 		    union        := (A | B)()
 		    intersection := (A & B)()
@@ -771,7 +787,7 @@ class Regression_Test < Base_Test
 
 	def test_labeled_call_arguments_regression
 		src = <<~CODE
-		    send_greeting { to person; person }
+		    send_greeting ( to person; person )
 		CODE
 
 		# A labeled call matches the declared label at that position.
@@ -788,19 +804,19 @@ class Regression_Test < Base_Test
 
 		# ...or no label at all.
 		assert_raises(Lost::Argument_Label_Mismatch) do
-			Lost.interp('add { a, b; a + b }
+			Lost.interp('add ( a, b; a + b )
 				add(a: 1, 2)')
 		end
 
-		# Labels work through constructors too (`new{;}` params).
+		# Labels work through constructors too (`new(;)` params).
 		out = Lost.interp <<~CODE
 		    Point {
 		    	x,
 		    	y,
-		    	new { at x, at y;
+		    	new ( at x, at y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 		    }
 		    p := Point(at: 3, at: 4)
 		    (p.x, p.y)
@@ -809,7 +825,7 @@ class Regression_Test < Base_Test
 
 		# Labels compose with defaults normally -- omitting a labeled, defaulted arg still falls back.
 		out = Lost.interp <<~CODE
-		    greet { with name := "World"; "Hello, `name`" }
+		    greet ( with name := "World"; "Hello, `name`" )
 		    (greet(), greet(with: "Lost"))
 		CODE
 		assert_equal ['Hello, World', 'Hello, Lost'], out.values
@@ -818,7 +834,7 @@ class Regression_Test < Base_Test
 	def test_circumfix_elements_do_not_swallow_nil_init_regression
 		# The actual bug: an undeclared non-last element used to silently become nil.
 		assert_raises(Lost::Undeclared_Identifier) do
-			Lost.interp 'foo { a, b; a + b }
+			Lost.interp 'foo ( a, b; a + b )
 				foo(undeclared_var, 5)'
 		end
 		assert_raises(Lost::Undeclared_Identifier) do
@@ -832,7 +848,7 @@ class Regression_Test < Base_Test
 
 		# Already-declared identifiers still pass through as plain references, not fresh
 		# shadow-declarations, for calls, arrays, and tuples alike.
-		out = Lost.interp 'foo { a, b; a + b }
+		out = Lost.interp 'foo ( a, b; a + b )
 			x := 5
 			y := 8
 			foo(x, y)'
@@ -895,10 +911,10 @@ class Regression_Test < Base_Test
 		    Vec2 {
 		        x,
 		        y,
-		        new { x, y;
+		        new ( x, y;
 		            self.x = x
 		            self.y = y
-		        }
+		        )
 		    }
 		    v := Vec2(0, 0)
 		    v.y += 1
@@ -927,7 +943,7 @@ class Regression_Test < Base_Test
 		# `<=>` on a custom Instance with no @operator overload used to fall through to Ruby's own Kernel#<=> (every Object gets a trivial, identity-based default), silently returning nil instead of raising -- respond_to?(:<=>) can't tell the trivial default apart from a real one.
 		assert_raises Lost::Undeclared_Infix_Operator do
 			Lost.interp <<~CODE
-			    Point { x, new { x; self.x = x } }
+			    Point { x, new ( x; self.x = x ) }
 			    Point(1) <=> Point(2)
 			CODE
 		end
@@ -936,8 +952,8 @@ class Regression_Test < Base_Test
 		assert_equal 1, Lost.interp('5 <=> 3')
 
 		out = Lost.interp <<~CODE
-		    Point { x, new { x; self.x = x }
-		        @operator <=> @infix { left, right; left.x <=> right.x }
+		    Point { x, new ( x; self.x = x )
+		        @operator <=> @infix ( left, right; left.x <=> right.x )
 		    }
 		    Point(1) <=> Point(2)
 		CODE
@@ -1001,7 +1017,7 @@ class Regression_Test < Base_Test
 
 		# A capitalized comparison as the last expression in a block, with no trailing newline before the closing `}`, took the same wrong path for a different reason (a naive lookahead bounded only by newline would've kept scanning past `}` too).
 		assert_equal true, Lost.interp(<<~CODE)
-		    compute { x, y; x < y}
+		    compute ( x, y; x < y)
 		    compute(1, 2)
 		CODE
 
@@ -1014,7 +1030,7 @@ class Regression_Test < Base_Test
 
 		# A struct member's own default value can legitimately contain delimiters (`(`/`)`, `[`/`]`, nested `{`/`}`) before the real closing `>` -- must not be mistaken for the statement's own boundary.
 		assert_equal true, Lost.interp(<<~CODE)
-		    mk {; 5 }
+		    mk (; 5 )
 		    Abc\\<id := mk(), items := [1,2], dict := {x: 1}> {}
 		    z := Abc\\<mk(), [1,2], {x:1}>()
 		    z =/= nil
@@ -1022,10 +1038,10 @@ class Regression_Test < Base_Test
 	end
 
 	def test_capitalized_function_param_raises_a_real_error_instead_of_crashing_regression
-		# A bare Capitalized/UPPERCASE param (`f { ABC; ABC }`) parses like a signature-literal's bare type (`param.type` set, `param.name` left nil, see #parse_func -- a real function param always starts lowercase, so a bare Capitalized token there can only mean a signature literal, e.g. `{Number -> String;}`) rather than a named param. #interp_func_body assumed every param has `.name` set, raising a raw NoMethodError (`undefined method 'value' for nil`) the first time it read `param.name.value`, instead of a real Lost error.
+		# A bare Capitalized/UPPERCASE param (`f ( ABC; ABC )`) parses like a signature-literal's bare type (`param.type` set, `param.name` left nil, see #parse_func -- a real function param always starts lowercase, so a bare Capitalized token there can only mean a signature literal, e.g. `{Number -> String;}`) rather than a named param. #interp_func_body assumed every param has `.name` set, raising a raw NoMethodError (`undefined method 'value' for nil`) the first time it read `param.name.value`, instead of a real Lost error.
 		assert_raises Lost::Invalid_Parameter_Name do
 			Lost.interp <<~CODE
-			    f { ABC; ABC }
+			    f ( ABC; ABC )
 			    x := 1
 			    f(x)
 			CODE
@@ -1033,7 +1049,7 @@ class Regression_Test < Base_Test
 
 		# A genuine signature literal (never called, just described/assigned) is unaffected.
 		refute_raises Lost::Invalid_Parameter_Name do
-			Lost.interp '{Number -> String;}'
+			Lost.interp '(Number -> String;)'
 		end
 	end
 end

@@ -15,7 +15,7 @@ module Lost
 		proxy :push
 		proxy :pop
 		proxy :shift
-		proxy :unshift, as: :prepend # lost/array.tape's `unshift{;}` was renamed to `prepend{;}` (unshift is now just an alias, see #Interpreter#interp_directive's `@ruby` lookup, which resolves by the func's own declared name -- "prepend" -- not whatever alias it was called through)
+		proxy :unshift, as: :prepend # lost/array.tape's `unshift(;)` was renamed to `prepend(;)` (unshift is now just an alias, see #Interpreter#interp_directive's `@ruby` lookup, which resolves by the func's own declared name -- "prepend" -- not whatever alias it was called through)
 		proxy :length
 		proxy :length, as: :count
 		proxy :join

@@ -4,17 +4,17 @@ require_relative '../src/lost'
 require_relative 'base_test'
 
 class Scopes_Test < Base_Test
-	SHARED_VEC2 = "Vec2 { x:=0, y:=0, new { x,y; self.x=x, self.y=y } }".freeze
+	SHARED_VEC2 = "Vec2 { x:=0, y:=0, new ( x,y; self.x=x, self.y=y ) }".freeze
 
 	def test_declaring_new_inside_pushed_scope
 		out = Lost.interp <<-CODE
 			Vec2 { x := 0, y := 0 }
-			# Vec2 intentionally doesn't declare new{;}
+			# Vec2 intentionally doesn't declare new(;)
 
 			@push_scope Vec2
-			new { x := 0, y := 0;
+			new ( x := 0, y := 0;
 				self.x=x, self.y=y
-			}
+			)
 			@pop_scope Vec2
 
 			Vec2()
@@ -42,11 +42,11 @@ class Scopes_Test < Base_Test
 		out = Lost.interp <<-CODE
 			#{SHARED_VEC2}
 
-			double { @add_writable_scope v: Vec2 -> Vec2;
+			double ( @add_writable_scope v: Vec2 -> Vec2;
 				v.x *= 2
 				y *= 2
 				v
-			}
+			)
 
 			double(Vec2(4, 8))
 		CODE
@@ -57,11 +57,11 @@ class Scopes_Test < Base_Test
 		out = Lost.interp <<-CODE
 			#{SHARED_VEC2}
 
-			double { @add_writable v -> Vec2;
+			double ( @add_writable v -> Vec2;
 				x *= 2
 				v.y *= 2
 				v
-			}
+			)
 
 			double(Vec2(15, 16))
 		CODE
@@ -72,11 +72,11 @@ class Scopes_Test < Base_Test
 		out = Lost.interp <<-CODE
 			#{SHARED_VEC2}
 
-			double { @writable v -> Vec2;
+			double ( @writable v -> Vec2;
 				x *= 2
 				v.y *= 2
 				v
-			}
+			)
 
 			double(Vec2(15, 16))
 		CODE
@@ -360,7 +360,7 @@ class Scopes_Test < Base_Test
 	def test_deliberately_reopening_a_builtin_type_via_push_scope_still_mutates_the_real_shared_type
 		out = Lost.interp <<-CODE
 			@push_scope Array
-			greet {; 'hi from array' }
+			greet (; 'hi from array' )
 			@pop_scope Array
 
 			[1, 2, 3].greet()
@@ -373,20 +373,20 @@ class Scopes_Test < Base_Test
 		out = Lost.interp <<-CODE
 			Marker { val := 0 }
 
-			outer {;
+			outer (;
 				o := Marker()
 				o.val = 1
 				@add_readable_scope o
 
-				inner {;
+				inner (;
 					i := Marker()
 					i.val = 2
 					@add_readable_scope i
 					val
-				}
+				)
 
 				inner()
-			}
+			)
 			outer()
 		CODE
 		assert_equal 2, out
@@ -398,19 +398,19 @@ class Scopes_Test < Base_Test
 			Marker { val := 0 }
 			Other { unrelated := 99 }
 
-			outer {;
+			outer (;
 				o := Marker()
 				o.val = 5
 				@add_readable_scope o
 
-				inner {;
+				inner (;
 					x := Other()
 					@add_readable_scope x
 					val
-				}
+				)
 
 				inner()
-			}
+			)
 			outer()
 		CODE
 		assert_equal 5, out
@@ -422,19 +422,19 @@ class Scopes_Test < Base_Test
 			Marker { val := 0 }
 			Other { unrelated := 99 }
 
-			outer {;
+			outer (;
 				o := Marker()
 				o.val = 7
 				@add_readable_scope o
 
-				inner {;
+				inner (;
 					x := Other()
 					@add_writable_scope x
 					val
-				}
+				)
 
 				inner()
-			}
+			)
 			outer()
 		CODE
 		assert_equal 7, out
@@ -444,7 +444,7 @@ class Scopes_Test < Base_Test
 		# Used to succeed silently, then fail confusingly on pop -- Func is duped on every lookup (#rebind_func_to_scope), so identity can never match. Now rejected immediately, on push.
 		assert_raises Lost::Invalid_Scope_Directive_Argument do
 			Lost.interp <<-CODE
-				funk {; 1 }
+				funk (; 1 )
 				@push_scope funk
 			CODE
 		end

@@ -29,15 +29,15 @@ Counter | Div {
 	# This handler mutates the Counter instance's state.
 	# After execution, the server automatically re-renders the Counter
 	# and sends the updated HTML back to the browser.
-	increment := {;
+	increment := (;
 		count += 1
-	}
+	)
 
 	# The render function returns the component's HTML structure.
 	# It's called on initial page load and after each onclick handler executes.
-	render {;
+	render (;
 		[H2("The count is: `count`"), Form(button)]
-	}
+	)
 
 	# @cd with an instance (lowercase) modifies just that specific instance,
 	# not the type. Here we're styling this particular button.
@@ -57,18 +57,18 @@ Counter | Div {
 Page | Div {
 	counter := Counter()
 
-	render {;
+	render (;
 		counter
-	}
+	)
 }
 
 # App is the server that handles HTTP requests.
 # The get:// route returns a Page, which renders the Counter.
 App | Server {
 	page := Page()
-	get:// home {;
+	get:// home (;
 		Body(page)
-	}
+	)
 }
 
 # @start_server launches the server in a background thread.

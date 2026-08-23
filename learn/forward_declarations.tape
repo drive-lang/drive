@@ -5,7 +5,7 @@ A function, type, or class alias doesn't have to be declared before the code tha
 raft := build_raft()
 @assert raft.planks == 6, 'calling a function before its own declaration should still work'
 
-build_raft {; Raft() }
+build_raft (; Raft() )
 
 Raft {
 	planks := 6
@@ -21,7 +21,7 @@ survivor := Castaway('Jack')
 
 Castaway {
 	name,
-	new { name; self.name = name }
+	new ( name; self.name = name )
 }
 
 
@@ -33,7 +33,7 @@ sign := Sign()
 
 Sign := Warning_Sign {}
 Warning_Sign {
-	warning {; 'Shark sighted' }
+	warning (; 'Shark sighted' )
 }
 
 @assert sign.warning() == 'Shark sighted', 'a class alias should hoist just like the type it declares'

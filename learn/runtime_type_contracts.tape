@@ -33,10 +33,10 @@ Unlike `=`, which resolves outward to find where an identifier already lives, `:
 ###
 counter := 0
 
-increment {;
+increment (;
 	counter := 99   # shadows -- a brand new local, the outer counter is untouched
 	counter += 1    # mutates the local shadow, still 100
-}
+)
 
 increment()
 @assert counter == 0, ':= inside a function should shadow, never touch the outer counter'

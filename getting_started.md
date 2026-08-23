@@ -56,7 +56,7 @@ Worked examples: percent literals (`#parse_percent_literal_expr`/`#interp_percen
 
 Two files, independently optional — pure-Lost types skip #2, rare Ruby-only types skip #1:
 
-1. **`lost/foo.tape`** — the Lost-level declaration (`Foo { ... }`). A method that defers to Ruby is just `some_method {; @ruby }`.
+1. **`lost/foo.tape`** — the Lost-level declaration (`Foo { ... }`). A method that defers to Ruby is just `some_method (; @ruby )`.
 2. **`src/external/ruby/foo.rb`** — `class Foo < Lost::Instance` (or `< Lost::Type`), inside `module Lost`. `extend Ruby_Proxies` + `proxy :method_name` for 1:1 delegation ([`ruby_proxies.rb`](src/shared/ruby_proxies.rb)), or hand-write `def proxy_method_name(...)` for custom logic. `@ruby` calls `proxy_#{method_name}` on the backing instance.
 3. **Register the Ruby file** — `require_relative 'external/ruby/foo'` in [`src/lost.rb`](src/lost.rb)'s "External Ruby-backed built-ins" block (after `runtime/scopes`).
 4. **Load the Lost file** — `@load 'lost/foo.tape'` in [`lost/preload.tape`](lost/preload.tape) for always-on, or leave opt-in for the user's own program to `@load` (e.g. `lost/database.tape`).
@@ -73,7 +73,7 @@ Two files, independently optional — pure-Lost types skip #2, rare Ruby-only ty
 #### Instance/Type without a backing `Lost::Class`
 
 1. Perfectly valid — most user `Type { }`s have no Ruby class; `build_instance_of_type` falls back to plain `Lost::Instance.new(type.name)`.
-2. A plain `Lost::Instance` works normally for everything declared in Lost — `declarations` hash, methods, `new{;}`, composition, structs.
+2. A plain `Lost::Instance` works normally for everything declared in Lost — `declarations` hash, methods, `new(;)`, composition, structs.
 3. Only `@ruby` breaks:
    - Outside a `Func` scope → `Lost::Invalid_Ruby_Proxy_Directive_Usage`.
    - Instance doesn't `respond_to?("proxy_#{method_name}")` (no Ruby class, or Ruby class missing that one `proxy_*` method) → `Lost::Missing_Ruby_Proxy_Declaration`.

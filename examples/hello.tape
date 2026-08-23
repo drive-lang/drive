@@ -1,13 +1,13 @@
 Greet {
 	subject,
 
-	new { subject;
+	new ( subject;
 		self.subject = subject
-	}
+	)
 
-	greeting {;
+	greeting (;
 		"Hello, `subject`!"
-	}
+	)
 }
 
 Greet('Lost').greeting()

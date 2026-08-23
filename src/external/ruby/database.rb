@@ -28,7 +28,7 @@ module Lost
 			return connection[table_name.to_str.to_sym] if proxy_table_exists? table_name
 			raise "proxy_create_table now only takes Struct" unless schema.is_a? Lost::Struct
 
-			# Tags the returned table with its real declared type (`Task\Task_Schema | Table {}`) instead of staying generically `Table`-shaped. Doesn't run the model's own `new{;}` -- only safe via a full tagged reference (`Task\Task_Schema()`).
+			# Tags the returned table with its real declared type (`Task\Task_Schema | Table {}`) instead of staying generically `Table`-shaped. Doesn't run the model's own `new(;)` -- only safe via a full tagged reference (`Task\Task_Schema()`).
 			model_type = Lost::Interpreter.current&.find_table_type_for_schema schema
 
 			Lost::Table.new.tap do |it|

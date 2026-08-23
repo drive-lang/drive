@@ -47,13 +47,13 @@ note := 'fill the bottles' if found_water
 
 `nil`, `false`, `0`, and `0.0` are falsy. Everything else -- empty strings, empty arrays, any instance -- is truthy.
 ###
-describe { value;
+describe ( value;
 	if value
 		'truthy'
 	else
 		'falsy'
 	end
-}
+)
 
 @assert describe(nil) == 'falsy', 'nil should be falsy'
 @assert describe(false) == 'falsy', 'false should be falsy'

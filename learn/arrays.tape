@@ -40,12 +40,12 @@ Both take a function and run it against every element -- `map` collects each ret
 ###
 survivors := ['Jack', 'Kate', 'Sawyer', 'Hurley']
 
-shouted := survivors.map({ name;
+shouted := survivors.map(( name;
 	name.upcase()
-})
+))
 @assert shouted == ['JACK', 'KATE', 'SAWYER', 'HURLEY'], 'map should collect each return value'
 
-long_names := survivors.filter({ name;
+long_names := survivors.filter(( name;
 	name.length > 4
-})
+))
 @assert long_names == ['Sawyer', 'Hurley'], 'filter should keep only truthy elements'

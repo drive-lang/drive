@@ -19,7 +19,7 @@ For example:
 # NO aaa (overlapping)
 # OK xyxy (xy at positions 0 and 2)
 # OK aabcdaa (aa at positions 0 and 5)
-two_pairs? { input;
+two_pairs? ( input;
 	chars := input.chars()
 	for 0..(chars.length() - 2)
 		pair := "`chars[at]``chars[at + 1]`"
@@ -31,9 +31,9 @@ two_pairs? { input;
 		end
 	end
 	false
-}
+)
 
-repeat_with_gap? { input;
+repeat_with_gap? ( input;
 	chars := input.chars()
 	for 0..(chars.length() - 3)  # Need at least 3 chars from current position
 		if chars[at] == chars[at + 2]
@@ -41,11 +41,11 @@ repeat_with_gap? { input;
 		end
 	end
 	false
-}
+)
 
-nice? { input;
+nice? ( input;
 	two_pairs?(input) and repeat_with_gap?(input)
-}
+)
 
 input := File_System.read('examples/aoc/2015/05/input.txt').split('\n')
 total := 0

@@ -2,12 +2,12 @@
 @load 'lost/server.tape'
 
 App | Server {
-	get:// home {;
+	get:// home (;
 		name := 'Cooper'
 		```html
 		<h1>Welcome to |name|'s webpage</h1>
 		```
-	}
+	)
 }
 
 # @start_server App()

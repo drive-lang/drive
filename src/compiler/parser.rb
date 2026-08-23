@@ -5,12 +5,12 @@ module Lost
 		def initialize input = []
 			@precedences = PRECEDENCES.dup
 			# Track these so that they can be considered during parse-time
-			@custom_infix     = ::Set.new
-			@custom_prefix    = ::Set.new
-			@custom_postfix   = ::Set.new
-			@custom_circumfix = ::Set.new
-			@input            = input
-			@i                = 0 # index of current lexeme
+			@custom_infix         = ::Set.new
+			@custom_prefix        = ::Set.new
+			@custom_postfix       = ::Set.new
+			@custom_circumfix     = ::Set.new
+			@input                = input
+			@i                    = 0 # index of current lexeme
 			@struct_nesting_depth = 0 # how many `<...>` structs #parse_struct is currently inside of -- see #split_glued_close_angles!
 		end
 
@@ -52,7 +52,7 @@ module Lost
 				raise Operator_Overload_Fixity_Must_Be_One_Of.new(fixities) unless fixities.include? fixity.value
 
 				@precedences[user_operator.value] = case prec.value
-				when '{'
+				when '('
 					# todo; Log a warning that precedence was omitted and a fallback is used.
 					precedence_for user_operator.value
 				else
@@ -149,6 +149,24 @@ module Lost
 			peek_until(stop_at_lexeme).any? do |t|
 				t.is contains
 			end
+		end
+
+		# `(...)` is a function declaration when a bare `;` (the params/body separator) appears at its own
+		# direct nesting level -- but `(` is also grouping/tuples/call-arguments now, so unlike the old
+		# `{`-only #peek_contains? this has to be depth-*exact*, not just "somewhere before the matching
+		# close": `foo((a; a+1), 5)` is an ordinary call passing an anonymous func as its first argument,
+		# and the inner func's own `;` (at depth 2, one level past `foo`'s own opening paren) must NOT make
+		# `foo(...)` as a whole look like a declaration too -- it has none of its own, at depth 1.
+		def func_declaration_follows?
+			depth = 0
+			remainder.each do |token|
+				depth += 1 if token.value == '('
+				depth -= 1 if token.value == ')'
+
+				return true if token.value == Lost::FUNCTION_DELIMITER && depth == 1
+				return false if depth <= 0 && token.value == ')'
+			end
+			false
 		end
 
 		# `Ident <...>` and an ordinary `<` comparison that just happens to start with a capitalized identifier (`X < Y`) are indistinguishable by lookahead alone -- rather than trying to enumerate every legitimate statement-ending token a struct's own member values could contain (`,` inside a member list is fine, but so is a `(`/`)`/`[`/`{}` nested inside one member's own default value), just attempt the real parse and see what happens. Saves the token position first; a syntax error anywhere in the attempt (ran out of tokens hunting for a `>` that was never coming, or any other `Parser#eat` mismatch) rewinds back to it, so the caller falls through to ordinary expression parsing (`X < Y` as a comparison) instead.
@@ -353,16 +371,16 @@ module Lost
 				func.name = parse_identifier_expr
 			end
 
-			# note; A bare `identifier: { ... ;}` (no type between the colon and the brace) is the new self-declaring signature form (`double: {Number -> Number;}`) of a function. parse_identifier_expr only consumes the colon itself when it's followed by an actual `: Type`/`: <...>` (or Struct)
+			# note; A bare `identifier: ( ... ;)` (no type between the colon and the paren) is the new self-declaring signature form (`double: (Number -> Number;)`) of a function. parse_identifier_expr only consumes the colon itself when it's followed by an actual `: Type`/`: <...>` (or Struct)
 			eat ':' if curr? ':'
 
 			func.lexeme = func.name&.lexeme
-			eat '{'
+			eat '('
 			reduce_newlines
 
 			until curr? Lost::FUNCTION_DELIMITER
 				if curr? '->' and eat '->'
-					# A function (named or anonymous) declaring its own return type inline, at the end of its param list: `{ a: Number -> Number; ... }`. Distinct from `identifier: Type { ... }`, which is a signature reference/alias, not an implementation declaring its own type.
+					# A function (named or anonymous) declaring its own return type inline, at the end of its param list: `(a: Number -> Number; ... )`. Distinct from `identifier: Type (...)`, which is a signature reference/alias, not an implementation declaring its own type.
 					func.type = eat(:Identifier)
 					next
 				end
@@ -383,17 +401,19 @@ module Lost
 				end
 
 				if curr? TYPE_IDENTIFIER
-					# Bare type, no name — a real function param always starts with a lowercase identifier, so a bare Capitalized token here can only mean this is a signature-literal's param list, e.g. `{Number, Number -> Number;}`.
+					# Bare type, no name — a real function param always starts with a lowercase identifier, so a bare Capitalized token here can only mean this is a signature-literal's param list, e.g. `(Number, Number -> Number;)`.
 					param.type   = eat
 					param.lexeme = param.type
 				else
 					if curr? :identifier, :identifier
-						param.label = eat(:identifier)
-						param.name  = eat(:identifier)
-					else
-						param.name = eat(:identifier)
+						param.label  = eat :identifier
+						param.lexeme = eat :identifier
+					elsif curr? :identifier
+						param.lexeme = eat :identifier
 					end
-					param.lexeme = param.name
+
+					# note; something in the if/else below depends on param.name being present
+					param.name = param.lexeme
 
 					if curr?(':', TYPE_IDENTIFIER)
 						eat ':'
@@ -402,8 +422,13 @@ module Lost
 					elsif curr?(':', '<')
 						eat ':'
 						param.type_struct = parse_struct # bare struct annotation, e.g. `right: <name: String, type: Any, value: Any>` -- structural rather than nominal, see #check_struct_type_contract
+					elsif curr?(':', '(')
+						eat ':'
+						# A param typed with an inline func signature, e.g. `callable: (;)`/`callable: (Number -> Number;)` -- unlike the top-level self-declaring signature form, there's no name here to attach to, so this is a plain recursive #parse_func call, not routed through the `func.type && !has_real_body` -> Func_Signature_Expr repackaging at the bottom of #parse_func. Without this branch, the `:` was never consumed here (only TYPE_IDENTIFIER/`<` were recognized after it), so the outer param loop kept re-reading the same un-consumed `:` forever -- an infinite loop, not a parse error.
+						param.type = parse_func
 					end
 
+					# note; These are intentionally separate ifs
 					if curr? ':='
 						eat ':='
 						param.default = parse_expression
@@ -422,17 +447,17 @@ module Lost
 			eat Lost::FUNCTION_DELIMITER if curr? Lost::FUNCTION_DELIMITER
 			reduce_newlines
 
-			until curr? '}'
+			until curr? ')'
 				func.expressions << parse_expression
 				reduce_newlines
 			end
 
 			# func.expressions = func.expressions #.compact #.uniq # bug, The first Param is twice in the array, with the same object_id. Dedupe it for now. Figure out the real issue later.
-			eat '}'
+			eat ')'
 
 			has_real_body = func.expressions.any?
 
-			# A declared return type with no real body (just params) is a signature-only declaration — either self-declaring under a name (`double: {Number -> Number;}`) or anonymous (`{Number, Number -> Number;}`). Every param slot in a signature must carry a type (there's no name to fall back on at call sites), so a named-but-untyped param here (`{a -> Number;}`) is malformed.
+			# A declared return type with no real body (just params) is a signature-only declaration — either self-declaring under a name (`double: (Number -> Number;)`) or anonymous (`(Number, Number -> Number;)`). Every param slot in a signature must carry a type (there's no name to fall back on at call sites), so a named-but-untyped param here (`(a -> Number;)`) is malformed.
 			if func.type && !has_real_body
 				untyped_param = func.parameters.find { |param| param.type.nil? }
 				raise Lost::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
@@ -452,9 +477,9 @@ module Lost
 		def split_glued_close_angles!
 			return unless curr_lexeme && curr_lexeme.value.is_a?(::String) && curr_lexeme.value.length > 1 && curr_lexeme.value.chars.all? { |char| char == '>' }
 
-			glued = curr_lexeme
+			glued  = curr_lexeme
 			closes = glued.value.chars.each_index.map do |index|
-				closer    = glued.dup
+				closer       = glued.dup
 				closer.value = '>'
 				closer.c0    = glued.c0 + index
 				closer.c1    = closer.c0
@@ -696,7 +721,7 @@ module Lost
 			copy_location expr, start
 		end
 
-		# `self.identifier`/`Self.identifier` -- keyword sugar for `./identifier`/`../identifier` (see SELF_KEYWORDS), desugared right here by synthesizing the equivalent scope_operator lexeme, so every downstream scope-operator-aware check (static-declaration tracking, per-instance re-run skipping, ...) treats it identically with no interpreter-side special-casing. Shared by function names (`self.funk {;}`) and nil-init targets (`self.x,`).
+		# `self.identifier`/`Self.identifier` -- keyword sugar for `./identifier`/`../identifier` (see SELF_KEYWORDS), desugared right here by synthesizing the equivalent scope_operator lexeme, so every downstream scope-operator-aware check (static-declaration tracking, per-instance re-run skipping, ...) treats it identically with no interpreter-side special-casing. Shared by function names (`self.funk (;)`) and nil-init targets (`self.x,`).
 		def parse_self_prefixed_identifier
 			keyword = eat
 			eat '.'
@@ -882,7 +907,7 @@ module Lost
 			elsif curr?(ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
-			elsif peek_contains?(Lost::FUNCTION_DELIMITER, '}') && (curr?('{') || curr?(:identifier, '{') || curr?(:identifier, ':', '{') || curr?(SCOPE_OPERATORS, :identifier, '{') || curr?(SCOPE_OPERATORS, :identifier, ':', '{') || curr?(SELF_KEYWORDS, '.', :identifier, '{') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '{'))
+			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows?
 				parse_func precedence
 
 			elsif curr?(TYPE_IDENTIFIER, '[')
@@ -1004,16 +1029,16 @@ module Lost
 							subdirective.name = next_expr
 							copy_location subdirective, next_expr
 
-							subdirective.expression = if curr? '{'
+							subdirective.expression = if curr? '('
 								precedence_for(directive.expression.value)
 							else
-								e = parse_expression
-								Lost.assert e.is_a?(Number_Expr)
-								e.value
+								# A bare primitive parse, not #parse_expression -- the precedence is always immediately followed by the overload's own func body (`(left, right; ...)`), and #parse_expression's own call-continuation (`curr?('(') && precedence_for('(') > precedence`) would otherwise swallow that `(` as a call on the precedence number itself, now that funcs and calls share the same delimiter.
+								Lost.assert curr? :number
+								parse_number_expr.value
 							end
 
 							unless subdirective.expression.is_a? ::Numeric
-								raise "an operator overload requires the following form:\n\n\t@operator <operator> @infix <precedence> {left, right; ...}\twhere <precedence> is optional."
+								raise "an operator overload requires the following form:\n\n\t@operator <operator> @infix <precedence> (left, right; ...)\twhere <precedence> is optional."
 							end
 
 							# If you can't wrap your mind around this. At this point we know `@operator + @infix 90` so all that's left to parse is the function
@@ -1135,7 +1160,8 @@ module Lost
 				end
 			end
 
-			call_expr = curr?('(') && curr?(:delimiter)
+			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` -- an unrelated anonymous func literal on the same line -- would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
+			call_expr = curr?('(') && curr?(:delimiter) && !func_declaration_follows?
 			subscript = curr? '['
 			if call_expr && (precedence_for(curr_lexeme.value) > precedence)
 				receiver       = expr

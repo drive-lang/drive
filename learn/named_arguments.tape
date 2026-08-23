@@ -2,9 +2,9 @@
 
 `name := value` at a call site binds by the callee's declared param *name*, not its position -- a separate mechanism from labels (learn/labeled_arguments.tape), which check a *position*'s declared label and never reorder anything. Named arguments genuinely reorder: any order you supply them in binds to the right param.
 ###
-sub { a, b;
+sub ( a, b;
 	a - b
-}
+)
 
 @assert sub(a := 1, b := 2) == -1, 'named arguments should bind by declared param name'
 @assert sub(b := 2, a := 1) == -1, 'named arguments should give the same result regardless of order'
@@ -21,19 +21,19 @@ A call can start with positional arguments (bare or labeled) and switch to named
 
 ### Named arguments work through constructors too
 
-`new{;}`'s own params are just params -- calling `Type(...)` goes through the exact same binding as any other function call.
+`new(;)`'s own params are just params -- calling `Type(...)` goes through the exact same binding as any other function call.
 ###
 Point {
 	x, y,
 
-	new { x, y;
+	new ( x, y;
 		self.x = x
 		self.y = y
-	}
+	)
 
-	to_s {;
+	to_s (;
 		"(`x`, `y`)"
-	}
+	)
 }
 
 p := Point(y := 4, x := 3)
@@ -44,9 +44,9 @@ p := Point(y := 4, x := 3)
 
 Omitting a named, defaulted param still falls back to its default, same as omitting it positionally would.
 ###
-greet { name := "World";
+greet ( name := "World";
 	"Hello, `name`"
-}
+)
 
 @assert greet() == 'Hello, World', 'an omitted param should fall back to its default'
 @assert greet(name := 'Lost') == 'Hello, Lost', 'a named argument should override the default'

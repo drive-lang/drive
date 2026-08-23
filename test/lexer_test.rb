@@ -227,40 +227,40 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_functions
-		out = Lost.lex '{;}'
+		out = Lost.lex '(;)'
 		assert_equal [:delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex 'named_function {;}'
+		out = Lost.lex 'named_function (;)'
 		assert_equal [:identifier, :delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '{ input; }'
+		out = Lost.lex '( input; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '{ labeled input; }'
+		out = Lost.lex '( labeled input; )'
 		assert_equal [:delimiter, :identifier, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '{ value := 123; }'
+		out = Lost.lex '( value := 123; )'
 		assert_equal [:delimiter, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '{ labeled value := 123; }'
+		out = Lost.lex '( labeled value := 123; )'
 		assert_equal [:delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '{ mixed, labeled value := 456; }'
+		out = Lost.lex '( mixed, labeled value := 456; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex 'square { input;
+		out = Lost.lex 'square ( input;
 		 		input * input
-		 	 }'
+		 	 )'
 		assert_equal [
 			             :identifier, :delimiter, :identifier, :delimiter, :delimiter,
 			             :identifier, :operator, :identifier, :delimiter, :delimiter
 		             ], out.map(&:type)
 
-		out = Lost.lex 'wrap { number, limit;
+		out = Lost.lex 'wrap ( number, limit;
 		 		if number > limit
 		 			number = 0
 		 		end
-		 	 }'
+		 	 )'
 		assert_equal [
 			             :identifier, :delimiter, :identifier, :delimiter, :identifier, :delimiter, :delimiter,
 			             :identifier, :identifier, :operator, :identifier, :delimiter,

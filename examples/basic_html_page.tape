@@ -18,26 +18,26 @@ Layout | Html {
 	css_font_family := 'monospace'
 	css_font_size := '1.2em'
 
-	new { title, body_content;
+	new ( title, body_content;
 		self.title = title
 		self.body_content = body_content
-	}
+	)
 
-	render {;
+	render (;
 		[
 			Head(Title(title)),
 			Page_Body(body_content)
 		]
-	}
+	)
 }
 
 Hero | Section {
-	render {;
+	render (;
 		[
 			H1("Lost"),
 			P("Programming Language For Web Development")
 		]
-	}
+	)
 }
 
 Code_Example | Pre {
@@ -56,41 +56,41 @@ Feature_Section | Dom {
 	heading,
 	items,
 
-	new { heading, items;
+	new ( heading, items;
 		self.heading = heading
 		self.items = items
-	}
+	)
 
-	render {;
+	render (;
 		Div([
 			H2(heading),
 			Ul(items)
 		])
-	}
+	)
 }
 
 ### Individual feature item ###
 Feature_Item | Dom {
 	text,
 
-	new { text;
+	new ( text;
 		self.text = text
-	}
+	)
 
-	render {;
+	render (;
 		Li(text)
-	}
+	)
 }
 
 ### Main content container ###
 Page_Content | Div {
 	snippet,
 
-	new { snippet;
+	new ( snippet;
 		self.snippet = snippet
-	}
+	)
 
-	render {;
+	render (;
 		naming := Feature_Section(
 			"Naming conventions replace keywords",
 			[
@@ -153,7 +153,7 @@ Page_Content | Div {
 				web_features
 			])
 		]
-	}
+	)
 }
 
 readme_snippet := "Hello {
@@ -163,9 +163,9 @@ readme_snippet := "Hello {
 		self.subject = subject
 	}
 
-	output {;
+	output (;
 		'Hi, \`subject\`'
-	}
+	)
 }
 
 Hello().output()        # Hi, !
@@ -173,9 +173,9 @@ Hello('World').output() # Hi, World!"
 
 ### The app serving this HTML ###
 App | Server {
-	get:// {;
+	get:// (;
 		Layout("Lost - Programming Language", Page_Content(readme_snippet))
-	}
+	)
 }
 
 app := App()

@@ -9,9 +9,9 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3000;
+		    	new ( port := 3000;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    server := Server()
@@ -26,15 +26,15 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3001;
+		    	new ( port := 3001;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get:// {;
+		    	get:// (;
 		    		"Hello World"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -49,19 +49,19 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3002;
+		    	new ( port := 3002;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get://hello {;
+		    	get://hello (;
 		    		"Hi there!"
-		    	}
+		    	)
 
-		    	get://users/:id { id;
+		    	get://users/:id ( id;
 		    		"User: `id`"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -77,9 +77,9 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 8888;
+		    	new ( port := 8888;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 		    app := Server()
 		TAPE
@@ -96,19 +96,19 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3003;
+		    	new ( port := 3003;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get:// {;
+		    	get:// (;
 		    		"Home"
-		    	}
+		    	)
 
-		    	post://submit {;
+		    	post://submit (;
 		    		"Submitted"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -124,19 +124,19 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3004;
+		    	new ( port := 3004;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get://users/:id { id;
+		    	get://users/:id ( id;
 		    		"User `id`"
-		    	}
+		    	)
 
-		    	get://posts/:post_id/comments/:comment_id { post_id, comment_id;
+		    	get://posts/:post_id/comments/:comment_id ( post_id, comment_id;
 		    		"Post `post_id` Comment `comment_id`"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()
@@ -162,15 +162,15 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3005;
+		    	new ( port := 3005;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get://users/:user_id/posts/:post_id { user_id, post_id;
+		    	get://users/:user_id/posts/:post_id ( user_id, post_id;
 		    		"User `user_id` Post `post_id`"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()

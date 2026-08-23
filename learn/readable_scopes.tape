@@ -25,9 +25,9 @@ Vector {
 	y := 0
 }
 
-magnitude { @readable vec;
+magnitude ( @readable vec;
 	(x ** 2 + y ** 2).sqrt()
-}
+)
 
 v := Vector()
 v.x = 3
@@ -69,23 +69,23 @@ Camp {
 	survivors := 0
 	water := 0
 
-	new { survivors, water;
+	new ( survivors, water;
 		self.survivors = survivors
 		self.water = water
-	}
+	)
 }
 
-ration_report {;
+ration_report (;
 	c := Camp(12, 40)
 	@add_readable_scope c
 
-	summarize {;
+	summarize (;
 		"`survivors` survivors, `water` units of water"
-	}
+	)
 
 	summarize()
 
-}
+)
 
 @assert ration_report() == '12 survivors, 40 units of water', 'a nested function should still see the readable scope'
 
@@ -94,12 +94,12 @@ ration_report {;
 
 Adding something to a readable scope doesn't keep it alive. It's a *weak* reference -- once nothing else in your program refers to it anymore, it's free to be garbage collected, even though it's technically still "added". Lost doesn't expose garbage collection directly, so you'll never observe this from inside the language, but it means `@remove_readable_scope` is only for explicitly cutting something off early -- you don't need it just to avoid a leak.
 ###
-add_temporary_reading { @readable vec;
+add_temporary_reading ( @readable vec;
 	# vec is only reachable via the readable scope for the duration of this call -- nothing needs
 	# to @remove_readable_scope it afterward. Once the call returns and nothing else references
 	# the instance that was passed in, it's simply gone, readable scope membership included.
 	x + y
-}
+)
 
 w := Vector()
 w.x = 5

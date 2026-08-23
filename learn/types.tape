@@ -6,14 +6,14 @@ Survivor {
 	name,
 	number,
 
-	new { name, number;
+	new ( name, number;
 		self.name   = name
 		self.number = number
-	}
+	)
 
-	to_s {;
+	to_s (;
 		"`name` (`number`)"
-	}
+	)
 }
 
 jack := Survivor('Jack Shephard', 23)
@@ -27,13 +27,13 @@ jack := Survivor('Jack Shephard', 23)
 Hatch {
 	Self.presses := 0
 
-	Self.push_button {;
+	Self.push_button (;
 		presses += 1
-	}
+	)
 
-	enter {;
+	enter (;
 		Self.push_button()
-	}
+	)
 }
 
 Hatch().enter()
@@ -54,14 +54,14 @@ Dharma_Station {
 	Self.station_count := 0
 	station_name,
 
-	new { station_name;
+	new ( station_name;
 		self.station_name = station_name
 		Self.station_count += 1
-	}
+	)
 
-	describe {;
+	describe (;
 		"`self.station_name` on `~/ISLAND` (station #`Self.station_count`)"
-	}
+	)
 }
 
 swan   := Dharma_Station('The Swan')
@@ -78,14 +78,14 @@ Smoke_Monster {
 	_true_agenda,
 	name,
 
-	new { name, agenda;
+	new ( name, agenda;
 		self.name          = name
 		self._true_agenda  = agenda
-	}
+	)
 
-	confess { claim;
+	confess ( claim;
 		claim == self._true_agenda
-	}
+	)
 }
 
 monster := Smoke_Monster('Smoke Monster', 'control the Island')
@@ -134,17 +134,17 @@ The other three operators only make sense once two sides might disagree. `Castaw
 Castaway {
 	survived_815 := true
 
-	faction {;
+	faction (;
 		'Survivors'
-	}
+	)
 }
 
 Other {
 	survivor := false
 
-	faction {;
+	faction (;
 		'Others'
-	}
+	)
 }
 
 both := (Castaway & Other)()

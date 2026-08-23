@@ -4,7 +4,7 @@ module Lost
 	#    sets captured_scope, since only interpreter-side code has a stack to read from.
 	# 2. `Statement(...)` -- goes through the normal Type-construction path, so #initialize only ever
 	#    sees a throwaway arg (same as every Ruby-backed Lost type, e.g. Lost::String/Lost::Array); real
-	#    argument binding happens in lost/statement.tape's `new{;}` instead.
+	#    argument binding happens in lost/statement.tape's `new(;)` instead.
 	class Statement < Instance
 		attr_reader :expression #: Expression
 
@@ -26,7 +26,7 @@ module Lost
 			@declarations['_expression'] = value
 		end
 
-		# Called from `new{;}` when constructing via `Statement(other)` -- copies other's expression,
+		# Called from `new(;)` when constructing via `Statement(other)` -- copies other's expression,
 		# captured_scope, and settings, so it behaves like reusing `other`, not recapturing here.
 		def proxy_from other
 			return unless other.is_a? Lost::Statement

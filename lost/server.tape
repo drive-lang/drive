@@ -12,21 +12,21 @@ Response {
 	headers,
 	body,
 
-	redirect { location; @ruby }
+	redirect ( location; @ruby )
 }
 
 
 Server {
 	port,
 
-	new { port := 8080;
+	new ( port := 8080;
 		self.port = port
-	}
+	)
 
-	ok200 {;
+	ok200 (;
 		response.status = 200
 		''
-	}
+	)
 
 	# note: The following routes prevent 500 errors since we're handling all routes here, nothing is filtered.
 	get://favicon.ico ok200

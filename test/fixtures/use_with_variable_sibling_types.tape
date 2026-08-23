@@ -10,12 +10,12 @@ Sibling_Type {
 Main_Type {
 	sibling := Sibling_Type()
 
-	get_sibling_value {;
+	get_sibling_value (;
 		sibling.value
-	}
+	)
 
-	create_sibling_in_func {;
+	create_sibling_in_func (;
 		s := Sibling_Type()
 		s.value
-	}
+	)
 }

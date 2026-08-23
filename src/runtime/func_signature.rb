@@ -7,7 +7,7 @@ module Lost
 			@return_type = return_type
 		end
 
-		# An identifier typed as a signature (`double: {Number -> Number;}`) can only ever be
+		# An identifier typed as a signature (`double: (Number -> Number;)`) can only ever be
 		# satisfied by a real implementation matching that signature -- never by another bare
 		# Func_Signature value, even a structurally identical one. A signature describes a shape a
 		# Function must have, not a value in its own right that can stand in for one.
@@ -17,7 +17,7 @@ module Lost
 		end
 
 		def to_s
-			"{#{param_types.join(',')} -> #{return_type};}"
+			"(#{param_types.join(',')} -> #{return_type};)"
 		end
 	end
 end

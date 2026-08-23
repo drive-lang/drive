@@ -69,21 +69,21 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_anonymous_func_expr
-		out = Lost.interp '{;}'
+		out = Lost.interp '(;)'
 		assert_instance_of Lost::Func, out
 		assert_empty out.expressions
 		refute out.name
 	end
 
 	def test_empty_func_declaration
-		out = Lost.interp 'open {;}'
+		out = Lost.interp 'open (;)'
 		assert_instance_of Lost::Func, out
 		assert_empty out.expressions
 		assert_equal 'open', out.name.value
 	end
 
 	def test_basic_func_declaration
-		out = Lost.interp 'enter { numbers := "4815162342"; }'
+		out = Lost.interp 'enter ( numbers := "4815162342"; )'
 		assert_equal 1, out.parameters.count
 		assert_empty out.expressions
 		assert_instance_of Lost::Param_Expr, out.parameters.first
@@ -91,7 +91,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_advanced_func_declaration
-		out = Lost.interp 'add { a, b; a + b }'
+		out = Lost.interp 'add ( a, b; a + b )'
 		assert_equal 2, out.parameters.count
 		assert_equal 1, out.expressions.count
 		assert_instance_of Lost::Infix_Expr, out.expressions.last
@@ -99,9 +99,9 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_complex_func_declaration
-		out = Lost.interp 'run { a, labeled b, c := 4, labeled d := 8;
+		out = Lost.interp 'run ( a, labeled b, c := 4, labeled d := 8;
 			c + d
-		}'
+		)'
 		assert_equal 4, out.parameters.count
 		assert_equal 1, out.expressions.count
 
@@ -137,9 +137,9 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp 'Hatch {
 			computer := nil
 
-			enter { numbers;
+			enter ( numbers;
 				# do something with the numbers
-			}
+			)
 		}'
 		assert_instance_of Lost::Type, out
 		assert_instance_of NilClass, out[:computer]
@@ -175,7 +175,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp 'assign_to_nil,'
 		assert_instance_of NilClass, out
 
-		out = Lost.interp 'func { assign_to_nil; }'
+		out = Lost.interp 'func ( assign_to_nil; )'
 		assert_instance_of Lost::Func, out
 		assert_instance_of Lost::Param_Expr, out.parameters.first
 		assert_equal 'assign_to_nil', out.parameters.first.name.value
@@ -489,7 +489,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_assigning_function_to_variable
-		out = Lost.interp 'funk := { a, b, c; }'
+		out = Lost.interp 'funk := ( a, b, c; )'
 		assert_equal 3, out.parameters.count
 	end
 
@@ -527,9 +527,9 @@ class Interpreter_Test < Base_Test
 			x := 0
 			y := 0
 
-			to_s {;
+			to_s (;
 				"Transform!"
-			}
+			)
 		}'
 		assert_kind_of Lost::Infix_Expr, out.expressions[0]
 		assert_kind_of Lost::Infix_Expr, out.expressions[1]
@@ -556,18 +556,18 @@ class Interpreter_Test < Base_Test
 		assert_equal 'Type', out.name
 	end
 
-	# Bare `X.new` is equivalent to `X()` — it runs `new{;}`, so required constructor params raise.
+	# Bare `X.new` is equivalent to `X()` — it runs `new(;)`, so required constructor params raise.
 	def test_bare_new_runs_constructor
 		out = Lost.interp 'Thing {
 			x,
-			new {;
+			new (;
 				self.x = 123
-			}
+			)
 		}, Thing.new.x'
 		assert_equal 123, out
 
 		assert_raises Lost::Missing_Argument do
-			Lost.interp 'Thing { x, new { x; self.x = x } }, Thing.new'
+			Lost.interp 'Thing { x, new ( x; self.x = x ) }, Thing.new'
 		end
 	end
 
@@ -579,11 +579,11 @@ class Interpreter_Test < Base_Test
 			x := 4
 			y := 8
 
-			to_s {;
+			to_s (;
 				"Transform!"
-			}
+			)
 
-			new { position := 0; }
+			new ( position := 0; )
 		}, Transform.new'
 		assert_kind_of Lost::Instance, out
 		assert_equal 'Transform', out.name
@@ -650,39 +650,39 @@ class Interpreter_Test < Base_Test
 
 	def test_function_call_with_arguments
 		out = Lost.interp '
-		add { a, b; a+b }
+		add ( a, b; a+b )
 		add(4, 8)'
 		assert_equal 12, out
 	end
 
 	def test_named_call_arguments_bind_by_declared_name_regardless_of_order
-		src = 'sub { a, b; a - b }'
+		src = 'sub ( a, b; a - b )'
 		assert_equal -1, Lost.interp("#{src}\nsub(a := 1, b := 2)")
 		assert_equal -1, Lost.interp("#{src}\nsub(b := 2, a := 1)") # reordered -- same result
 	end
 
 	def test_named_call_arguments_can_follow_positional_arguments
-		src = 'sub { a, b; a - b }'
+		src = 'sub ( a, b; a - b )'
 		assert_equal -1, Lost.interp("#{src}\nsub(1, b := 2)")
 	end
 
 	def test_positional_argument_after_named_raises
 		assert_raises Lost::Positional_Argument_After_Named do
-			Lost.interp 'add { a, b; a + b }
+			Lost.interp 'add ( a, b; a + b )
 				add(a := 1, 2)'
 		end
 	end
 
 	def test_duplicate_named_argument_raises
 		assert_raises Lost::Duplicate_Named_Argument do
-			Lost.interp 'add { a, b; a + b }
+			Lost.interp 'add ( a, b; a + b )
 				add(a := 1, a := 2)'
 		end
 	end
 
 	def test_argument_given_by_name_and_position_raises
 		assert_raises Lost::Argument_Given_By_Name_And_Position do
-			Lost.interp 'add { a, b; a + b }
+			Lost.interp 'add ( a, b; a + b )
 				add(1, a := 2)'
 		end
 	end
@@ -690,14 +690,14 @@ class Interpreter_Test < Base_Test
 	# An unknown name is the actual mistake, so it has to be reported even when some other (unrelated) param is also left without a value as a side effect of that same typo -- not masked by a confusing Missing_Argument that never mentions the real problem.
 	def test_unknown_named_argument_raises_even_when_another_param_is_also_left_missing
 		assert_raises Lost::Unknown_Named_Argument do
-			Lost.interp 'add { a, b; a + b }
+			Lost.interp 'add ( a, b; a + b )
 				add(a := 1, c := 2)' # `c` isn't a param; `b` is consequently never filled
 		end
 	end
 
 	def test_named_call_arguments_fall_back_to_defaults_when_omitted
 		out = Lost.interp <<~CODE
-		    greet { name := "World"; "Hello, `name`" }
+		    greet ( name := "World"; "Hello, `name`" )
 		    (greet(), greet(name := "Lost"))
 		CODE
 		assert_equal ['Hello, World', 'Hello, Lost'], out.values
@@ -705,7 +705,7 @@ class Interpreter_Test < Base_Test
 
 	def test_named_call_arguments_do_not_leak_into_caller_scope
 		assert_raises Lost::Undeclared_Identifier do
-			Lost.interp 'add { a, b; a + b }
+			Lost.interp 'add ( a, b; a + b )
 				add(a := 1, b := 2)
 				a' # `a` was never declared in the caller -- only inside add's own call scope
 		end
@@ -716,10 +716,10 @@ class Interpreter_Test < Base_Test
 		    Point {
 		    	x,
 		    	y,
-		    	new { x, y;
+		    	new ( x, y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 		    }
 		    p := Point(y := 4, x := 3)
 		    (p.x, p.y)
@@ -730,16 +730,16 @@ class Interpreter_Test < Base_Test
 	# Labels (`:`, checked positionally against the declared label) and named arguments (`:=`, bound by declared name) are separate mechanisms with separate syntax -- a call can use a label on an early positional argument, then switch to named arguments for the rest.
 	def test_named_call_arguments_are_distinct_from_labels
 		out = Lost.interp <<~CODE
-		    send { to person, subject := 'hi'; "`person`: `subject`" }
+		    send ( to person, subject := 'hi'; "`person`: `subject`" )
 		    send(to: 'Alice', subject := 'bye')
 		CODE
 		assert_equal 'Alice: bye', out
 	end
 
 	def test_compound_operator
-		out = Lost.interp 'add { amount := 1, to := 0;
+		out = Lost.interp 'add ( amount := 1, to := 0;
 			to += amount
-		}
+		)
 		add(5, 37)'
 		assert_equal 42, out
 	end
@@ -770,9 +770,9 @@ class Interpreter_Test < Base_Test
 	def test_closures_do_capture_values
 		out = Lost.interp '
 		counter := -1
-		increment { count;
+		increment ( count;
 			counter += count
-		}
+		)
 		increment(counter)
 		counter
 		'
@@ -782,9 +782,9 @@ class Interpreter_Test < Base_Test
 	def test_calling_functions
 		refute_raises RuntimeError do
 			out = Lost.interp '
-			square { input;
+			square ( input;
 				input * input
-			}
+			)
 
 			result := square(5)
 			result'
@@ -794,9 +794,9 @@ class Interpreter_Test < Base_Test
 
 	def test_function_call_as_argument
 		out = Lost.interp '
-		add { amount := 1, to := 4;
+		add ( amount := 1, to := 4;
 			to + amount
-		}
+		)
 		inc := add() # should return 5
 		add(inc, 1)'
 		assert_equal 6, out
@@ -846,7 +846,7 @@ class Interpreter_Test < Base_Test
 
 	def test_function_scope
 		out = Lost.interp 'x := 123
-		double {; x * 2 }
+		double (; x * 2 )
 		double()'
 		assert_equal 246, out
 	end
@@ -855,7 +855,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp 'x := 108
 
 		Doubler {
-			double {; x * 2 }
+			double (; x * 2 )
 		}
 
 		Doubler().double()'
@@ -868,13 +868,13 @@ class Interpreter_Test < Base_Test
 		assert_equal 1, out.value
 
 		out = Lost.interp '
-		eject {;
+		eject (;
 			if true
 				return "true!"
 			end
 
 			return "should not get here"
-		}
+		)
 		eject()'
 		assert_equal "true!", out
 	end
@@ -882,7 +882,7 @@ class Interpreter_Test < Base_Test
 	def test_type_does_have_new_function
 		out = Lost.interp '
 		Atom {
-			new {;}
+			new (;)
 		}'
 		assert out.has? :new
 	end
@@ -890,7 +890,7 @@ class Interpreter_Test < Base_Test
 	def test_instance_does_not_have_new_function
 		out = Lost.interp '
 		Atom {
-			new {;}
+			new (;)
 		}
 		a := Atom()
 		b := Atom.new()
@@ -1002,31 +1002,31 @@ class Interpreter_Test < Base_Test
 		Vec2 {
 			x := 0, y := 0
 
-			new { x, y;
+			new ( x, y;
 				self.x = x
 				self.y = y
-			}
+			)
 
-			multiply! { times;
+			multiply! ( times;
 				self.x *= times
 				self.y *= times
-			}
+			)
 
 		}
 
 		Transform | Vec2 {
-			new { position := Vec2();
+			new ( position := Vec2();
 				self.x = position.x
 				y = position.y
-			}
+			)
 
-			to_s {;
+			to_s (;
 				'Transform(`x`,`y`)'
-			}
+			)
 
-			scale! { value;
+			scale! ( value;
 				multiply!(value)
-			}
+			)
 		}
 
 		pos := Vec2(4, 8)
@@ -1055,24 +1055,24 @@ class Interpreter_Test < Base_Test
 			Vec2 {
 				x := 0, y := 0
 
-				new { x, y;
+				new ( x, y;
 					self.x = x
 					self.y = y
-				}
+				)
 			}
 			v := Vec2(4, 8)
 
 			Transform | Vec2 {
-				new { position := Vec2();
+				new ( position := Vec2();
 					self.x = position.x
 					y = position.y
-				}
+				)
 			}
 			t := Transform(Vec2(15, 16))
 
 			Xform | Transform ~ Vec2 {
-				# ~Vec2 removes x and y declarations, but retains Transform's new{;} so unless you declare a new initializer here, you are still required to pass in position arg from Transform, which depends on x and y, which have been removed.
-				new { p: Vec2; }
+				# ~Vec2 removes x and y declarations, but retains Transform's new(;) so unless you declare a new initializer here, you are still required to pass in position arg from Transform, which depends on x and y, which have been removed.
+				new ( p: Vec2; )
 			}
 			x := Xform(v)
 			"
@@ -1200,9 +1200,9 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_routes
-		out = Lost.interp 'get://some/thing/:id { id;
+		out = Lost.interp 'get://some/thing/:id ( id;
 			do_something()
-		}'
+		)'
 
 		assert_instance_of Lost::Route, out
 		assert_equal 'get', out.http_method.value
@@ -1219,9 +1219,9 @@ class Interpreter_Test < Base_Test
 			class := 'my_class'
 			data_something := 'some data attribute'
 
-			render {;
+			render (;
 				'Text content of this div'
-			}
+			)
 		}
 
 		it := My_Div()
@@ -1345,17 +1345,17 @@ class Interpreter_Test < Base_Test
 		    Numbers {
 		    	numbers := []
 
-				new { numbers;
+				new ( numbers;
 					self.numbers = numbers
-				}
+				)
 
-		    	multiply { by;
+		    	multiply ( by;
 					result := []
 		    		for self.numbers
 		    			result.push(it * by)
 		    		end
 		    		result
-		    	}
+		    	)
 		    }
 
 		    Numbers([1, 2, 3]).multiply(2)
@@ -1687,15 +1687,15 @@ class Interpreter_Test < Base_Test
 			x := 0
 			y := 0
 
-			new { x, y;
+			new ( x, y;
 				self.x = x
 				self.y = y
-			}
+			)
 		}
 
-		add { @add_readable_scope vec;
+		add ( @add_readable_scope vec;
 			x + y
-		}
+		)
 
 		v := Vector(3, 4)
 		add(v)"
@@ -1709,17 +1709,17 @@ class Interpreter_Test < Base_Test
 			b := 0
 
 
-			new { a, b;
+			new ( a, b;
 				self.a = a
 				self.b = b
-			}
+			)
 		}
 
-		calc {;
+		calc (;
 			p := Point(10, 20)
 			@add_readable_scope p
 			a + b
-		}
+		)
 
 		calc()"
 		assert_equal 30, out
@@ -1731,10 +1731,10 @@ class Interpreter_Test < Base_Test
 			a := 0
 			b := 0
 
-			new { a, b;
+			new ( a, b;
 				self.a = a
 				self.b = b
-			}
+			)
 		}
 
 		p := Point(4, 8)
@@ -1753,22 +1753,22 @@ class Interpreter_Test < Base_Test
 			a := 0
 			b := 0
 
-			new { a, b;
+			new ( a, b;
 				self.a = a
 				self.b = b
-			}
+			)
 		}
 
-		outer {;
+		outer (;
 			p := Point(23, 42)
 			@add_readable_scope p
 
-			inner {;
+			inner (;
 				a + b
-			}
+			)
 
 			inner()
-		}
+		)
 		outer()"
 		assert_equal 65, out
 	end
@@ -1778,13 +1778,13 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp "
 		Vector {
 			x := 0
-			new { x; self.x = x }
+			new ( x; self.x = x )
 		}
 
-		add { @add_readable_scope vec;
+		add ( @add_readable_scope vec;
 			x = 999
 			x
-		}
+		)
 
 		v := Vector(3)
 		local_result := add(v)
@@ -1804,12 +1804,12 @@ class Interpreter_Test < Base_Test
 		    	Self.static := 15
 		    	Self._static_private := 16
 
-				calling_private_through_instance {; _private }
-		    	calling_static_through_instance {; static }
-		    	calling_static_private_through_instance {; _static_private }
+				calling_private_through_instance (; _private )
+		    	calling_static_through_instance (; static )
+		    	calling_static_private_through_instance (; _static_private )
 
-		    	Self.calling_static_through_static {; static }
-		    	Self.calling_static_private_through_static {; _static_private }
+		    	Self.calling_static_through_static (; static )
+		    	Self.calling_static_private_through_static (; _static_private )
 		    }
 		CODE
 
@@ -2196,10 +2196,10 @@ class Interpreter_Test < Base_Test
 		    	a := 0
 		    	b := 0
 
-		    	new { a, b;
+		    	new ( a, b;
 		    		self.a = a
 		    		self.b = b
-		    	}
+		    	)
 		    }
 		TAPE
 
@@ -2230,9 +2230,9 @@ class Interpreter_Test < Base_Test
 	def test_using_pound_proxy_as_expression
 		code = <<~CODE
 		    String | String {
-		        upcase {;
+		        upcase (;
 		        	@ruby + " (SWIZZLED)"
-		        }
+		        )
 		    }
 			"test".upcase()
 		CODE
@@ -2266,12 +2266,12 @@ class Interpreter_Test < Base_Test
 		@load 'lost/server.tape'
 
 		App | Server {
-			get:// home {;
+			get:// home (;
 				title := 'My Page'
 				```html
 				<h1>`title`</h1>
 				```
-			}
+			)
 		}
 
 		app := App()
@@ -2352,15 +2352,15 @@ class Interpreter_Test < Base_Test
 
 		# Signature-typed annotation, assigning a real function whose actual shape doesn't match.
 		err = assert_raises Lost::Type_Contract_Violation do
-			Lost.interp 'wrong { a, b; a + b }
-				x: {Number -> String;} = wrong'
+			Lost.interp 'wrong ( a, b; a + b )
+				x: (Number -> String;) = wrong'
 		end
-		assert_match '{Number -> String;}', err.message
+		assert_match '(Number -> String;)', err.message
 
 		# Inline signature form (no separate alias), same check.
 		assert_raises Lost::Type_Contract_Violation do
-			Lost.interp 'wrong { a, b; a + b }
-				x: {Number -> String;} = wrong'
+			Lost.interp 'wrong ( a, b; a + b )
+				x: (Number -> String;) = wrong'
 		end
 
 		# Same check applies to a typed member declared inside a Type/Instance body, not just top level.
@@ -2375,9 +2375,9 @@ class Interpreter_Test < Base_Test
 		# And inside a constructor, self-declaring from a param.
 		assert_raises Lost::Type_Contract_Violation do
 			Lost.interp 'Thing {
-					new { v;
+					new ( v;
 						x: Number = v
-					}
+					)
 				}
 				Thing("oops")'
 		end
@@ -2404,17 +2404,17 @@ class Interpreter_Test < Base_Test
 		    	period, # am/pm
 		    }
 
-		    @operator : @infix 700 { hour, minute;
+		    @operator : @infix 700 ( hour, minute;
 		    	time := Time()
 		    	time.hour = hour
 		    	time.minute = minute
 		    	time
-		    }
+		    )
 
-		    @operator pm @postfix 600 { left: Time;
+		    @operator pm @postfix 600 ( left: Time;
 		        left.period = 'pm'
 		        left
-		    }
+		    )
 		CODE
 
 		out = Lost.interp <<~CODE
@@ -2436,13 +2436,13 @@ class Interpreter_Test < Base_Test
 		    	code,
 		    }
 
-		    @operator $ @prefix 900 { amount;
+		    @operator $ @prefix 900 ( amount;
 		    	c := Currency()
 		    	c.amount = amount
 		    	c.name = 'US Dollar'
 		    	c.code = 'USD'
 		    	c
-		    }
+		    )
 
 		    $42
 		CODE
@@ -2454,12 +2454,12 @@ class Interpreter_Test < Base_Test
 
 	def test_operator_overload_scoped_to_function
 		out = Lost.interp <<~CODE
-		    scoped_result := compute {;
-		    	@operator + @infix 700 { left, right;
+		    scoped_result := compute (;
+		    	@operator + @infix 700 ( left, right;
 		    		left * right
-		    	}
+		    	)
 		    	3 + 4
-		    }
+		    )
 
 		    normal_result := 3 + 4
 
@@ -2471,9 +2471,9 @@ class Interpreter_Test < Base_Test
 
 	def test_whacky_prefix_operator_overload
 		out = Lost.interp <<~CODE
-		    @operator !! @prefix 900 { n;
+		    @operator !! @prefix 900 ( n;
 		    	n * n
-		    }
+		    )
 
 		    !!5
 		CODE
@@ -2482,17 +2482,17 @@ class Interpreter_Test < Base_Test
 
 	def test_pipeing_with_operator_overloads
 		out = Lost.interp <<~CODE
-		    @operator -> @infix 300 { left, right;
+		    @operator -> @infix 300 ( left, right;
 		    	right(left)
-		    }
+		    )
 
-		    double { n;
+		    double ( n;
 				n * 2
-			}
+			)
 
-		    add_fifteen { n;
+		    add_fifteen ( n;
 				n + 15
-			}
+			)
 
 		    4 -> double -> add_fifteen
 		CODE
@@ -2502,17 +2502,17 @@ class Interpreter_Test < Base_Test
 	def test_string_interpolation_can_see_custom_operators_declared_elsewhere_in_the_program
 		# Same operators/functions as the test above, interpolated instead -- used to only evaluate to "4" (stopped at the first token it didn't recognize), since interp_string re-parsed the substring in total isolation from the rest of the program's @operator registrations.
 		out = Lost.interp <<~CODE
-		    @operator -> @infix 300 { left, right;
+		    @operator -> @infix 300 ( left, right;
 		    	right(left)
-		    }
+		    )
 
-		    double { n;
+		    double ( n;
 		    	n * 2
-		    }
+		    )
 
-		    add_fifteen { n;
+		    add_fifteen ( n;
 		    	n + 15
-		    }
+		    )
 
 		    "`4 -> double -> add_fifteen`"
 		CODE
@@ -2725,39 +2725,39 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_function_signatures
-		out = Lost.interp 'Num_To_Str := {Number -> String;}'
+		out = Lost.interp 'Num_To_Str := (Number -> String;)'
 		assert_kind_of Lost::Func_Signature, out
 		assert_equal ['Number'], out.param_types
 		assert_equal 'String', out.return_type
 
 		# Named + typed param — the name is discarded, only the type survives.
-		out = Lost.interp '{a: Number -> String;}'
+		out = Lost.interp '(a: Number -> String;)'
 		assert_equal ['Number'], out.param_types
 		assert_equal 'String', out.return_type
 
 		# Zero-arg signature.
-		out = Lost.interp '{-> String;}'
+		out = Lost.interp '(-> String;)'
 		assert_equal [], out.param_types
 		assert_equal 'String', out.return_type
 
 		# Bare and named+typed params can mix in the same param list.
-		out = Lost.interp '{Number, a: Number -> String;}'
+		out = Lost.interp '(Number, a: Number -> String;)'
 		assert_equal %w(Number Number), out.param_types
 		assert_equal 'String', out.return_type
 
 		# Named param with no type annotation is a malformed signature — every param slot in a signature literal must carry a type.
 		assert_raises Lost::Invalid_Func_Signature do
-			Lost.interp '{a -> String;}'
+			Lost.interp '(a -> String;)'
 		end
 
 		# Bare as a top-level expression, not just as the RHS of :=.
-		out = Lost.interp '{Number -> String;}'
+		out = Lost.interp '(Number -> String;)'
 		assert_kind_of Lost::Func_Signature, out
 
 		# Regression: an ordinary Type declaration with a method must still parse as a real type — now unambiguous, since a signature literal never starts with a Capitalized type name anymore.
 		out = Lost.interp <<~CODE
 		    Person {
-		    	greet {; "hi" }
+		    	greet (; "hi" )
 		    }
 		    Person().greet()
 		CODE
@@ -2767,7 +2767,7 @@ class Interpreter_Test < Base_Test
 	def test_function_return_type_enforcement
 		# Declared return type matches what's actually returned.
 		out = Lost.interp <<~CODE
-		    identity { a: Number -> Number; a }
+		    identity ( a: Number -> Number; a )
 		    identity(5)
 		CODE
 		assert_equal 5, out
@@ -2775,14 +2775,14 @@ class Interpreter_Test < Base_Test
 		# Return types are not validated until the functino is called, so this will not raise a contra t violation
 		refute_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
-			    identity { a: Number -> String; 'not a number' }
+			    identity ( a: Number -> String; 'not a number' )
 			CODE
 		end
 
 		# Declared return type doesn't match the actual value.
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
-			    identity { a: Number -> Number; 'not a number' }
+			    identity ( a: Number -> Number; 'not a number' )
 			    identity(5)
 			CODE
 		end
@@ -2792,48 +2792,48 @@ class Interpreter_Test < Base_Test
 		# A signature has no implementation, so it can't be called.
 		assert_raises Lost::Cannot_Call_Func_Signature do
 			Lost.interp <<~CODE
-			    double: {Number -> Number;}
+			    double: (Number -> Number;)
 			    double()
 			CODE
 		end
 
 		refute_raises Lost::Cannot_Call_Func_Signature do
 			Lost.interp <<~CODE
-			    double: {Number -> Number;} = {a: Number -> Number; a*2}
+			    double: (Number -> Number;) = (a: Number -> Number; a*2)
 			    double(2)
 			CODE
 		end
 
 		# No declared return type — nothing is checked, any value is fine.
 		out = Lost.interp <<~CODE
-		    identity { a; 'anything' }
+		    identity ( a; 'anything' )
 		    identity(5)
 		CODE
 		assert_equal 'anything', out
 
 		# Signature-only declarations have no body, so there's nothing to enforce against — declaring one must not raise.
 		out = Lost.interp <<~CODE
-		    double: {Number -> Number;}
+		    double: (Number -> Number;)
 		    'ok'
 		CODE
 		assert_equal 'ok', out
 
 		# A function (anonymous or named) can declare its own return type inline, at the end of its param list, instead of via the `name: Type { }` prefix.
 		out = Lost.interp <<~CODE
-		    f := { a: Number -> Number; a * 2 }
+		    f := ( a: Number -> Number; a * 2 )
 		    f(21)
 		CODE
 		assert_equal 42, out
 
 		out = Lost.interp <<~CODE
-		    example { a: Number -> Number; a * 2 }
+		    example ( a: Number -> Number; a * 2 )
 		    example(21)
 		CODE
 		assert_equal 42, out
 
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
-			    f := { a: Number -> Number; 'oops' }
+			    f := ( a: Number -> Number; 'oops' )
 			    f(1)
 			CODE
 		end
@@ -2846,7 +2846,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Table {}
 		    Task | Table {}
-		    make { -> Table; Task() }
+		    make ( -> Table; Task() )
 		    make().types
 		CODE
 		assert_equal %w(Task Table), out.values
@@ -2855,7 +2855,7 @@ class Interpreter_Test < Base_Test
 			Lost.interp <<~CODE
 			    Table {}
 			    Unrelated {}
-			    make { -> Table; Unrelated() }
+			    make ( -> Table; Unrelated() )
 			    make()
 			CODE
 		end
@@ -2866,10 +2866,10 @@ class Interpreter_Test < Base_Test
 	def test_function_signature_matching
 		# A function whose actual shape matches the signature succeeds, both on first declaration and on reassignment.
 		out = Lost.interp <<~CODE
-		    Num_to_str := {Number -> String;}
-		    stringify { n: Number -> String; 'x' }
+		    Num_to_str := (Number -> String;)
+		    stringify ( n: Number -> String; 'x' )
 		    to_string: Num_to_str = stringify
-		    another { n: Number -> String; 'y' }
+		    another ( n: Number -> String; 'y' )
 		    to_string = another
 		    'ok'
 		CODE
@@ -2878,24 +2878,24 @@ class Interpreter_Test < Base_Test
 		# First declaration with a mismatched shape raises immediately.
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
-			    Num_to_str := {Number -> String;}
-			    to_string: Num_to_str = { x, y; x + y }
+			    Num_to_str := (Number -> String;)
+			    to_string: Num_to_str = ( x, y; x + y )
 			CODE
 		end
-		assert_equal '{Number -> String;}', error.contract
-		assert_equal '{, -> ;}', error.actual
+		assert_equal '(Number -> String;)', error.contract
+		assert_equal '(, -> ;)', error.actual
 
 		# Reassigning an already-valid signature-typed identifier to a mismatched shape raises too, comparing structurally rather than as a plain type name.
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
-			    Num_to_str := {Number -> String;}
-			    stringify { n: Number -> String; 'x' }
+			    Num_to_str := (Number -> String;)
+			    stringify ( n: Number -> String; 'x' )
 			    to_string: Num_to_str = stringify
-			    to_string = { x, y; x + y }
+			    to_string = ( x, y; x + y )
 			CODE
 		end
-		assert_equal '{Number -> String;}', error.contract
-		assert_equal '{, -> ;}', error.actual
+		assert_equal '(Number -> String;)', error.contract
+		assert_equal '(, -> ;)', error.actual
 
 		# Ordinary nominal type annotations are unaffected by signature resolution.
 		out = Lost.interp <<~CODE
@@ -2988,7 +2988,7 @@ class Interpreter_Test < Base_Test
 	def test_member_destructuring_targets
 		# `thing.member` reassigns an existing member, same as plain `thing.member = value`.
 		out = Lost.interp <<~CODE
-		    Thing { member, new {; self.member = 0 } }
+		    Thing { member, new (; self.member = 0 ) }
 		    thing := Thing()
 		    (thing.member, local) := <Number, Number>(1, 1)
 		    (thing.member, local)
@@ -2998,7 +2998,7 @@ class Interpreter_Test < Base_Test
 		# The member must already exist -- destructuring can't silently create one.
 		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
 			Lost.interp <<~CODE
-			    Thing { member, new {; self.member = 0 } }
+			    Thing { member, new (; self.member = 0 ) }
 			    thing := Thing()
 			    (thing.missing, local) := <Number, Number>(1, 1)
 			CODE
@@ -3007,7 +3007,7 @@ class Interpreter_Test < Base_Test
 		# A constant member can't be reassigned this way either.
 		assert_raises Lost::Cannot_Reassign_Constant do
 			Lost.interp <<~CODE
-			    Thing { MEMBER, new {; self.MEMBER = 0 } }
+			    Thing { MEMBER, new (; self.MEMBER = 0 ) }
 			    thing := Thing()
 			    (thing.MEMBER, local) := <Number, Number>(1, 1)
 			CODE
@@ -3017,9 +3017,9 @@ class Interpreter_Test < Base_Test
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp <<~CODE
 			    Thing {
-					new {;
+					new (;
 						self.member := 0
-					}
+					)
 				}
 			    thing := Thing()
 			    (thing.member, local) := <String, Number>("oops", 1)
@@ -3080,9 +3080,9 @@ class Interpreter_Test < Base_Test
 	def test_self_declaration_during_construction_works_but_external_dot_does_not_regression
 		out = Lost.interp <<~CODE
 		    Thing {
-		        new {;
+		        new (;
 		            self.member := 123
-		        }
+		        )
 		    }
 		    t := Thing()
 		    t.member
@@ -3090,12 +3090,12 @@ class Interpreter_Test < Base_Test
 		assert_equal 123, out
 
 		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
-			# but actually it raises something about not being able to declare members on the type outside of new{;} or the explicit class body declarations
+			# but actually it raises something about not being able to declare members on the type outside of new(;) or the explicit class body declarations
 			Lost.interp <<~CODE
 			    Thing {
-			        not_new_func {;
+			        not_new_func (;
 			            self.member := 123
-			        }
+			        )
 			    }
 			    t := Thing()
 			    t.not_new_func()
@@ -3112,7 +3112,7 @@ class Interpreter_Test < Base_Test
 
 		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
 			Lost.interp <<~CODE
-			    Thing { member, new {; self.member = 0 } }
+			    Thing { member, new (; self.member = 0 ) }
 			    thing := Thing()
 			    thing.missing = 5
 			CODE
@@ -3210,10 +3210,10 @@ class Interpreter_Test < Base_Test
 
 	def test_declare_inside_function_scope_is_local
 		out = Lost.interp <<~CODE
-		    make { ;
+		    make (;
 		    	@declare "local_thing", 5
 		    	local_thing
-		    }
+		    )
 		    make()
 		CODE
 		assert_equal 5, out
@@ -3222,9 +3222,9 @@ class Interpreter_Test < Base_Test
 	def test_declare_inside_function_scope_does_not_leak_out
 		assert_raises Lost::Undeclared_Identifier do
 			Lost.interp <<~CODE
-			    make { ;
+			    make (;
 			    	@declare "local_thing", 5
-			    }
+			    )
 			    make()
 			    local_thing
 			CODE
@@ -3378,7 +3378,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		        value := 42
-		        get_val {; self.value }
+		        get_val (; self.value )
 		    }
 		    Thing().get_val()
 		CODE
@@ -3388,7 +3388,7 @@ class Interpreter_Test < Base_Test
 	def test_Self_resolves_to_nearest_type
 		out = Lost.interp <<~CODE
 		    Thing {
-		        klass {; Self }
+		        klass (; Self )
 		    }
 		    Thing().klass() === Thing
 		CODE
@@ -3399,8 +3399,8 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		        Self.count := 5
-		        get_via_Self {; Self.count }
-		        get_via_name {; Thing.count }
+		        get_via_Self (; Self.count )
+		        get_via_name (; Thing.count )
 		    }
 		    t := Thing()
 		    (t.get_via_Self(), t.get_via_name())
@@ -3423,9 +3423,9 @@ class Interpreter_Test < Base_Test
 	def test_self_dot_declare_self_declares_new_member_during_construction
 		out = Lost.interp <<~CODE
 		    Thing {
-		        new {;
+		        new (;
 		            self.member := 123
-		        }
+		        )
 		    }
 		    Thing().member
 		CODE
@@ -3434,9 +3434,9 @@ class Interpreter_Test < Base_Test
 		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
 			Lost.interp <<~CODE
 			    Thing {
-			        not_new_func {;
+			        not_new_func (;
 			            self.member := 123
-			        }
+			        )
 			    }
 			    Thing().not_new_func()
 			CODE
@@ -3455,7 +3455,7 @@ class Interpreter_Test < Base_Test
 		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
 			Lost.interp <<~CODE
 			    Thing {
-			        bump_late {; Self.new_static := 1 }
+			        bump_late (; Self.new_static := 1 )
 			    }
 			    Thing().bump_late()
 			CODE
@@ -3465,7 +3465,7 @@ class Interpreter_Test < Base_Test
 	def test_self_dot_func_declares_instance_method
 		out = Lost.interp <<~CODE
 		    Thing {
-		        self.greet {; 'hi' }
+		        self.greet (; 'hi' )
 		    }
 		    Thing().greet()
 		CODE
@@ -3476,7 +3476,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		        Self.count := 0
-		        Self.increment {; count += 1 }
+		        Self.increment (; count += 1 )
 		    }
 		    Thing.increment()
 		    Thing.increment()
@@ -3489,7 +3489,7 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		        value := 42
-		        make_bare {; Self() }
+		        make_bare (; Self() )
 		    }
 		    Thing().make_bare().value
 		CODE
@@ -3498,8 +3498,8 @@ class Interpreter_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Thing {
 		        value,
-		        new { v; self.value = v }
-		        make_with_arg {; Self(99) }
+		        new ( v; self.value = v )
+		        make_with_arg (; Self(99) )
 		    }
 		    Thing(1).make_with_arg().value
 		CODE
@@ -3518,12 +3518,23 @@ class Interpreter_Test < Base_Test
 
 		# a block comment as the very last expression shouldn't leak its text out as the return value, same as a trailing # comment
 		out = Lost.interp <<~CODE
-		    add { a, b;
+		    add ( a, b;
 		        a + b
 		        ### sum me ###
-		    }
+		    )
 		    add(4, 8)
 		CODE
 		assert_equal 12, out
+	end
+
+	def test_function_body_arg_with_other_arguments
+		out = Lost.interp <<~CODE
+		    f ( callable: (;), num: Number;
+		    	(callable(), num)
+		    )
+
+		    f( (; 4), 42 )
+		CODE
+		assert_equal [4, 42], out.values
 	end
 end

@@ -8,21 +8,21 @@ sign := Div([P('Welcome to the beach')])
 @assert sign.to_s() == '<div><p>Welcome to the beach</p></div>', 'to_s() should render the element and its children'
 
 
-### Nesting and render{;}
+### Nesting and render(;)
 
-A `Dom` type's `render{;}` returns what belongs inside its tag -- by default that's just `children`, but overriding it lets a type build its own inner structure instead of taking children at all.
+A `Dom` type's `render(;)` returns what belongs inside its tag -- by default that's just `children`, but overriding it lets a type build its own inner structure instead of taking children at all.
 ###
 Camp_Sign | Dom {
 	message,
 
-	new { message;
+	new ( message;
 		self.message = message
-	}
+	)
 
-	render {; P(message) }
+	render (; P(message) )
 }
 
-@assert Camp_Sign('Do not drink the water').to_s() == '<div><p>Do not drink the water</p></div>', "a custom render{;} should replace children entirely"
+@assert Camp_Sign('Do not drink the water').to_s() == '<div><p>Do not drink the water</p></div>', "a custom render(;) should replace children entirely"
 
 
 ### html_* and css_* prefixes

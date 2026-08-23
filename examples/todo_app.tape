@@ -10,56 +10,56 @@ Page_Layout | Html {
 	css_font_family := 'monospace'
 	css_padding := '3.2em'
 
-	render {;
+	render (;
 		[Head(Title("Tasks")), Body(children)]
-	}
+	)
 }
 
 Single_Task | Div {
 	task,
 
-	new { task := 'New Task';
+	new ( task := 'New Task';
 		self.task = task
-	}
+	)
 
-	render {;
+	render (;
 		[A('/', 'Back to all'), P("`id`: `task[:text]`")]
-	}
+	)
 }
 
 Task_Item | Li {
 	id,
 	text,
 
-	new { task;
+	new ( task;
 		self.text = task[:text]
 		self.id   = task.id
-	}
+	)
 
-	render {;
+	render (;
 		A("/`id`", "`id`: `text`")
-	}
+	)
 }
 
 List_Of_Tasks | Ul {
 	tasks,
 
-	new { tasks := [];
+	new ( tasks := [];
 		self.tasks = tasks
-	}
+	)
 
-	render {;
-		tasks.map({ it, at;
+	render (;
+		tasks.map(( it, at;
 			Task_Item(it)
-		})
-	}
+		))
+	)
 }
 
 New_Task_Form | Form {
 	html_action := '/new'
 	html_method := 'POST'
 
-	render {;
+	render (;
 		[
 			Label('Add a new task:'),
 			Br(),
@@ -67,7 +67,7 @@ New_Task_Form | Form {
 			Br(),
 			Submit_Button()
 		]
-	}
+	)
 }
 
 Input_Field | Textarea {
@@ -79,7 +79,7 @@ Input_Field | Textarea {
 Submit_Button | Button {
 	html_type := 'submit'
 
-	render {; 'Add Task' }
+	render (; 'Add Task' )
 }
 
 ### Database ###
@@ -118,7 +118,7 @@ Task.create({text: "Build admin dashboard"})
 
 ### Server ###
 Tasks_Controller {
-	Self.home {;
+	Self.home (;
 		tasks := Task.all()
 		Page_Layout([
 			H2('My Tasks'),
@@ -126,19 +126,19 @@ Tasks_Controller {
 			Hr(),
 			List_Of_Tasks(tasks)
 		])
-	}
+	)
 
-	Self.create_task {;
+	Self.create_task (;
 		created := Task.create({text: request.body.task })
 		# You can call response.redirect("/") to manually set the destination, or call the named route functions:
 		# home()
 		get_task(created.id)
-	}
+	)
 
-	get_task { id;
+	get_task ( id;
 		task := Task.find(id.to_i())
 		Page_Layout(Single_Task(task))
-	}
+	)
 }
 
 App | Server | Tasks_Controller {
@@ -153,15 +153,15 @@ App | Server | Tasks_Controller {
 	post://new Tasks_Controller.create_task # to static controller
 
 	# note: The following routes prevent 500 errors since we're handling all routes here, nothing is filtered.
-	get://favicon.ico {;
+	get://favicon.ico (;
 		response.status = 404
 		''
-	}
+	)
 
-	get://apple-touch-icon-precomposed.png {;
+	get://apple-touch-icon-precomposed.png (;
 		response.status = 404
 		''
-	}
+	)
 }
 
 app := App()

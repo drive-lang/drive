@@ -5,14 +5,14 @@
 @load 'lost/server.tape'
 
 Camp | Server {
-	new {;
+	new (;
 		self.port = 8080 # port is declared by Server, you're only setting it here
 		# Even this initializer is declared on Server, and takes the port as input. This is just to illustrate.
-	}
+	)
 
-	get:// {;
+	get:// (;
 		'Beach camp'
-	}
+	)
 }
 
 
@@ -21,21 +21,21 @@ Camp | Server {
 `get://`, `post://`, `put://`, `delete://`, `patch://` -- same shape, different verb.
 ###
 Camp | Server {
-	post://survivors {;
+	post://survivors (;
 		'Recorded a new survivor'
-	}
+	)
 
-	put://survivors/:name { name;
+	put://survivors/:name ( name;
 		"Updated `name`"
-	}
+	)
 
-	delete://survivors/:name { name;
+	delete://survivors/:name ( name;
 		"Removed `name`"
-	}
+	)
 
-	patch://survivors/:name { name;
+	patch://survivors/:name ( name;
 		"Patched `name`"
-	}
+	)
 }
 
 
@@ -44,9 +44,9 @@ Camp | Server {
 A `:name` segment in the path is bound to a same-named parameter in the route's own argument list.
 ###
 Camp | Server {
-	get://survivors/:name { name;
+	get://survivors/:name ( name;
 		"Survivor: `name`"
-	}
+	)
 }
 
 
@@ -55,10 +55,10 @@ Camp | Server {
 `request.query` is a Dictionary of everything after the `?` in the URL -- `/search?q=flare` makes `request.query[:q]` equal `'flare'`.
 ###
 Camp | Server {
-	get://search {;
+	get://search (;
 		term := request.query[:q]
 		"Searching supplies for `term`"
-	}
+	)
 }
 
 

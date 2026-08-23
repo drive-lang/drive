@@ -18,10 +18,10 @@ Vec2 {
 	x,
 	y,
 
-	new {x, y;
+	new (x, y;
 		self.x = x
 		self.y = y
-	}
+	)
 }
 
 input := File_System.read('examples/aoc/2015/03/input.txt')

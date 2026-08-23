@@ -85,10 +85,10 @@ class Structs_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Point {
 		    	x, y,
-		    	new { x, y;
+		    	new ( x, y;
 		    		self.x = x
 		    		self.y = y
-		    	}
+		    	)
 		    }
 		    p := Point(3, 4)
 		    (p.x, p.y)
@@ -124,7 +124,7 @@ class Structs_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new { v; self.val = v }
+		    	new ( v; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    Y := Abc\\<Number>
@@ -137,7 +137,7 @@ class Structs_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new { v; self.val = v }
+		    	new ( v; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    y := Abc\\<Number>
@@ -150,7 +150,7 @@ class Structs_Test < Base_Test
 	def test_struct_bound_onto_instance_before_new_runs
 		out = Lost.interp <<~CODE
 		    Abc\\<Number> {
-		    	new {;}
+		    	new (;)
 		    }
 		    z := Abc\\<4815>
 		    zz := z()
@@ -163,7 +163,7 @@ class Structs_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new { v := -1; self.val = v }
+		    	new ( v := -1; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    zz := Abc\\<4815>()
@@ -229,8 +229,8 @@ class Structs_Test < Base_Test
 
 	def test_differently_named_same_typed_members_are_distinct_variants_regression
 		out = Lost.interp <<~CODE
-		    String\\<dict: Dictionary> { to_s {; "dict-named" } }
-		    String\\<other: Dictionary> { to_s {; "other-named" } }
+		    String\\<dict: Dictionary> { to_s (; "dict-named" ) }
+		    String\\<other: Dictionary> { to_s (; "other-named" ) }
 
 		    a := String\\<{x=1}>()
 		    a.to_s()
@@ -238,8 +238,8 @@ class Structs_Test < Base_Test
 		assert_equal 'dict-named', out
 
 		out = Lost.interp <<~CODE
-		    String\\<dict: Dictionary> { to_s {; "dict-named" } }
-		    String\\<other: Dictionary> { to_s {; "other-named" } }
+		    String\\<dict: Dictionary> { to_s (; "dict-named" ) }
+		    String\\<other: Dictionary> { to_s (; "other-named" ) }
 
 		    a := String\\<other := {x=1}>()
 		    a.to_s()
@@ -247,8 +247,8 @@ class Structs_Test < Base_Test
 		assert_equal 'other-named', out
 
 		out = Lost.interp <<~CODE
-		    String\\<dict: Dictionary> { to_s {; "dict-named" } }
-		    String\\<other: Dictionary> { to_s {; "other-named" } }
+		    String\\<dict: Dictionary> { to_s (; "dict-named" ) }
+		    String\\<other: Dictionary> { to_s (; "other-named" ) }
 
 		    a := String\\<dict := {x=1}>()
 		    a.to_s()
@@ -266,7 +266,7 @@ class Structs_Test < Base_Test
 
 		out = Lost.interp <<~CODE
 		    n := Named\\<Number>
-		    n.types.values.map({it; it.name}).join(', ')
+		    n.types.values.map((it; it.name)).join(', ')
 		CODE
 		assert_equal 'Number', out
 	end
@@ -362,7 +362,7 @@ class Structs_Test < Base_Test
 		    Duck | Flying { name := 'duck' }
 
 		    String\\<val: Flying> {
-		    	to_s {; "yes" }
+		    	to_s (; "yes" )
 		    }
 
 		    d := Duck()
@@ -377,7 +377,7 @@ class Structs_Test < Base_Test
 		    Duck | Flying { name := 'duck' }
 
 		    String\\<val: Flying> {
-		    	to_s {; "yes" }
+		    	to_s (; "yes" )
 		    }
 
 		    duck := Duck()
@@ -395,7 +395,7 @@ class Structs_Test < Base_Test
 		    Combo_Beta | Beta { }
 
 		    Thing\\<x: Alpha, y: Beta> {
-		    	to_s {; "matched" }
+		    	to_s (; "matched" )
 		    }
 
 		    Thing\\<Combo_Alpha(), Combo_Beta()>().to_s()
@@ -428,7 +428,7 @@ class Structs_Test < Base_Test
 		    Options := <table_name: String, columns: Number>
 
 		    Thing\\<opts: Options = Options> {
-		    	new {;}
+		    	new (;)
 		    }
 
 		    a := Thing\\<opts: Options>()
@@ -446,7 +446,7 @@ class Structs_Test < Base_Test
 	# check) where it should have read `supplied.values` for the actual result.
 	def test_named_reference_member_preserves_the_real_supplied_value_regression
 		out = Lost.interp <<~CODE
-		    Data_Conn { name, new { name; self.name = name } }
+		    Data_Conn { name, new ( name; self.name = name ) }
 		    Table\\<columns: Struct, database: Data_Conn> {}
 
 		    cols := <name: String, age: Number>
@@ -462,10 +462,10 @@ class Structs_Test < Base_Test
 	def test_redeclaring_same_tag_extends_the_same_variant
 		out = Lost.interp <<~CODE
 		    Abc\\<Number> {
-		    	first {; 'first' }
+		    	first (; 'first' )
 		    }
 		    Abc\\<Number> {
-		    	second {; 'second' }
+		    	second (; 'second' )
 		    }
 
 		    a := Abc\\<Number>()
@@ -478,7 +478,7 @@ class Structs_Test < Base_Test
 	def test_tagged_type_reachable_by_bare_name_when_unambiguous
 		out = Lost.interp <<~CODE
 		    Abc\\<Number> {
-		    	greet {; 'hi' }
+		    	greet (; 'hi' )
 		    }
 		    x := Abc()
 		    x.greet()
@@ -500,17 +500,17 @@ class Structs_Test < Base_Test
 	def test_string_tagged_with_a_dictionary
 		src = <<~CODE
 		    String\\<dict: Dictionary> {
-		    	new { str: String = "";
+		    	new ( str: String = "";
 		    		value = str
-		    	}
-		    	to_s {;
+		    	)
+		    	to_s (;
 		    		final := value
 		    		final += "{"
 		    		for tag.dict
 		    			final += "`key`::`value`, "
 		    		end
 		    		final += "}"
-		    	}
+		    	)
 		    }
 		    a := String\\<{x=0, y=1, z=2}>()
 		    b := String\\<{x=0, y=1, z=2}>("My dict: ")
@@ -538,7 +538,7 @@ class Structs_Test < Base_Test
 		out = Lost.interp <<~CODE
 		    @load 'lost/struct.tape'
 		    Abc\\<dict: Dictionary> {
-		    	new {;}
+		    	new (;)
 		    }
 		    z := Abc\\<{x=1}>
 		    zz := z()
@@ -614,7 +614,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_struct_typed_param_parses
-		out   = Lost.parse 'f { right: <name: String, type: Any, value: Any>; right }'
+		out   = Lost.parse 'f ( right: <name: String, type: Any, value: Any>; right )'
 		param = out.first.parameters.first
 		assert_kind_of Lost::Struct_Expr, param.type_struct
 		assert_equal %w(name type value), param.type_struct.names
@@ -624,7 +624,7 @@ class Structs_Test < Base_Test
 	def test_struct_typed_param_accepts_structurally_compatible_argument
 		refute_raises do
 			out = Lost.interp "@load 'lost/member.tape'
-				f { right: <name: String, type: Any, value: Any>; right.name }
+				f ( right: <name: String, type: Any, value: Any>; right.name )
 				m := Member('x', String, 4)
 				f(m)"
 			assert_equal 'x', out
@@ -633,7 +633,7 @@ class Structs_Test < Base_Test
 
 	def test_struct_typed_param_raises_for_missing_member
 		error = assert_raises Lost::Type_Contract_Violation do
-			Lost.interp 'f { right: <name: String, type: Any, value: Any>; right }
+			Lost.interp 'f ( right: <name: String, type: Any, value: Any>; right )
 				f(nil)'
 		end
 		assert_equal '<name, type, value>', error.contract
@@ -642,7 +642,7 @@ class Structs_Test < Base_Test
 	def test_struct_typed_param_raises_for_wrong_member_type
 		error = assert_raises Lost::Type_Contract_Violation do
 			Lost.interp 'Thing { name := 4 }
-				f { right: <name: String>; right }
+				f ( right: <name: String>; right )
 				f(Thing())'
 		end
 		assert_equal 'String', error.contract
@@ -651,7 +651,7 @@ class Structs_Test < Base_Test
 
 	def test_struct_typed_param_any_matches_anything
 		refute_raises do
-			out = Lost.interp "f { right: <value: Any>; right.value }
+			out = Lost.interp "f ( right: <value: Any>; right.value )
 				Thing { value := 4815 }
 				f(Thing())"
 			assert_equal 4815, out
@@ -662,7 +662,7 @@ class Structs_Test < Base_Test
 		refute_raises do
 			out = Lost.interp "@load 'lost/member.tape'
 				Thing {
-					@operator ~ @infix { left, right: <name: String>; right.name }
+					@operator ~ @infix ( left, right: <name: String>; right.name )
 				}
 				t := Thing()
 				t ~ Member('x', String, 4)"
@@ -671,7 +671,7 @@ class Structs_Test < Base_Test
 
 		assert_raises Lost::Type_Contract_Violation do
 			Lost.interp "Thing {
-				@operator ~ @infix { left, right: <name: String>; right.name }
+				@operator ~ @infix ( left, right: <name: String>; right.name )
 			}
 			t := Thing()
 			t ~ nil"
@@ -681,7 +681,7 @@ class Structs_Test < Base_Test
 	# A struct annotation with only unnamed members (`<String, Number>`, no names to check anything by) enforces nothing at all on a param -- there's no name on the argument to look up. Documenting the current, if surprising, behavior rather than letting it go unnoticed.
 	def test_struct_typed_param_with_only_unnamed_members_enforces_nothing
 		refute_raises do
-			out = Lost.interp 'f { x: <String, Number>; x }
+			out = Lost.interp 'f ( x: <String, Number>; x )
 				f(nil)'
 			assert_nil out
 		end
@@ -689,7 +689,7 @@ class Structs_Test < Base_Test
 
 	# `x: Abc\<Number>` (a named type plus a tag) parses the same way it already does for plain identifiers/variables.
 	def test_named_type_plus_struct_param_parses
-		out   = Lost.parse 'f { x: Abc\\<Number>; x }'
+		out   = Lost.parse 'f ( x: Abc\\<Number>; x )'
 		param = out.first.parameters.first
 		assert_equal 'Abc', param.type.value
 		assert_kind_of Lost::Struct_Expr, param.type_struct

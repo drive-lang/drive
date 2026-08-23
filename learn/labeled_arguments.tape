@@ -2,9 +2,9 @@
 
 A parameter declared as two identifiers in a row -- `label name` -- can be called either positionally or with `label: value` at the call site. Matching is purely positional: the label just has to match whatever's declared at that same param index, it's never used to reorder arguments.
 ###
-send_message { to person, body text;
+send_message ( to person, body text;
 	"To `person`: `text`"
-}
+)
 
 @assert send_message(to: 'Jack', body: 'Found fresh water') == 'To Jack: Found fresh water', 'labeled arguments should match by position'
 @assert send_message('Sayid', 'Meet at the caves') == 'To Sayid: Meet at the caves', 'labels are opt-in -- a bare positional call should still work'
@@ -32,14 +32,14 @@ Two params can share one label -- nothing requires labels to be unique, matching
 Point {
 	x, y,
 
-	new { at x, at y;
+	new ( at x, at y;
 		self.x = x
 		self.y = y
-	}
+	)
 
-	to_s {;
+	to_s (;
 		"(`x`, `y`)"
-	}
+	)
 }
 
 p := Point(at: 3, at: 4)

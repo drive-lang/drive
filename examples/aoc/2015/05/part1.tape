@@ -23,16 +23,16 @@ How many strings are nice?
 ILLEGAL := ['ab', 'cd', 'pq', 'xy']
 VOWELS := 'aeiou'
 
-has_three_vowels? { input;
+has_three_vowels? ( input;
 	vowels := 0
 	for input.chars()
 		vowels += 1 if VOWELS.include?(it)
 		return true if vowels >= 3
 	end
 	false
-}
+)
 
-has_double_letter? { input;
+has_double_letter? ( input;
 	chars := input.chars()
 	for chars
 		if at < chars.length() - 1
@@ -40,11 +40,11 @@ has_double_letter? { input;
 		end
 	end
 	false
-}
+)
 
-has_forbidden? { input;
+has_forbidden? ( input;
 	input.include?('ab') or input.include?('cd') or input.include?('pq') or input.include?('xy')
-}
+)
 
 input := File_System.read('examples/aoc/2015/05/input.txt').split('\n')
 
@@ -61,6 +61,6 @@ end
 
 total == 238
 
-funk { input;
+funk ( input;
 
-}
+)

@@ -288,48 +288,48 @@ class Parser_Test < Base_Test
 	end
 
 	def test_functions
-		out = Lost.parse '{;}'
+		out = Lost.parse '(;)'
 		assert_kind_of Lost::Func_Expr, out.first
 		assert_empty out.first.expressions
 		refute out.first.name
 
-		out = Lost.parse '{;
-		}'
+		out = Lost.parse '(;
+		)'
 		assert_empty out.first.expressions
 		refute out.first.name
 
-		out = Lost.parse 'named_function {;}'
+		out = Lost.parse 'named_function (;)'
 		assert_equal 'named_function', out.first.name.value
 	end
 
 	def test_function_params
-		out = Lost.parse '{ with_param; }'
+		out = Lost.parse '( with_param; )'
 		assert_equal 1, out.first.parameters.count
 		assert_equal 0, out.first.expressions.count
 
-		out = Lost.parse 'named { with_param; }'
+		out = Lost.parse 'named ( with_param; )'
 		assert_equal 'named', out.first.name.value
 		assert_equal 1, out.first.parameters.count
 		refute out.first.parameters.first.label
 		refute out.first.parameters.first.default
 		refute out.first.parameters.first.type
 
-		out = Lost.parse '{ labeled param; }'
+		out = Lost.parse '( labeled param; )'
 		assert_equal 'labeled', out.first.parameters.first.label.value
 		assert out.first.parameters.first.label
 		refute out.first.parameters.first.default
 		refute out.first.parameters.first.type
 
-		out = Lost.parse '{ default_values := 4; }'
+		out = Lost.parse '( default_values := 4; )'
 		assert out.first.parameters.first.default
 		assert_kind_of Lost::Number_Expr, out.first.parameters.first.default
 
-		out = Lost.parse 'named { and_labeled with_default := 8; }'
+		out = Lost.parse 'named ( and_labeled with_default := 8; )'
 		assert_equal 'and_labeled', out.first.parameters.first.label.value
 		assert_equal 'with_default', out.first.parameters.first.name.value
 		assert_equal 'named', out.first.name.value
 
-		out = Lost.parse 'named { with, multiple, even labeled := 4, params := 5; }'
+		out = Lost.parse 'named ( with, multiple, even labeled := 4, params := 5; )'
 		assert_equal 4, out.first.parameters.count
 		assert_equal out.first.parameters.map(&:label), [nil, nil, Lost::Lexeme.new(:identifier, 'even'), nil]
 		assert_equal out.first.parameters.map(&:name), %w(with multiple labeled params).map { Lost::Lexeme.new(:identifier, _1) }
@@ -338,47 +338,47 @@ class Parser_Test < Base_Test
 
 	def test_function_bodies
 		out = Lost.parse '
-		square { input;
+		square ( input;
 			input * input
-		}'
+		)'
 		refute_empty out.first.expressions
 		assert_kind_of Lost::Infix_Expr, out.first.expressions[0]
 
 		out = Lost.parse '
-		nothing { input;
+		nothing ( input;
 			return input
-		}'
+		)'
 		assert_kind_of Lost::Prefix_Expr, out.first.expressions[0]
 		assert_kind_of Lost::Identifier_Expr, out.first.expressions[0].expression
 	end
 
 	def test_function_signatures
-		out = Lost.parse 'nothing { input;
+		out = Lost.parse 'nothing ( input;
 			return input
-		}'
-		assert_equal 'nothing{input;}', out.first.signature
+		)'
+		assert_equal 'nothing(input;)', out.first.signature
 	end
 
 	def test_complex_function
 		out = Lost.parse '
-		curr? { sequence;
+		curr? ( sequence;
 			if not remainder or not lexemes?
 				return false
 			end
 
 			slice := remainder.slice(0, sequence.count)
-			slice.{;
+			slice.(;
 				expected := sequence[at]
 
 				if expected === Array
-					expected.any? {;
+					expected.any? (;
 						it == it2
-					}
+					)
 				else
 					it == expected
 				end
-			}
-		}'
+			)
+		)'
 		assert_kind_of Lost::Func_Expr, out.first
 		assert_equal 'curr?', out.first.name.value
 		assert_equal 3, out.first.expressions.count
@@ -417,16 +417,16 @@ class Parser_Test < Base_Test
 	end
 
 	def test_function_calls
-		out = Lost.parse '{;}()'
+		out = Lost.parse '(;)()'
 		assert_kind_of Lost::Call_Expr, out.first
 		assert_kind_of Lost::Func_Expr, out.first.receiver
 		assert_empty out.first.arguments
 
-		out = Lost.parse '{;}(true)'
+		out = Lost.parse '(;)(true)'
 		refute_empty out.first.arguments
 		assert_kind_of Lost::Identifier_Expr, out.first.arguments.first
 
-		out = Lost.parse '{;}(1, 2, 3)'
+		out = Lost.parse '(;)(1, 2, 3)'
 		out.first.arguments.each do
 			assert_kind_of Lost::Number_Expr, it
 		end
@@ -471,11 +471,11 @@ class Parser_Test < Base_Test
 		assert_kind_of Lost::Conditional_Expr, out.first
 		assert_kind_of Lost::Call_Expr, out.first.when_true.first
 
-		out = Lost.parse 'wrap { number, limit;
+		out = Lost.parse 'wrap ( number, limit;
 			if number > limit
 				number = 0
 			end
-		 }'
+		 )'
 		assert_kind_of Lost::Conditional_Expr, out.first.expressions[0]
 
 		out = Lost.parse 'if 1 + 2 * 3 == 7
@@ -681,13 +681,13 @@ class Parser_Test < Base_Test
 	end
 
 	def test_function_signature
-		out = Lost.parse '{-> Identifier;}'
+		out = Lost.parse '(-> Identifier;)'
 		assert_kind_of Lost::Func_Signature_Expr, out.first
 
-		out = Lost.parse '{Number -> String;}'
+		out = Lost.parse '(Number -> String;)'
 		assert_kind_of Lost::Func_Signature_Expr, out.first
 
-		out = Lost.parse 'string {number;}'
+		out = Lost.parse 'string (number;)'
 		assert_kind_of Lost::Func_Expr, out.first
 	end
 
@@ -697,7 +697,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_writable_unpack_prefix
-		out = Lost.parse 'funk { @writable with; }'
+		out = Lost.parse 'funk ( @writable with; )'
 		assert_equal 'with', out.first.parameters.first.value
 		assert_kind_of Lost::Param_Expr, out.first.parameters.first
 		assert out.first.parameters.first.add_to_writable
@@ -705,7 +705,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_readable_unpack_prefix
-		out = Lost.parse 'funk { @readable with; }'
+		out = Lost.parse 'funk ( @readable with; )'
 		assert_equal 'with', out.first.parameters.first.value
 		assert_kind_of Lost::Param_Expr, out.first.parameters.first
 		assert out.first.parameters.first.add_to_readable
@@ -733,20 +733,20 @@ class Parser_Test < Base_Test
 
 	def test_all_http_methods
 		Lost::HTTP_VERBS.each do |verb|
-			assert_instance_of Lost::Route_Expr, Lost.parse("#{verb}://path {;}").first
+			assert_instance_of Lost::Route_Expr, Lost.parse("#{verb}://path (;)").first
 		end
 	end
 
 	def test_route_declaration_with_http_method_directives
 		refute_raises Lost::Invalid_Http_Directive_Handler do
-			out = Lost.parse 'get://something {;}'
+			out = Lost.parse 'get://something (;)'
 			assert_equal 1, out.count
 			assert_instance_of Lost::Route_Expr, out.first
 			assert_equal 'get', out.first.http_method.value
 			assert_equal "something", out.first.path
 		end
 
-		out = Lost.parse '@pretend_method "endpoint" {;}'
+		out = Lost.parse '@whatever "endpoint" (;)'
 		assert_equal 2, out.count
 		refute_instance_of Lost::Route_Expr, out.first
 		assert_instance_of Lost::Directive_Expr, out[0]
@@ -882,23 +882,23 @@ class Parser_Test < Base_Test
 	def test_operator_overload_parses
 		assert_raises Lost::Operator_Overload_Fixity_Must_Be_One_Of do
 			Lost.parse <<~CODE
-			    @operator := @heehee 500 { left, right; }
+			    @operator := @heehee 500 ( left, right; )
 			CODE
 		end
 
 		assert_raises Lost::Operator_Overload_Precedence_Must_Be_Integer do
 			Lost.parse <<~CODE
-			    @operator $ @prefix hmm { left, right; }
+			    @operator $ @prefix hmm ( left, right; )
 			CODE
 		end
 
 		assert_raises Lost::Operator_Overload_Precedence_Must_Be_Integer do
 			Lost.parse <<~CODE
-			    @operator + @infix notanumber { left, right; }
+			    @operator + @infix notanumber ( left, right; )
 			CODE
 		end
 
-		out      = Lost.parse '@operator := @infix 500 { left, right; }'
+		out      = Lost.parse '@operator := @infix 500 ( left, right; )'
 		overload = out.first
 		assert_instance_of Lost::Operator_Overload_Expr, overload
 		assert_equal ':=', overload.value
@@ -908,12 +908,12 @@ class Parser_Test < Base_Test
 
 		{ 'infix' => '~~', 'prefix' => '!!', 'postfix' => '??' }.each do |fixity, op|
 			refute_raises do
-				Lost.parse "@operator #{op} @#{fixity} 300 { x; x }"
+				Lost.parse "@operator #{op} @#{fixity} 300 ( x; x )"
 			end
 		end
 
 		# Operator is registered so it can appear in a subsequent expression as Infix_Expr
-		out   = Lost.parse "@operator ~> @infix 700 { left, right; left }\na ~> b"
+		out   = Lost.parse "@operator ~> @infix 700 ( left, right; left )\na ~> b"
 		infix = out.last
 		assert_instance_of Lost::Infix_Expr, infix
 		assert_equal '~>', infix.operator.value

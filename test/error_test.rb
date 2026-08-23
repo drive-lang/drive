@@ -59,7 +59,7 @@ class Error_Test < Base_Test
 	def test_missing_argument
 		# todo: Doesn't display code and location
 		assert_raises Lost::Missing_Argument do
-			Lost.interp 'add := { a, b; a + b }, add(5)'
+			Lost.interp 'add := ( a, b; a + b ), add(5)'
 		end
 	end
 
@@ -92,7 +92,7 @@ class Error_Test < Base_Test
 
 	def test_arguments_given_but_not_expected
 		assert_raises Lost::Arguments_Given_But_Not_Expected do
-			Lost.interp 'funk {; 42 }, funk(5)'
+			Lost.interp 'funk (; 42 ), funk(5)'
 		end
 	end
 
@@ -105,9 +105,9 @@ class Error_Test < Base_Test
 	# The parser's pre-scan registers a custom operator file-wide, but the overload itself is a regular declaration — using the operator outside the scope that declares it finds no overload. Used to silently evaluate to nil.
 	def test_undeclared_infix_operator
 		assert_raises Lost::Undeclared_Infix_Operator do
-			Lost.interp 'scoped {;
-				@operator ~> @infix 300 { l, r; l }
-			}
+			Lost.interp 'scoped (;
+				@operator ~> @infix 300 ( l, r; l )
+			)
 			1 ~> 2'
 		end
 	end
@@ -116,15 +116,15 @@ class Error_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new { port := 3099;
+		    	new ( port := 3099;
 		    		self.port = port
-		    	}
+		    	)
 		    }
 
 		    Web_App | Server {
-		    	get://users/:id { id;
+		    	get://users/:id ( id;
 		    		"User `id`"
-		    	}
+		    	)
 		    }
 
 		    app := Web_App()

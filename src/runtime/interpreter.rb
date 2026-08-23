@@ -150,9 +150,11 @@ module Lost
 		end
 
 		# Preserves its @input, interprets given file, then restores its @input.
+		# @param [::String] filepath of the code to load
+		# @param [Lost::Scope] scope to load code into
 		# @return The output of the interpreted file
 		def load_file_into_scope filepath, into_scope
-			filepath.insert(-1, '.tape') unless filepath.end_with? '.tape'
+			filepath.insert(-1, '.tape') unless filepath.end_with? '.tape' # note; I feel like this isn't the smartestest way to achieve this.
 
 			resolved_path = if filepath.start_with? 'lost/'
 				File.join ROOT_PATH, filepath
@@ -160,30 +162,36 @@ module Lost
 				File.expand_path filepath
 			end
 
-			push_scope into_scope
+			# This filepath may have been loaded in the given scope already. We don't want to double load it -- return the same result it produced the first time instead of re-running it (or, without this, silently returning nil).
+			return into_scope.loaded_filepaths[resolved_path] if into_scope.loaded_filepaths.key? resolved_path
 
-			unless self.class.cached_expressions_by_filepath[resolved_path]
+			cached_expressions   = self.class.cached_expressions_by_filepath[resolved_path]
+			already_type_checked = self.class.type_checked_filepaths[resolved_path]
+
+			unless cached_expressions
 				code = File.read resolved_path
 				register_source resolved_path, code
-				@lexer.source_file                                       = resolved_path
-				@lexer.input                                             = code
-				@parser.input                                            = @lexer.output.reject do |lexeme|
+				@lexer.source_file = resolved_path
+				@lexer.input       = code
+				@parser.input      = @lexer.output.reject do |lexeme|
 					%I(comment).include? lexeme.type
 				end
-				self.class.cached_expressions_by_filepath[resolved_path] = @parser.output
+				cached_expressions = self.class.cached_expressions_by_filepath[resolved_path] = @parser.output
 			end
 
-			saved                = @input
-			saved_declarations   = @declarations
-			@input               = self.class.cached_expressions_by_filepath[resolved_path]
-			already_type_checked = self.class.type_checked_filepaths[resolved_path]
-			result               = output skip_type_check: already_type_checked # note: Okay to call #output directly here
-			@input               = saved
-			@declarations        = saved_declarations
+			push_scope into_scope
 
-			self.class.type_checked_filepaths[resolved_path] = true
+			saved_declarations                               = @declarations
+			saved                                            = @input
+			@input                                           = cached_expressions
+			result                                           = output skip_type_check: already_type_checked
+			self.class.type_checked_filepaths[resolved_path] = true # todo; This should be done by #output probably
+			@input                                           = saved
+			@declarations                                    = saved_declarations
 
-			pop_scope
+			into_scope.loaded_filepaths[resolved_path] = result
+			Lost.assert pop_scope.equal? into_scope
+
 			result
 		end
 
@@ -916,7 +924,7 @@ module Lost
 		def interp_infix_assignment expr
 			assignment_scope = scope_for_identifier expr.left # Reminder; this returns a scope whether or not the identifier exists
 
-			# A type annotation (`x: Number = value`) is itself a declaration, so it's allowed to introduce a brand-new identifier just like `:=`, even though plain `=` otherwise requires the identifier to already exist. An inline signature (`x: Type{Param;} = value`) is the same idea — expr.left is a Func_Signature_Expr instead of a plain annotated Identifier_Expr, but it's just as self-declaring. A bare struct annotation (`thing: <String, Number> = value`) is self-declaring the same way, even with no `expr.left.type`.
+			# A type annotation (`x: Number = value`) is itself a declaration, so it's allowed to introduce a brand-new identifier just like `:=`, even though plain `=` otherwise requires the identifier to already exist. An inline signature (`x: Type(Param;) = value`) is the same idea — expr.left is a Func_Signature_Expr instead of a plain annotated Identifier_Expr, but it's just as self-declaring. A bare struct annotation (`thing: <String, Number> = value`) is self-declaring the same way, even with no `expr.left.type`.
 			has_type_annotation = (expr.left.is_a?(Lost::Identifier_Expr) && (expr.left.type || expr.left.type_struct)) ||
 			                      expr.left.is_a?(Lost::Func_Signature_Expr)
 			assignment_scope    ||= stack.last if has_type_annotation
@@ -1281,7 +1289,7 @@ module Lost
 			end
 		end
 
-		# Bare `X.new` (no parens) is equivalent to `X()`: full construction including `new{;}`, so a constructor with required params raises Missing_Argument. `X.new(...)` with parens never lands here; #interp_call intercepts it and routes to #interp_type_call directly.
+		# Bare `X.new` (no parens) is equivalent to `X()`: full construction including `new(;)`, so a constructor with required params raises Missing_Argument. `X.new(...)` with parens never lands here; #interp_call intercepts it and routes to #interp_type_call directly.
 		# @param expr [Lost::Infix_Expr]
 		def interp_dot_new expr
 			receiver = interpret expr.left
@@ -1352,7 +1360,7 @@ module Lost
 
 		def interp_each_loop collection, func_expr
 			collection.each do |it|
-				each_scope                 = Lost::Scope.new 'each{;}'
+				each_scope                 = Lost::Scope.new 'each(;)'
 				each_scope.enclosing_scope = stack.last
 				push_scope each_scope
 				each_scope.declare 'it', it
@@ -2047,8 +2055,8 @@ module Lost
 
 		# Mirrors how this tag was actually written, not a guess from its resulting shape -- `Array\<String>` and `Array\String` produce an identically-shaped single-unnamed-member struct, so shape alone can't tell them apart (confirmed the hard way: an earlier version of this method used exactly that heuristic). `bare_reference_name` (see Struct#bare_reference_name/#resolve_tag_reference) is the one place that signal survives past parsing, so a bare identifier RHS (`\Type`, `\Named_Struct`) always redisplays bare, and everything else (`\<...>`, however many members) always falls back to the struct's own `<...>` rendering.
 		def tag_display_name scope
-			tag        = scope.tag_instance
-			qualifier  = tag.bare_reference_name || stringify_for_display(tag)
+			tag       = scope.tag_instance
+			qualifier = tag.bare_reference_name || stringify_for_display(tag)
 			"#{scope.name}#{Lost::TAG_OPERATOR}#{qualifier}"
 		end
 
@@ -2113,7 +2121,7 @@ module Lost
 			end
 		end
 
-		# Builds the raw instance for #interp_type_call: backed by its Lost:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `new{;}` is invoked afterward by #interp_type_call itself.
+		# Builds the raw instance for #interp_type_call: backed by its Lost:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `new(;)` is invoked afterward by #interp_type_call itself.
 		def build_instance_of_type type, expr
 			ruby_class = find_ruby_class_for_type type
 			instance   = ruby_class ? ruby_class.new : Lost::Instance.new(type.name)
@@ -2126,7 +2134,7 @@ module Lost
 			instance.enclosing_scope       = type
 			instance.expressions           = type.expressions
 
-			# note; Bind structs onto the instance before the type's expressions (and therefore `new`) are interpreted below, so `new{;}`'s own body can reference `.tag`. This is a completely separate binding path from the call's own arguments — member values never get forwarded into `new`'s params.
+			# note; Bind structs onto the instance before the type's expressions (and therefore `new`) are interpreted below, so `new(;)`'s own body can reference `.tag`. This is a completely separate binding path from the call's own arguments — member values never get forwarded into `new`'s params.
 			effective_tag = type.tag_instance || type.tag_declaration
 			if effective_tag
 				instance.tag_instance = effective_tag
@@ -2160,8 +2168,8 @@ module Lost
 				# Recorded so a later plain reassignment (`double = ...`, a bare Identifier_Expr with
 				# no annotation of its own) still resolves back to this signature to check against --
 				# mirrors what #interp_infix_assignment records for the `name: {...} = value` form.
-				# Without this, a bare declaration (`double: {Number -> Number;}`, no `=`) left nothing
-				# for #resolve_func_signature to find, so `double = {String -> String;}` right after
+				# Without this, a bare declaration (`double: (Number -> Number;)`, no `=`) left nothing
+				# for #resolve_func_signature to find, so `double = (String -> String;)` right after
 				# went unchecked.
 				stack.last.type_by_identifier[expr.name.value] = signature
 			end
@@ -2190,7 +2198,7 @@ module Lost
 		end
 
 		def interp_func_body func, expr, arg_values: nil
-			# A bare Capitalized/UPPERCASE param (`f { ABC; ABC }`) parses as a signature-literal-style bare type (`param.type` set, `param.name` left nil, see #parse_func) rather than a named param -- real function params always start lowercase. Every other param-binding path below assumes `.name` is always present, so this is checked once, up front, with a real error instead of a raw NoMethodError the first time something reads `param.name.value`.
+			# A bare Capitalized/UPPERCASE param (`f ( ABC; ABC )`) parses as a signature-literal-style bare type (`param.type` set, `param.name` left nil, see #parse_func) rather than a named param -- real function params always start lowercase. Every other param-binding path below assumes `.name` is always present, so this is checked once, up front, with a real error instead of a raw NoMethodError the first time something reads `param.name.value`.
 			nameless_param = func.parameters.find { |param| param.name.nil? }
 			raise Lost::Invalid_Parameter_Name.new(expr, nameless_param.type.value) if nameless_param
 
@@ -2416,7 +2424,7 @@ module Lost
 			call_scope.declare 'request', req
 			call_scope.declare 'response', res
 
-			# Bind URL parameters as function arguments. For example, get://:abc/:def { abc, def; }
+			# Bind URL parameters as function arguments. For example, get://:abc/:def ( abc, def; )
 			params.each do |param|
 				value = url_params[param.name.value] || url_params[param.name.value.to_sym]
 
@@ -2523,7 +2531,18 @@ module Lost
 
 		# @param expr [Lost::Fence_Expr]
 		def interp_fence expr
-			Lost::Fence.new expr.value # note: Lost::Fence extends Lost::String
+			# `expr.value` is the fence's body wrapped in a String_Expr, not yet interpreted -- passing
+			# it straight to Lost::Fence.new (as this used to) stored the raw AST node as the fence's
+			# own value, so `@puts`ing a fence printed an object dump instead of its text. Interpret it
+			# first, same as any other String_Expr, to get the real Ruby string.
+			#
+			# `Fence | String {}` (lost/fence.tape, loaded by lost/preload.tape) is the real declared
+			# Lost-level type for this -- link to it, not 'String' directly, mirroring Lost::Fence <
+			# Lost::String on the Ruby side. Without linking to *some* declared type here, #stringify_
+			# for_display's `to_s`/`pretty_print` lookup finds nothing and falls back to returning the
+			# raw Ruby instance, which is what was actually causing the object dump -- not just the
+			# un-interpreted value fixed above.
+			finish_intrinsic_instance Lost::Fence.new(interpret(expr.value)), 'Fence' # note: Lost::Fence extends Lost::String
 		end
 
 		# @param expr [Lost::Html_Fence_Expr]
@@ -3036,7 +3055,7 @@ module Lost
 			instance
 		end
 
-		# Links a raw Lost::Array to the real Array type so its own Lost-level methods (to_s{;}, etc.) are reachable. Used by #build_enum and #build_instance_of_type.
+		# Links a raw Lost::Array to the real Array type so its own Lost-level methods (to_s(;), etc.) are reachable. Used by #build_enum and #build_instance_of_type.
 		def wrap_lost_array list
 			array = Lost::Array.new list
 			link_instance_to_type array, 'Array'
@@ -3143,7 +3162,7 @@ module Lost
 			raise Lost::Undeclared_Tagged_Type.new(expr)
 		end
 
-		# A value built directly from a string literal gets wrapped into a real Lost::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s{;} (lost/member.tape) and Array/Dictionary/Tuple's to_s{;} (lost/array.tape, lost/dictionary.tape, lost/preload.tape) read `.quotation_style` straight off the value to decide how to quote it for display.
+		# A value built directly from a string literal gets wrapped into a real Lost::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s(;) (lost/member.tape) and Array/Dictionary/Tuple's to_s(;) (lost/array.tape, lost/dictionary.tape, lost/preload.tape) read `.quotation_style` straight off the value to decide how to quote it for display.
 		def wrap_string_literal_value source_expr, value
 			return value unless source_expr.is_a?(Lost::String_Expr) && value.is_a?(::String)
 			finish_intrinsic_instance Lost::String.new(value, source_expr.quotation_style), 'String'
