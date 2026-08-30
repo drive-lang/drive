@@ -2,6 +2,8 @@
 Dom {
 	html_element := 'div'
 	children,
+	onclick,
+	key,   # optional stable id for this element's handler/input token -- see #next_render_token
 
 	new ( children := [];
 		self.children = children
@@ -100,6 +102,7 @@ A | Dom {
 
 	render (; title )
 }
+Href := A
 
 Strong | Dom {
 	html_element := 'strong'
@@ -198,7 +201,9 @@ Img | Dom {
 }
 
 # Tables
-Table | Dom {
+# `Html_Table`, not `Table` -- `Table` is the ORM type (lost/table.tape), and a
+# bare `Table | Dom {}` here reopens that same shared type instead of making a new one.
+Html_Table | Dom {
 	html_element := 'table'
 }
 
@@ -229,4 +234,12 @@ Br | Dom {
 
 Hr | Dom {
 	html_element := 'hr'
+}
+
+Dialog | Dom {
+	html_element := 'dialog'
+}
+
+Style | Dom {
+	html_element := 'style'
 }

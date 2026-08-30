@@ -169,6 +169,33 @@ module Lost
 			false
 		end
 
+		# Stricter than #func_declaration_follows?: everything from the current `(` up to its depth-1
+		# `;` must actually look like a parameter list -- bare names, `Type` annotations, labels, `->`
+		# return type, `@readable`/`@writable`, struct annotations. So `xs.map(x; x*2)` qualifies for
+		# the spread-lambda sugar but `xs.accumulate(0, f; ...)` (a number, then more) does not. A
+		# `:=`/`=` default, or a nested `(`/`[`/`{`, also disqualifies -- wrap those in real parens.
+		PARAM_LIST_TOKEN_VALUES = %w[, : -> < > @].freeze
+		def anon_func_param_list_follows?
+			depth = 0
+			remainder.each do |token|
+				if token.value == '('
+					depth += 1
+					next if depth == 1 # the opening paren itself
+					return false       # a nested group -- too complex for the bare sugar
+				end
+				return false if %w([ {).include? token.value
+				depth -= 1 if token.value == ')'
+				return false if depth <= 0
+
+				return true if token.value == Lost::FUNCTION_DELIMITER
+				next if token.type == :newline
+				next if %i[identifier Identifier].include? token.type
+				next if PARAM_LIST_TOKEN_VALUES.include? token.value
+				return false
+			end
+			false
+		end
+
 		# `Ident <...>` and an ordinary `<` comparison that just happens to start with a capitalized identifier (`X < Y`) are indistinguishable by lookahead alone -- rather than trying to enumerate every legitimate statement-ending token a struct's own member values could contain (`,` inside a member list is fine, but so is a `(`/`)`/`[`/`{}` nested inside one member's own default value), just attempt the real parse and see what happens. Saves the token position first; a syntax error anywhere in the attempt (ran out of tokens hunting for a `>` that was never coming, or any other `Parser#eat` mismatch) rewinds back to it, so the caller falls through to ordinary expression parsing (`X < Y` as a comparison) instead.
 		def try_parse_struct
 			saved_i = @i
@@ -379,6 +406,8 @@ module Lost
 			reduce_newlines
 
 			until curr? Lost::FUNCTION_DELIMITER
+				before_i = @i
+
 				if curr? '->' and eat '->'
 					# A function (named or anonymous) declaring its own return type inline, at the end of its param list: `(a: Number -> Number; ... )`. Distinct from `identifier: Type (...)`, which is a signature reference/alias, not an implementation declaring its own type.
 					func.type = eat(:Identifier)
@@ -442,6 +471,11 @@ module Lost
 				func.parameters << param
 				eat if curr? ','
 				reduce_newlines
+
+				# The branches above only recognise real param-list tokens (names, `: Type`, labels,
+				# defaults, `->`). A stray token they all skipped -- a number, a string, an operator --
+				# left `@i` untouched, so without this the `until` loop spins forever. Fail loudly.
+				raise "unexpected #{curr_lexeme.value.inspect} in function parameter list" if @i == before_i
 			end
 
 			eat Lost::FUNCTION_DELIMITER if curr? Lost::FUNCTION_DELIMITER
@@ -898,7 +932,11 @@ module Lost
 			copy_location expr, start
 		end
 
-		def begin_expression precedence = STARTING_PRECEDENCE
+		# `member_rhs` is set while parsing the identifier on the right of a `.` -- there, `member(x; y)`
+		# can only ever be a call (you cannot declare a function as a member access), so the
+		# func-declaration dispatch below must stand down and let #complete_expression pick the `(...)`
+		# up as a (possibly paren-dropped) call argument list instead. See the spread-lambda note there.
+		def begin_expression precedence = STARTING_PRECEDENCE, member_rhs: false
 			raise Lost::Out_Of_Tokens.new unless lexemes?
 
 			if curr? :route
@@ -907,7 +945,11 @@ module Lost
 			elsif curr?(ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
-			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows?
+			# On the right of a `.`, a *named* head -- `x.foo(a; b)` -- is always a call, never a
+			# declaration, so stand down and let #complete_expression take the `(...)` as a paren-dropped
+			# lambda argument. A nameless `.( ;)` (curr is `(`) is the `x.(; ...)` tap idiom and still
+			# parses as an anonymous func literal right here.
+			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
 				parse_func precedence
 
 			elsif curr?(TYPE_IDENTIFIER, '[')
@@ -987,7 +1029,7 @@ module Lost
 			end
 		end
 
-		def parse_expression precedence = STARTING_PRECEDENCE
+		def parse_expression precedence = STARTING_PRECEDENCE, member_rhs: false
 			# 7/20/25, Unforunately, some other code depends on this being coupled with #complete_expression. That's okay for now, but lesson learned.
 			#
 			# 7/26/25, It's decoupled now but still kind of ugly. This is fine though, because it will allow me to handle any partial expressions. An example of a partial expression would be the code prior to an inline conditional:
@@ -997,7 +1039,7 @@ module Lost
 			#   \————————————/   <~ complete expression
 			#
 
-			expression = begin_expression precedence
+			expression = begin_expression precedence, member_rhs: member_rhs
 			complete_expression expression, precedence
 		end
 
@@ -1137,7 +1179,7 @@ module Lost
 						expr          = Lost::Infix_Expr.new
 						expr.left     = left
 						expr.operator = eat(curr_lexeme.value)
-						expr.right    = parse_expression curr_operator_prec
+						expr.right    = parse_expression curr_operator_prec, member_rhs: expr.operator.value == '.'
 						expr.right    = expr.right.left if expr.right.is_a? Lost::Nil_Init_Expr
 						copy_location expr, left
 
@@ -1161,14 +1203,26 @@ module Lost
 			end
 
 			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` -- an unrelated anonymous func literal on the same line -- would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
-			call_expr = curr?('(') && curr?(:delimiter) && !func_declaration_follows?
-			subscript = curr? '['
+			#
+			# Exception -- the "spread lambda" sugar: a single anonymous-function argument may drop its
+			# own parens, `xs.map(x; x * 2)` for `xs.map((x; x * 2))`. Only when the receiver is a member
+			# access, a call result, or a subscript -- shapes that are unambiguously a call target and
+			# can't be an accidental adjacent `(;)` literal (`"endpoint" (;)`) or a fresh `f(x; body)`
+			# declaration (#begin_expression's `member_rhs` path already kept the member name an
+			# identifier so we land here with the whole `x.foo` as `expr`).
+			spread_receiver   = expr.is_a?(Lost::Call_Expr) || expr.is_a?(Lost::Subscript_Expr) || (expr.is_a?(Lost::Infix_Expr) && expr.operator&.value == '.')
+			spread_lambda_arg = curr?('(') && spread_receiver && anon_func_param_list_follows?
+			call_expr         = curr?('(') && curr?(:delimiter) && (!func_declaration_follows? || spread_lambda_arg)
+			subscript         = curr? '['
 			if call_expr && (precedence_for(curr_lexeme.value) > precedence)
-				receiver       = expr
-				fix            = parse_circumfix_expr opening: curr_lexeme.value
-				expr           = Lost::Call_Expr.new
-				expr.receiver  = receiver
-				expr.arguments = fix.expressions
+				receiver      = expr
+				expr          = Lost::Call_Expr.new
+				expr.receiver = receiver
+				expr.arguments = if spread_lambda_arg
+					[parse_func]
+				else
+					parse_circumfix_expr(opening: curr_lexeme.value).expressions
+				end
 
 				copy_location expr, receiver
 				return complete_expression expr, precedence

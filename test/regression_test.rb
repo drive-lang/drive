@@ -379,7 +379,7 @@ class Regression_Test < Base_Test
 			Lost.interp <<~TAPE
 			    @load 'lost/table.tape'
 
-			    Table.find(1)
+			    Table().find(1)
 			TAPE
 		end
 	end

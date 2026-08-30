@@ -1,32 +1,35 @@
 @load 'lost/table'
 
-# Marks a struct member as the table's primary key in a `create_table` schema (`id: Primary_Key`) -- see #proxy_create_table (database.rb). Standard/provided, same as `String`/`Bool`/etc: not something you need to declare yourself.
+Sequel_Sqlite_Database {}
+
 Primary_Key | Int {
 	name: String
 }
 
 Database {
 	adapter: String
-	connection, # todo: Make a type for this, currently it stores an Sequel::SQLite::Database instance
-	url,
+	connection: Sequel_Sqlite_Database
+	url: String
 
-	create_table ( name: String, scheme: Struct -> Table;
-		@ruby
-	)
-
-	delete_table ( name; @ruby )
-	tables (; @ruby )
-	table_exists? ( name; @ruby )
+	find_or_create_table (struct: Struct -> Table; @ruby )
+	create_table (struct: Struct -> Table; @ruby )
+	find_table   (by_name_or_struct; @ruby )  # no `-> Table` -- returns nil when the table doesn't exist, same as Table#find_by
+	delete_table! (name: Symbol; @ruby )
+	table_exists? (name: Symbol -> Bool; @ruby )
+ 	tables (; @ruby )
+	to_s (; @ruby )
 }
 
 Sqlite | Database {
-	new ( url;
+	new (url: String;
 		adapter = 'sqlite'
 		self.url = url
 	)
 
-	Self.local ( url := './test/fixtures/sqlite_test.db';
-		Sqlite(url)
+	Self.local (named filename := 'demo.db';
+		filename += '.db' unless filename.end_with?('.db')
+		path := "`@root`/temp/`filename`"
+		Sqlite(path)
 	)
 
 	Self.memory (;

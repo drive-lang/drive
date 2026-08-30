@@ -108,6 +108,42 @@ class ProxiesTest < Base_Test
 		refute Lost.interp("[1, 2, 3].all?(( x; x > 2 ))")
 	end
 
+	def test_hof_callbacks_keep_their_closure
+		# map/filter/find are written in Lost; calling the callback used to rebind its enclosing_scope
+		# to the HOF's own frame, so a callback could read its params but not anything from the
+		# function it was written in.
+		assert_equal [11, 12, 13], Lost.interp(<<~CODE).values
+		    f (;
+		    	base := 10
+		    	[1, 2, 3].map(( n; n + base ))
+		    )
+		    f()
+		CODE
+
+		assert_equal [3, 4], Lost.interp(<<~CODE).values
+		    f ( floor;
+		    	[1, 2, 3, 4].filter(( n; n > floor ))
+		    )
+		    f(2)
+		CODE
+
+		assert_equal 30, Lost.interp(<<~CODE)
+		    Thing {
+		    	step := 10
+		    	third (; [1, 2, 3].map(( n; n * step )).2 )
+		    }
+		    Thing().third()
+		CODE
+	end
+
+	def test_spread_lambda_argument_runs_like_the_wrapped_form
+		assert_equal [2, 4, 6], Lost.interp("[1, 2, 3].map(x; x * 2)").values
+		assert_equal [2, 4], Lost.interp("[1, 2, 3, 4].filter(n; n % 2 == 0)").values
+		assert_equal 2, Lost.interp("[1, 2, 3].find(x; x > 1)")
+		assert_equal [4, 6], Lost.interp("[1, 2, 3].map(x; x * 2).filter(n; n > 2)").values
+		assert_equal [[10, 20], [30, 40]], Lost.interp("[[1, 2], [3, 4]].map(row; row.map(n; n * 10))").values.map(&:values)
+	end
+
 	def test_include_respects_custom_equality_overload
 		src = <<~CODE
 		    Point {

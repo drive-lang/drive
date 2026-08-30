@@ -629,6 +629,19 @@ Lowercase identifier, followed by a `()` grouped block which contains `;` which 
 
 `(...)` is also grouping, a call's argument list, and a Tuple, so a bare `(` alone doesn't say which one is coming. `func_declaration_follows?` (`parser.rb`) disambiguates by depth-checking the upcoming tokens for a bare `;` at nesting level 1 (the declaration's own params/body separator, not a nested one) before the matching `)` closes: `foo((a; a+1), 5)` is an ordinary call passing an anonymous func as its first argument — the inner func's `;` sits at depth 2, one level past `foo`'s own opening paren, so it doesn't make `foo(...)` itself look like a declaration.
 
+### Spread lambda sugar
+
+A call whose *single* argument is an anonymous function may drop that argument's own parens:
+
+```lost
+xs.map(x; x * 2)        # sugar for xs.map((x; x * 2))
+xs.filter(n; n > 0)
+xs.find(x; x == target)
+xs.map(x; x * 2).filter(n; n > 2)   # chains
+```
+
+Only when the receiver is a **member access, call result, or subscript** — `xs.map(...)`, `f().g(...)`, `a[0](...)`. A bare identifier stays a declaration: `double(n; n * 2)` still *declares* `double`. And only when the tokens before the `;` are genuinely param-list-shaped (`anon_func_param_list_follows?`, `parser.rb`) — `xs.reduce(0, a; a)` (a value, then a name) does not spread. Handled in `#complete_expression` plus a `member_rhs` flag on `#begin_expression`/`#parse_expression` that stops the `.`-RHS `member(x; y)` from being read as a declaration.
+
 ## Labeled Function Arguments
 
 Swift/ObjC-style: a param declared with two identifiers in a row (`label name`) can be called with `label: value` at the call site.
@@ -1254,7 +1267,7 @@ Styled_Div | Dom {
 # => <p class='my_class' id='my_id' style='background-color:black;color:white;'></p>
 ```
 
-**Predefined elements** in `lost/html.tape`: `Html`, `Head`, `Body`, `Title`, `H1`–`H6`, `P`, `Span`, `A`, `Div`, `Form`, `Input`, `Button`, `Ul`, `Ol`, `Li`, `Table`, `Tr`, `Td`, `Th`, and more.
+**Predefined elements** in `lost/html.tape`: `Html`, `Head`, `Body`, `Title`, `H1`–`H6`, `P`, `Span`, `A`, `Div`, `Form`, `Input`, `Button`, `Ul`, `Ol`, `Li`, `Html_Table` (not `Table` — that name is the ORM type), `Tr`, `Td`, `Th`, and more.
 
 - Routes returning a `Dom` instance automatically render to HTML string
 - HTML rendering only works when `render(;)` is called by a Server instance

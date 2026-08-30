@@ -20,6 +20,7 @@ module Lost
 		proxy :length, as: :count
 		proxy :join
 		proxy :empty?
+		proxy :index
 
 		# note; To prevent Scope#[] or Scope#get from missing out on the actual location of the array elements. Standard members still call through to [] and get. I'm manually calling these proxy methods in some places.
 		def proxy_get index

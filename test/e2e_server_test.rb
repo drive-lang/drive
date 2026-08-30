@@ -155,6 +155,48 @@ class E2E_Server_Test < Minitest::Test
 		assert_equal 'Form submitted', response.body
 	end
 
+	def test_dialog_and_popover_render_through_a_real_route
+		code = <<~TAPE
+		    @load 'lost/html'
+
+		    Server {
+		    	port,
+		    	new ( port := #{@port};
+		    		self.port = port
+		    	)
+		    }
+
+		    Web_App | Server {
+		    	get:// (;
+		    		Div([
+		    			Button('Open menu', html_popovertarget := 'menu'),
+		    			Div([
+		    				Button('Close', html_popovertarget := 'menu', html_popovertargetaction := 'hide')
+		    			], html_id := 'menu', html_popover := 'auto'),
+		    			Dialog([], html_open := true)
+		    		])
+		    	)
+		    }
+
+		    app := Web_App()
+		TAPE
+
+		@interpreter    = Lost::Interpreter.new
+		server_instance = @interpreter.run code
+
+		@server_runner        = server_instance
+		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
+		@interpreter.start_server @server_runner
+
+		response = Net::HTTP.get_response URI("http://localhost:#{@port}/")
+		assert_equal '200', response.code
+		assert_includes response.body, '<dialog open>', 'a real request must render the boolean-true fix as a bare attribute, not open="true"'
+		assert_includes response.body, 'popover="auto"', 'popover keeps its real value, not collapsed to bare'
+		assert_includes response.body, 'popovertarget="menu"', 'no hyphen -- this is one real HTML attribute, not popover-target'
+		assert_includes response.body, 'popovertargetaction="hide"', 'same no-hyphen shape as popovertarget'
+	end
+
 	def test_multiple_servers_with_different_routes
 		port_a = @port
 		port_b = @port + 1

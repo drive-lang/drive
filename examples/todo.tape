@@ -34,7 +34,9 @@ Todo_App | Div {
 
 	render (;
 		button := Button("Add Todo")
-		button.onclick = add_todo
+#		@push_scope button
+		button.html_onclick = add_todo
+#		@pop_scope button
 
 		Form([input, button, Todos_Ul(todos)])
 	)
@@ -49,5 +51,5 @@ App | Server {
 	)
 }
 
-# @start_server App()
+@start_server App()
 @puts "Uncomment '@start_server App()' above to run this example"

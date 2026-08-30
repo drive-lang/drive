@@ -1,6 +1,6 @@
 module Lost
 	class Scope
-		attr_accessor :enclosing_scope, :readable_scopes, :writable_scopes, :declarations, :name, :type_by_identifier, :static_declarations, :tagged_type_variants
+		attr_accessor :enclosing_scope, :readable_scopes, :writable_scopes, :declarations, :name, :type_by_identifier, :static_declarations, :tagged_type_variants, :interpreter_reference
 
 		# {filepath => result} for every @load run in this scope, and only this scope -- keyed by resolved filepath so a second @load of the same file into the same scope skips re-running it (see #load_file_into_scope) but still returns the same result the first run produced, rather than nil. Does not recurse into the stack, though that may be useful later on.
 		attr_accessor :loaded_filepaths

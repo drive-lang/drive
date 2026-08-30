@@ -4,23 +4,37 @@ require 'json'
 
 module Lost
 	class Interpreter
+		extend Cached_By_Path
+
 		# Source lines by filepath, keyed the same way #register_source always has -- kept class-level (not per-instance) so Error_Formatter can read a snippet without holding a live Interpreter, which used to be the only reason errors.rb needed a `runtime` reference at all.
-		@cached_source_by_filename = {} # {filepath: [String]}
+		cache_by_path :cached_source_by_filename # {filepath: [String]}
 
 		# Parsed ASTs by resolved filepath, kept class-level (not per-instance) for the same reason: `lost/preload.tape` (and everything it transitively @loads) is immutable source, identical for every Interpreter in the process, so re-lexing/re-parsing it fresh on every `Lost.interp` call was pure waste -- it used to be instance-level, meaning a brand-new Interpreter (which every `Lost.interp` call constructs) never saw a warm cache. Doesn't cache the *interpretation* of that AST (each Interpreter still builds its own fresh Standard_Library scope from it), only the lex+parse step, so per-instance isolation (mutating a builtin in one test can't leak into another) is unaffected.
-		@cached_expressions_by_filepath = {} # {filepath: [Lost::Expression]}
+		cache_by_path :cached_expressions_by_filepath # {filepath: [Lost::Expression]}
 
 		# Resolved filepaths whose AST has already passed type-checking at least once, kept class-level alongside the cache above. Type-checking is a pure function of the AST (no interpreter state involved) -- a cached, never-changing file that already passed once will always pass, so re-walking it on every subsequent load is pure waste, same as re-parsing was.
-		@type_checked_filepaths = {} # {filepath: true}
+		cache_by_path :type_checked_filepaths # {filepath: true}
+
+		# Raw source of runtime assets injected into every matching response (dom.js, view_transition.css) -- not Lost source, so it never goes through the lex/parse caches above. Kept class-level for the same reason: identical for every Interpreter in the process, so re-reading from disk on every request is pure waste.
+		cache_by_path :cached_asset_source_by_path # {filepath: String}
 
 		class << self
-			attr_accessor :cached_source_by_filename, :cached_expressions_by_filepath, :type_checked_filepaths
-
 			# Lets Ruby proxy methods (no interpreter reference otherwise) reach interpreter state, e.g. #find_table_type_for_schema. Not thread-safe across multiple interpreters; fine for one-per-process.
 			attr_accessor :current
+
+			# Drops the lex/parse/type-check/asset caches above, plus Declarator's own, for the given
+			# resolved paths (all of them when `paths` is nil) so a fresh Interpreter re-reads those
+			# files from disk. Used by Hot_Reloader on a file change -- everything else about a reload
+			# is a brand-new Interpreter, which resets all instance state on its own; these class-level
+			# Hashes are the only thing that survives. Both classes extend Cached_By_Path (see
+			# src/shared/cached_by_path.rb), so this just delegates to each one's own generic reset.
+			def reset_file_caches! paths = nil
+				reset_cached_by_path! paths
+				Lost::Declarator.reset_cached_by_path! paths
+			end
 		end
 
-		attr_accessor :input, :lexer, :parser, :load_standard_library, :stack, :route_functions_by_route_name, :servers, :dom_onclick_function_handlers, :dom_input_elements, :last_output, :current_source_file, :stdlib_scope, :declarations, :global
+		attr_accessor :input, :lexer, :parser, :load_standard_library, :stack, :route_functions_by_route_name, :servers, :dom_onclick_function_handlers, :dom_input_elements, :last_output, :current_source_file, :stdlib_scope, :declarations, :global, :serve_in_foreground
 
 		def initialize
 			@dom_input_elements            = {} # {element_hash: Lost::Instance} for inputs/textareas
@@ -28,6 +42,7 @@ module Lost
 			@route_functions_by_route_name = {} # {route: Lost::Route}
 
 			@load_standard_library = true
+			@serve_in_foreground   = true # Hot_Reloader flips this -- see #run
 			@input                 = [] # [Lost::Expression]
 			@stack                 = [] # [Lost::Scope]
 			@servers               = [] # [Lost::Server]
@@ -65,7 +80,10 @@ module Lost
 
 			@last_output = output
 			if servers.any? { |server| server.webrick_server&.status == :Running }
-				loop_servers
+				# Hot_Reloader sets this false: it owns the wait loop itself (watching files, tearing
+				# servers down and rebuilding on change), so `run` must return with the servers left
+				# running on their own threads instead of blocking here forever.
+				serve_in_foreground ? loop_servers : @last_output
 			else
 				@last_output
 			end
@@ -145,8 +163,15 @@ module Lost
 					end
 				end
 			ensure
-				@servers.each { |s| stop_server s }
+				shutdown_all_servers
 			end
+		end
+
+		# Stops every running server and empties the list. Safe with no servers. Shared by
+		# #loop_servers own teardown and by Hot_Reloader between reload cycles.
+		def shutdown_all_servers
+			@servers.each { |server| stop_server server }
+			@servers.clear
 		end
 
 		# Preserves its @input, interprets given file, then restores its @input.
@@ -222,16 +247,40 @@ module Lost
 			@current_source_file                           = resolved
 		end
 
-		def add_onclick_handler handler
-			key                                = handler.hash
-			dom_onclick_function_handlers[key] = handler
-			key
+		def add_onclick_handler handler, render_scope, element_key = nil
+			token                                = next_render_token(render_scope, element_key)
+			# Stored with the component this render pass belongs to (`render_scope[:component]`, the
+			# nearest html_id-bearing Dom instance) so #handle_request re-renders *that* on a click. The
+			# handler's own closure is captured lexically and runs correctly wherever it was written --
+			# a `.map` callback, a plain helper, a method -- so "which component to swap" no longer
+			# depends on the handler's scope chain reaching an Instance.
+			dom_onclick_function_handlers[token] = { handler: handler, component: render_scope[:component] }
+			token
 		end
 
-		def add_input_element instance
-			key                     = instance.hash
-			dom_input_elements[key] = instance
-			key
+		def add_input_element instance, render_scope, element_key = nil
+			token                     = next_render_token(render_scope, element_key)
+			dom_input_elements[token] = instance
+			token
+		end
+
+		# One stable, deterministic token per rendered element, within a component's render pass. The
+		# same component rendered against the same tree shape yields the same tokens every time -- so a
+		# re-render (or a fresh request for the same page) overwrites the handler/input map entries in
+		# place instead of minting new random ones and growing the maps without bound. It also
+		# means a handler defined in render() keeps a stable data-lost-onclick across DOM swaps, which
+		# is what let handlers move out of new() and into render(). `render_scope` is `{ anchor:, slot: }`
+		# seeded in #render_dom_to_html; the slot counter advances in depth-first render order.
+		#
+		# An `element_key` (the element's own `key := '...'`, see lost/html.tape) pins the token by
+		# name instead of position and does not touch the slot counter -- so a conditional element
+		# appearing or vanishing between renders can't shift its siblings' tokens.
+		def next_render_token render_scope, element_key = nil
+			return "#{render_scope[:anchor]}-#{element_key}" if element_key
+
+			slot                = render_scope[:slot]
+			render_scope[:slot] = slot + 1
+			"#{render_scope[:anchor]}-#{slot}"
 		end
 
 		def scope_for_identifier expr
@@ -459,15 +508,29 @@ module Lost
 
 		def stop_server server
 			server.webrick_server&.shutdown
-			Thread.kill server.server_thread if server.server_thread
+			# Let WEBrick's accept loop actually return (and release the listening socket) before
+			# forcing the thread down -- otherwise a quick restart on the same port can hit EADDRINUSE.
+			server.server_thread&.join(3)
+			server.server_thread&.kill
 		end
 
 		def handle_request server, request, response
 			path_string  = request.path
 			query_string = request.query_string
 			http_method  = request.request_method.downcase
-			path_parts   = request.path.split('/').reject { _1.empty? }
-			body_hash    = CGI.parse(request.body || "").transform_values(&:first)
+			path_parts = request.path.split('/').reject { _1.empty? }
+
+			# CGI.parse only understands application/x-www-form-urlencoded bodies (key1=value1&key2=...).
+			# A JSON body has no top-level `=` for it to split on, so it used to fall back to treating the
+			# *entire* raw JSON string as one keyless entry with zero values -- `{ "<the whole json>" => nil
+			# }`, both in this debug log line and in `request.body` as seen by every Lost route/onclick
+			# handler. Real JSON bodies now get real JSON parsing instead.
+			body_hash = if request.content_type&.start_with?('application/json')
+				JSON.parse(request.body || '{}') rescue {}
+			else
+				CGI.parse(request.body || "").transform_values(&:first)
+			end
+
 			headers_hash = request.header.to_h
 
 			req_info = Ascii.dim ""
@@ -483,21 +546,24 @@ module Lost
 			puts req_info
 
 			if path_string.start_with?("/onclick/")
-				object_id = path_parts.last.to_i
-				handler   = dom_onclick_function_handlers[object_id]
-				if handler
+				# object_id/element_id are string tokens (`"<anchor>-<slot>"`, see #next_render_token), not
+				# integers -- no `.to_i` (that silently truncated a token down to its leading digits, so
+				# every real click 404'd: the truncated id never matched anything actually registered).
+				object_id = path_parts.last
+				entry     = dom_onclick_function_handlers[object_id]
+				if entry
 					begin
 						if request.body && !request.body.empty?
 							json_body = JSON.parse request.body rescue {}
 							inputs = json_body['inputs'] || {}
 							inputs.each do |element_id, value|
-								input_instance = dom_input_elements[element_id.to_i]
+								input_instance = dom_input_elements[element_id]
 								input_instance.declare 'value', value if input_instance
 							end
 						end
 
 						route             = Lost::Route.new
-						route.handler     = handler
+						route.handler     = entry[:handler]
 						route.param_names = []
 
 						req = build_lost_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
@@ -505,7 +571,11 @@ module Lost
 
 						interp_route_body route, req, res
 
-						component = handler.enclosing_scope
+						# The component to re-render was recorded when the handler's token was minted, during
+						# the render walk (#add_onclick_handler) -- no scope-chain reconstruction needed, so a
+						# handler defined in a `.map` callback or a plain helper works the same as one in a
+						# method.
+						component = entry[:component]
 						if component.is_a?(Lost::Instance) && component.declarations['render']
 							new_html = render_dom_to_html component
 							html_id  = component.declarations['html_id']
@@ -554,16 +624,18 @@ module Lost
 					if response.body.to_s =~ /<html|<body|<head/i
 						response.body.prepend "<!DOCTYPE html>"
 
-						dom_js     = File.read 'src/runtime/dom.js'
+						dom_js     = self.class.cached_asset_source_by_path['src/runtime/dom.js'] ||= File.read('src/runtime/dom.js')
 						script_tag = "<script>#{dom_js}</script>"
-
+						view_transition_css = self.class.cached_asset_source_by_path['src/runtime/view_transition.css'] ||= File.read('src/runtime/view_transition.css')
+						view_transition_tag = "<style>#{view_transition_css}</style>"
 						body_str = response.body.to_s
+
 						if body_str.include?('<head>')
-							response.body = body_str.sub('<head>', '<head>' + script_tag)
+							response.body = body_str.sub('<head>', '<head>' + script_tag + view_transition_tag)
 						elsif body_str.include?('<body>')
-							response.body = body_str.sub('<body>', '<body>' + script_tag)
+							response.body = body_str.sub('<body>', '<body>' + script_tag + view_transition_tag)
 						else
-							response.body = script_tag + body_str
+							response.body = script_tag + view_transition_tag + body_str
 						end
 					end
 
@@ -689,7 +761,18 @@ module Lost
 			collected_routes
 		end
 
-		def render_dom_to_html dom_instance
+		def render_dom_to_html dom_instance, render_scope: nil
+			# A component with its own html_id (a page-level component) anchors a fresh token namespace
+			# for its whole subtree, keyed by that stable id. A top-level component with no html_id
+			# falls back to its object_id. Nested id-less elements just keep counting within the
+			# enclosing component's namespace -- see #next_render_token.
+			own_html_id = dom_instance.declarations['html_id']
+			if render_scope.nil?
+				render_scope = { anchor: own_html_id || "auto#{dom_instance.object_id}", slot: 0, component: dom_instance }
+			elsif own_html_id
+				render_scope = { anchor: own_html_id, slot: 0, component: dom_instance }
+			end
+
 			render = dom_instance.declarations['render']
 
 			inner_html = if render
@@ -698,38 +781,47 @@ module Lost
 				call_expr.arguments = []
 
 				render_result = interp_func_body render, call_expr
-
-				"".tap do |html|
-					if render_result.is_a? ::String
-						html << render_result
-
-					elsif render_result.is_a? Lost::Array
-						render_result.values.each do |child|
-							if child.is_a? ::String
-								html << child
-							elsif child.is_a?(Lost::Instance) && child.types.include?('Dom')
-								html << render_dom_to_html(child)
-							end
-						end
-
-					elsif render_result.is_a?(Lost::Instance) && render_result.types.include?('Dom')
-						html << render_dom_to_html(render_result)
-
-					end
-				end
+				html          = +'' # unfrozen -- append_dom_child_html mutates it in place
+				append_dom_child_html render_result, html, render_scope
+				html
 			end
 
 			renderer = Lost::Dom_Renderer.new dom_instance, inner_html
 
+			# Registration (here) and rendering (renderer.to_html_string) must print the *same* token --
+			# add_onclick_handler/add_input_element return the real key they stored, so hand it to the
+			# renderer instead of letting it mint its own.
+			element_key = dom_instance.declarations['key']
+
 			if renderer.onclick_expr
-				add_onclick_handler renderer.onclick_expr
+				renderer.onclick_token = add_onclick_handler renderer.onclick_expr, render_scope, element_key
 			end
 
 			if renderer.is_input_element?
-				add_input_element dom_instance
+				renderer.input_id_token = add_input_element dom_instance, render_scope, element_key
 			end
 
 			renderer.to_html_string
+		end
+
+		# A render() result can be a String, a single Dom-composing Instance, or an Lost::Array of
+		# either (or of further-nested Arrays -- e.g. `things.map((it; A(...)))` embedded inline among
+		# other children, same as `Form([input, button, list])` in learn/*.tape's Dom examples).
+		# Recurses into a nested Array rather than requiring exactly one flat level, so a mapped
+		# collection of elements renders each element individually instead of being silently dropped
+		# (neither a String nor a Dom Instance on its own) or, if handled some other way, rendered as
+		# one opaque `[<a>...</a>, <a>...</a>]`-style Array#to_s string instead of real nested HTML.
+		# `html` is mutated in place (`<<`), so callers pass an unfrozen accumulator and read it back
+		# after -- `+=` here would rebind this local and lose everything.
+		def append_dom_child_html value, html, render_scope
+			case value
+			when ::String
+				html << value
+			when Lost::Array
+				value.values.each { |child| append_dom_child_html child, html, render_scope }
+			else
+				html << render_dom_to_html(value, render_scope: render_scope) if value.is_a?(Lost::Instance) && value.types.include?('Dom')
+			end
 		end
 
 		# Raises the right error for a `./`/`../` scope operator that resolved to no scope at all -- shared by #interp_identifier, #interp_infix_assignment, #interp_infix_declaration. Any other operator value (`~/`, or none) raises Invalid_Scope_Syntax.
@@ -744,9 +836,16 @@ module Lost
 			end
 		end
 
-		# A function found via #interp_identifier needs to be duplicated and rebound to the resolving scope before use, so composed types (e.g. `Thing | Record`) call functions against the right receiver instead of whatever scope they happened to be declared on. Non-Func values pass through unchanged.
+		# A *method* found via #interp_identifier is duplicated and rebound to the resolving scope before
+		# use, so composed types (e.g. `Thing | Record`) call it against the right receiver instead of
+		# whatever type it was declared on. A method is identified by its `enclosing_scope` being a
+		# Type/Instance. A function that already carries a real lexical scope -- a `( ...; ... )` literal
+		# passed around as a closure, or a top-level function -- keeps it untouched; rebinding it would
+		# silently drop its closure the moment it's passed to a Lost-implemented HOF (map/filter/find,
+		# which look their `func` param up and would otherwise rebind it to the HOF's own call frame).
+		# Non-Func values pass through unchanged.
 		def rebind_func_to_scope value, scope
-			return value unless value.is_a? Lost::Func
+			return value unless value.is_a?(Lost::Func) && value.enclosing_scope.is_a?(Lost::Type)
 			func                 = value.dup
 			func.enclosing_scope = scope
 			func
@@ -1896,7 +1995,11 @@ module Lost
 		# A plain, untagged declaration (`String { ... }`) -- reopens/extends the same shared Type object across multiple declarations of the same bare name, e.g. how preload.tape's files each contribute to the same base String/Array/etc.
 		def interp_bare_type_declaration expr
 			existing = stack.last.has?(expr.name) && stack.last[expr.name]
-			type     = existing.is_a?(Lost::Type) ? existing : Lost::Type.new(expr.name)
+			# Lost::Struct < Instance < Type, so a plain `existing.is_a?(Lost::Type)` check also matches a Bare
+			# Named Struct value sharing this name (`User <...>` then later `User | Table {}`) -- that's a value,
+			# not a reopenable declared Type, so it must be excluded here or the struct itself gets mistakenly
+			# reused/mutated as the new composed Type's own scope.
+			type = (existing.is_a?(Lost::Type) && !existing.is_a?(Lost::Instance)) ? existing : Lost::Type.new(expr.name)
 
 			type.expressions = (type.expressions || []) + expr.expressions
 			finish_type_declaration type, expr.expressions
@@ -2149,15 +2252,48 @@ module Lost
 			instance = build_instance_of_type type, expr
 
 			func_new = instance[:new]
+
+			# A Dom element accepts whitelisted named arguments (`Button("x", onclick := `...`, html_id
+			# := 'y')`) that aren't `new`'s own params -- they're pulled out here and set on the instance
+			# after construction, so an element (and its handler) can be described in one expression
+			# instead of a member declaration plus later assignment. Non-Dom types, and any name outside
+			# the whitelist, are untouched -- interp_func_body still raises Unknown_Named_Argument.
+			dom_props = dom_type?(type) ? split_dom_prop_arguments(expr, func_new) : {}
+			call_expr = dom_props.empty? ? expr : expr.dup.tap { |e| e.arguments = e.arguments - dom_props.values }
+
 			if func_new
-				interp_func_body func_new, expr
-			elsif expr.arguments.count > 0
+				interp_func_body func_new, call_expr
+			elsif call_expr.arguments.count > 0
 				# No initializer was declared so we have nowhere to pass the arguments
 				raise Lost::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
 			instance.delete :new
+
+			dom_props.each { |name, arg| instance.declare name, interpret(classify_argument(arg).last) }
+
 			instance
+		end
+
+		def dom_type? type
+			type.is_a?(Lost::Type) && type.types.include?('Dom')
+		end
+
+		def dom_constructor_prop_name? name
+			Lost::DOM_CONSTRUCTOR_PROP_NAMES.include?(name) ||
+				Lost::DOM_CONSTRUCTOR_PROP_PREFIXES.any? { |prefix| name.start_with? prefix }
+		end
+
+		# @return [Hash{::String => Lost::Expression}] whitelisted `name := value` arguments keyed by
+		#   name, mapped to their original argument node. A name that IS one of `new`'s declared params
+		#   is left alone (bound normally), so an explicit param always wins over the prop shortcut.
+		def split_dom_prop_arguments call_expr, func_new
+			declared = func_new ? func_new.parameters.map { |param| param.name&.value } : []
+			call_expr.arguments.each_with_object({}) do |arg, props|
+				kind, name, = classify_argument arg
+				next unless kind == :named && dom_constructor_prop_name?(name) && !declared.include?(name)
+				props[name] = arg
+			end
 		end
 
 		def interp_func_signature expr
@@ -2348,12 +2484,58 @@ module Lost
 			end
 		end
 
-		# `<name: String, age: Number>` alone is a structure-only (each named member's declared type, no real data yet; see #interp_struct). `()` is how you turn that struct into an actual instance: the call's own arguments become each member's real value, positionally, same order as declared. Goes through #build_struct like every other struct construction so a declared `Struct` type's own body/methods still run.
+		# `<name: String, age: Number>` alone is a structure-only (each named member's declared type, no real data yet; see #interp_struct). `()` is how you turn that struct into an actual instance: the call's own arguments become each member's real value. Goes through #build_struct like every other struct construction so a declared `Struct` type's own body/methods still run.
+		#
+		# Arguments can be positional (matched by index, same order as declared) or named (`name := value`,
+		# matched by the member's declared *name* -- #classify_argument, same production/mechanism
+		# #interp_func_body already uses for named function arguments). A `label: value` argument has no
+		# struct equivalent to check a label against, so it's treated as plain positional, same as an
+		# unlabeled one. A member the call doesn't supply (positionally or by name) is left unset, same
+		# as it always has been -- structs don't raise Missing_Argument the way functions do; Struct.new's
+		# own values[i].nil? ? types[i] fallback (struct.rb) is what shows it as type-only.
 		#
 		# @param struct [Lost::Struct]
 		# @param expr [Lost::Call_Expr]
 		def interp_struct_call struct, expr
-			values   = expr.arguments.map { |arg| wrap_string_literal_value(arg, interpret(arg)) }
+			named_args = {}
+			positional = []
+			seen_named = false
+
+			expr.arguments.each do |arg|
+				kind, name_or_label, value_expr = classify_argument arg
+
+				if seen_named && kind != :named
+					raise Lost::Positional_Argument_After_Named.new(expr)
+				end
+
+				value = wrap_string_literal_value(value_expr, interpret(value_expr))
+
+				if kind == :named
+					seen_named = true
+					raise Lost::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
+					named_args[name_or_label] = value
+				else
+					positional << value
+				end
+			end
+
+			unless named_args.empty?
+				unknown_name = named_args.keys.find { |name| !struct.names.include? name }
+				raise Lost::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
+			end
+
+			values = struct.names.each_index.map do |i|
+				name_key       = struct.names[i]
+				has_positional = i < positional.length
+				has_named      = name_key && named_args.key?(name_key)
+
+				if has_positional && has_named
+					raise Lost::Argument_Given_By_Name_And_Position.new(expr, name_key)
+				end
+
+				has_named ? named_args.delete(name_key) : positional[i]
+			end
+
 			instance = build_struct struct.names, struct.type_names, struct.type_objects, values
 
 			# #build_struct always links a fresh instance's `.types` to the shared, declared `Struct` type alone (`struct_type.types`, generically `['Struct']`) -- if `struct` (the schema being called) is itself named (see #interp_type's bare named struct handling), carry that name over too, own-name-first, so the constructed instance is `Ident | Struct`-shaped, not just generically Struct-shaped: === and a `-> Ident` return-type contract both key off `.types`.
@@ -2405,7 +2587,7 @@ module Lost
 			route
 		end
 
-		# @param route [Lost::Route] The route to execute
+		# @param route [Lost::Route] The route (or onclick handler wrapper) to execute
 		# @param req [Lost::Request] Request object to inject
 		# @param res [Lost::Response] Response object to inject
 		# @param url_params [Hash] Extracted URL parameters (e.g., {"id" => "123"})
@@ -2414,6 +2596,23 @@ module Lost
 		def interp_route_body route, req, res, url_params = {}, server_instance: nil
 			handler = route.handler
 			params  = handler.parameters
+
+			# A closure built inside a nested call (e.g. `btn.onclick = (;...)` written inside a type's
+			# own `new(;)`) has `.enclosing_scope` pointing at that call's own transient frame, not the
+			# instance it truly belongs to -- the instance sits one or more levels further up that
+			# frame's own `.enclosing_scope` chain. An ordinary dot-call (`w.render()`) never hits this:
+			# #rebind_func_to_scope rebinds `.enclosing_scope` straight to the resolving instance at call
+			# time. A route/onclick handler, invoked later from a request that built none of this, gets
+			# no such rebind -- so the rest of the chain has to be restored by hand here, or a sibling
+			# field the closure references (an onclick referencing another field on the same instance)
+			# raises Undeclared_Identifier on every invocation after the one that originally built it.
+			outer_chain = []
+			scope       = handler.enclosing_scope&.enclosing_scope
+			while scope && !stack.any? { |s| s.equal? scope }
+				outer_chain << scope
+				scope = scope.enclosing_scope
+			end
+			outer_chain.reverse_each { |s| push_scope s }
 
 			call_scope = Lost::Scope.new "#{handler.name || 'anonymous'}_route"
 			push_scope handler.enclosing_scope
@@ -2488,6 +2687,8 @@ module Lost
 
 			popped_enclosing = pop_scope
 			Lost.assert popped_enclosing == handler.enclosing_scope
+
+			outer_chain.each { pop_scope }
 
 			result
 		end
@@ -2885,8 +3086,8 @@ module Lost
 					instance_or_type
 				end
 
-				unless target.respond_to? proxy_method
-					raise Lost::Missing_Ruby_Proxy_Declaration.new expr
+				if proxy_method && !target.respond_to?(proxy_method)
+					raise Lost::Missing_Ruby_Proxy_Declaration.new target, expr.name
 				end
 
 				result = target.send proxy_method, *func_scope.arguments
@@ -2922,9 +3123,19 @@ module Lost
 				server
 
 			when 'connect'
-				database = interpret expr.expression
-				database.create_connection!
-				database
+				def interp_database expr
+					require 'sequel'
+					database = interpret expr # Lost::Database
+					link_instance_to_type database, 'Database'
+					unless database.get 'connection'
+						url = database.get 'url'
+						raise Lost::Url_Not_Set_For_Database_Instance unless url
+						database.declare('connection', Sequel.sqlite(adapter: 'sqlite', database: url))
+					end
+					database
+				end
+
+				interp_database expr.expression
 
 			when 'push_scope'
 				# Target must be a bare identifier naming something already bound -- a literal or constructor call builds a fresh object every evaluation, so #pop_scope's identity assert could never match it later (Scope#get returns the same object for repeat lookups of an existing Type/Instance).
@@ -2990,6 +3201,8 @@ module Lost
 				filepath = interpret expr.expression
 				load_file_into_scope filepath, stack.last
 
+			when 'root'
+				Lost::ROOT_PATH
 			else
 				raise Lost::Invalid_Directive_Usage.new(expr)
 			end
@@ -3154,6 +3367,7 @@ module Lost
 			# A tagged Type declaration never registers under the plain identifier namespace (only in `tagged_type_variants`), so `find_in_stack` alone can't see a conflicting one -- check both.
 			if existing.nil? && tagged_variants_for(name).empty?
 				struct.declare 'name', name
+				struct.name  = name # keep the Ruby-level accessor (Scope#name) in sync with @declarations['name'] -- Ruby proxy code (e.g. Database#proxy_create_table) reads .name directly, not through Lost-level dot access
 				struct.types = Set[name] + struct.types
 				stack.last.declare name, struct if struct.names.all?
 				return struct

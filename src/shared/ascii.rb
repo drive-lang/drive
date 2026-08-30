@@ -22,7 +22,10 @@ module Lost
 
 			define_singleton_method name do |str = nil|
 				return (enabled? ? code : "") if str.nil?
-				enabled? ? "#{code}#{str}#{RESET}" : +str
+				# `+str` (an unfrozen-copy idiom) requires a real String -- callers sometimes pass
+				# whatever they have (e.g. interpreter.rb's request logging passing a Hash straight
+				# through), same as the `enabled?` branch above already accepts via interpolation.
+				enabled? ? "#{code}#{str}#{RESET}" : +str.to_s
 			end
 		end
 

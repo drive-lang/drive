@@ -195,6 +195,17 @@ module Lost
 	end
 
 	class Missing_Ruby_Proxy_Declaration < Error
+		attr_accessor :proxy_method_name
+
+		def initialize expr, method_name
+			super expr
+			@expression = expr
+			@proxy_method_name = method_name
+		end
+
+		def detail_message
+			"#{expression.name} does not respond to `#{proxy_method_name.inspect}`"
+		end
 	end
 
 	class Invalid_Ruby_Proxy_Directive_Usage < Error
@@ -228,6 +239,14 @@ module Lost
 	end
 
 	class Database_Not_Set_For_Table_Instance < Error
+	end
+
+	# Raised by Table#find_by/#where (table.rb) when the filter Struct names a column the table's own
+	# schema doesn't have. Checked proactively, before the query runs -- more reliable than rescuing
+	# whatever the underlying Sequel/SQLite driver happens to say, and the message doubles as the real
+	# expression string (see Error#initialize's ::String special case) rather than needing an AST node,
+	# since this is raised from Ruby proxy code with no expression on hand.
+	class Table_Invalid_Filter_Column < Error
 	end
 
 	class Type_Checking_Failed < Error

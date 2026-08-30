@@ -45,6 +45,10 @@ add ( a, b;
 add(4, 8)  # 12
 
 _privately_do ( x, y, z; )
+
+# A call whose single argument is an anonymous function may drop that argument's parens,
+# when the receiver is a member access / call / subscript:
+[1, 2, 3].map(n; n * 2)     # == [1, 2, 3].map((n; n * 2))
 ```
 
 ## Labeled & Named Function Arguments
@@ -612,8 +616,8 @@ arr.reverse()
 arr.include?(3)     # true
 arr.empty?()        # false
 
-arr.map(( x; x * 2 ))
-arr.filter(( x; x > 2 ))
+arr.map(x; x * 2)       # a lone anonymous-function argument may drop its own parens
+arr.filter(x; x > 2)    # (equivalent to arr.filter((x; x > 2)))
 ```
 
 ## Dictionaries

@@ -9,13 +9,20 @@ module Lost
 	end
 
 	class Declarator
-		# Caching like Interpreter does.
-		@cached_declarations_by_filepath = {} # {::String resolved_path => Hash{::String => Declaration}}
-		# Filepaths currently being resolved, guarding against a load cycle (A @loads B @loads A) recursing forever.
+		extend Cached_By_Path
+
+		# {::String resolved_path => Hash{::String => Declaration}} -- shares Cached_By_Path with
+		# Interpreter (see src/shared/cached_by_path.rb), so Interpreter.reset_file_caches! can
+		# reset this one too without needing to know it exists.
+		cache_by_path :cached_declarations_by_filepath
+
+		# Filepaths currently being resolved, guarding against a load cycle (A @loads B @loads A)
+		# recursing forever. Not part of the cache-by-path mixin above -- this is an in-flight
+		# guard, not a persistent cache to invalidate on file change.
 		@currently_loading_filepaths = ::Set.new
 
 		class << self
-			attr_accessor :cached_declarations_by_filepath, :currently_loading_filepaths
+			attr_accessor :currently_loading_filepaths
 		end
 
 		# Mirrors Interpreter#load_file_into_scope's own path resolution exactly -- kept here too since Declarator has to resolve a load target itself, ahead of the real interpreter ever reaching that @load.

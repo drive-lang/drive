@@ -1,106 +1,134 @@
+require 'sequel'
+
 module Lost
 	class Database < Instance
-		require 'sequel'
+		extend Ruby_Proxies
+		include Declaration_Accessors
+		include Sequel::Inflections
+		# adapter: String
+		# connection: Sequel::Sqlite::Database
+		# url: String
 
-		# @return [Sequel::SQLite::Database]
-		def connection
-			@declarations['connection'] ||= @connection ||= create_connection!
+		def initialize name = 'Database'
+			super name
 		end
 
-		def create_connection!
-			return @connection if @connection
-
-			url = get 'url'
-			raise Lost::Url_Not_Set_For_Database_Instance unless url
-
-			# Note: As SQLite is a file-based database, the :host and :port options are ignored, and the :database option should be a path to the file — https://sequel.jeremyevans.net/rdoc/files/doc/opening_databases_rdoc.html#label-sqlite
-			db = Sequel.sqlite adapter: 'sqlite', database: url
-
-			@declarations['connection'] = @connection = db
+		def table_name_for struct
+			Lost.assert struct.get('name'), "table_name_for expects a named struct, got an anonymous one"
+			pluralize(underscore(struct.get('name'))).to_sym
 		end
 
-		# old proxy_create_table(name, columns_ore_dict)
+		def proxy_find_or_create_table struct
+			Lost.assert struct.get('name')
 
-		# @param [::String] table_name
-		# @param [Lost::Struct] schema
-		# @return [Lost::Table] table it created
-		def proxy_create_table table_name, schema
-			return connection[table_name.to_str.to_sym] if proxy_table_exists? table_name
-			raise "proxy_create_table now only takes Struct" unless schema.is_a? Lost::Struct
-
-			# Tags the returned table with its real declared type (`Task\Task_Schema | Table {}`) instead of staying generically `Table`-shaped. Doesn't run the model's own `new(;)` -- only safe via a full tagged reference (`Task\Task_Schema()`).
-			model_type = Lost::Interpreter.current&.find_table_type_for_schema schema
-
-			Lost::Table.new.tap do |it|
-				it['schema']     = schema
-				it['table_name'] = table_name
-
-				if model_type
-					# `it['name'] = ` also needed -- Type#initialize bakes the constructor's default name into @declarations['name'] too, so an Lost-level `table.name` dot-read would otherwise still see it stale.
-					it.name    = model_type.name
-					it.types   = model_type.types
-					it['name'] = model_type.name
-				end
-
-				it['connection'] = connection.create_table table_name.to_str.to_sym do
-					schema.members.values.each do |member|
-						next unless member.name && member.type
-
-						column_name = member.name.to_s
-						# member.type is the real Lost::Type/Lost::Enum object, not a string -- `.name` is what compares against these literals.
-						type_name = member.type.name
-
-						if type_name == 'Primary_Key'
-							# Sequel's `primary_key` doesn't take a type, so no String/UUID primary keys yet.
-							primary_key member.name.to_sym
-							next
-						end
-
-						if member.type.is_a? Lost::Enum
-							# Any user-declared enum -- stored as text, no per-enum special-casing needed.
-							String column_name
-							next
-						end
-
-						case type_name
-						when 'String'
-							String column_name
-						when 'Text' # no distinct Lost Text type -- alias one yourself (`Text | String {}`)
-							String(column_name, text: true)
-						when 'Int'
-							Integer column_name
-						when 'Number'
-							Numeric column_name
-						when 'Bool'
-							TrueClass column_name
-						when 'Date'
-							Date column_name
-						when 'Date_Time'
-							DateTime column_name
-						when 'Time'
-							Time column_name
-
-							# Sequel also supports these, but no real Lost type maps to them yet:
-							# when 'Flt', 'Float' then Float column_name     # see design.md
-							# when 'Decimal' then BigDecimal column_name     # Number above covers general numeric use
-							# when 'Blob', 'Binary' then File column_name    # no Lost binary/file type yet
-							# Foreign keys need a separate generator method -- blocked on table associations, see todos.md
-						end
-					end
-				end
+			table = if proxy_table_exists? table_name_for(struct)
+				proxy_find_table struct
+			else
+				proxy_create_table struct
 			end
 		end
 
-		def proxy_delete_table name
-			connection.drop_table name.to_str.to_sym
+		# Given a named struct
+		#   Todo<id: Primary_Key, text: String>
+		#
+		# creates a table called `todos` where the name is inferred from the name of the struct, hence the requirement for it to be named.
+		# @param [Lost::Struct] struct with name
+		# @return [Lost::Table] table
+		def proxy_create_table struct
+			Lost.assert struct.is_a? Lost::Struct
+			Lost.assert struct.get('name')
+
+			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Lost::Table
+			connection.create_table table_name_for(struct) do
+				# Structs can have unnamed members because it's basically linear storage with indices as well as names. To create a table, I want both name and type present, otherwise see ya.
+				struct.members.values.each do |member|
+					next unless member.name && member.type
+
+					column_name = member.name.to_sym
+					case member.type.name
+					when 'Primary_Key'
+						primary_key column_name
+					when 'String', 'Text'
+						column column_name, ::String
+					when 'Int'
+						column column_name, ::Integer
+					when 'Number'
+						column column_name, ::Numeric
+					when 'Bool'
+						column column_name, ::TrueClass
+						# ####
+						# note; no Lost types yet for these below
+						# ####
+					when 'Date'
+						column column_name, ::Date
+					when 'Date_Time'
+						column column_name, ::DateTime
+					when 'Time'
+						column column_name, ::Time
+					when 'Flt', 'Float'
+						column column_name, ::Float
+					when 'Decimal'
+						column column_name, ::BigDecimal
+					when 'Blob', 'Binary'
+						column column_name, ::File
+					else
+						if member.type.is_a? Lost::Enum
+							column column_name, ::String
+						end
+					end
+
+					# todo; Foreign keys need a separate generator method  # blocked on table associations, see todos.md
+				end
+			end
+
+			proxy_find_table struct
 		end
 
-		def proxy_table_exists? table_name
-			connection.table_exists? table_name.to_str.to_sym
+		proxy_overload :find_table,
+		               Lost::Struct => :find_table_struct,
+		               ::String     => :find_table_named
+
+		# @param [::Symbol] name as symbol
+		# @return [Lost::Table] table
+		def find_table_named name
+			Lost.assert name.is_a? ::String
+
+			# note; `connection[name]` alone is always truthy so you have to explicitly check if the table exists.
+			if connection.table_exists? name.to_sym
+				table            = Lost::Table.new
+				table.table_name = name.to_s
+				table.database   = self
+				table
+			else
+				nil
+			end
+		end
+
+		def find_table_struct struct
+			Lost.assert struct.get('name'), "#find_table_struct expects the given struct to be declared with a name."
+			table         = find_table_named table_name_for(struct).to_s
+			table.columns = struct
+			table
+		end
+
+		# @param [::Symbol, Lost::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		def proxy_delete_table! name_or_struct
+			name = name_or_struct.is_a?(Lost::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			connection.drop_table name
+		end
+
+		# @param [::Symbol, Lost::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		def proxy_table_exists? name_or_struct
+			name = name_or_struct.is_a?(Lost::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			connection.table_exists? name
 		end
 
 		def proxy_tables
 			Lost::Array.new connection.tables
+		end
+
+		def proxy_to_s
+			"Database{#{object_id}}"
 		end
 	end
 end

@@ -25,7 +25,11 @@ module Lost
 
 			names.each_with_index do |name, i|
 				next unless name
-				declare name, (values[i].nil? ? types[i] : values[i]), type_names[i]
+				# An unset named member resolves to nil, same as `x: Number` and the `ident,` nil-init
+				# idiom everywhere else -- not the Type object (`types[i]`), which is truthy and leaks
+				# into any `if struct.member` check. `interp_struct` already normalizes `values` this
+				# way; this loop used to put the Type back. Type stays associated via `type_names[i]`.
+				declare name, values[i], type_names[i]
 			end
 		end
 
@@ -68,6 +72,27 @@ module Lost
 			return false unless candidate_type_lists.length == type_names.length
 
 			type_names.each_with_index.all? { |declared_type, i| candidate_type_lists[i].include? declared_type }
+		end
+
+		# Named members only, keyed by Symbol -- an unnamed member has no key to hash under, same
+		# `next unless name` skip #proxy_create_table already uses. Values are unwrapped just enough
+		# for a plain Ruby caller (Sequel's own #where/#insert, primarily -- see Table#proxy_find_by)
+		# to use directly: an Lost::String yields its raw ::String, and a raw ::Symbol (an enum
+		# member's value, e.g. :TODO) is stringified -- Sequel already treats a bare Symbol as a
+		# column/identifier reference, not a literal, so left alone it would build the wrong query.
+		# Everything else passes through as-is.
+		def to_h
+			names.each_with_index.each_with_object({}) do |(name, i), hash|
+				next unless name
+
+				value             = values[i]
+				hash[name.to_sym] = case value
+					when Lost::String then value.value
+					when Lost::Bool   then value.truthiness
+					when ::Symbol     then value.to_s
+					else value
+				end
+			end
 		end
 	end
 end

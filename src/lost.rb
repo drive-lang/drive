@@ -2,8 +2,11 @@ require_relative 'shared/constants'
 require_relative 'shared/helpers'
 require_relative 'shared/ascii'
 require_relative 'shared/ruby_proxies'
+require_relative 'shared/declaration_accessors'
+require_relative 'shared/cached_by_path'
 
 require_relative 'systems/dom_renderer'
+require_relative 'systems/hot_reloader'
 
 # Compile-time (source to AST)
 require_relative 'compiler/lexeme'
@@ -25,10 +28,10 @@ require_relative 'external/ruby/array'
 require_relative 'external/ruby/dictionary'
 require_relative 'external/ruby/number'
 require_relative 'external/ruby/file_system'
+require_relative 'external/ruby/struct'
 require_relative 'external/ruby/database'
 require_relative 'external/ruby/table'
 require_relative 'external/ruby/member'
-require_relative 'external/ruby/struct'
 require_relative 'external/ruby/statement'
 require_relative 'external/ruby/enum'
 

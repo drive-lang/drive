@@ -3537,4 +3537,16 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal [4, 42], out.values
 	end
+
+	def test_number_rand
+		100.times do
+			out = Lost.interp 'Number.rand(10)'
+			assert_includes 0..10, out
+		end
+	end
+
+	def test_number_rand_zero
+		out = Lost.interp 'Number.rand(0)'
+		assert_equal 0, out
+	end
 end

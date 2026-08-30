@@ -1,6 +1,7 @@
 require 'minitest/autorun'
 require_relative '../src/lost'
 require_relative 'base_test'
+require 'timeout'
 
 class Parser_Test < Base_Test
 	def test_identifiers
@@ -408,12 +409,18 @@ class Parser_Test < Base_Test
 		assert_equal 1, conditional.when_true.count # todo I don't think when_true and when_false convey that they return an array
 		assert_equal 1, conditional.when_false.count
 
+		# `expected.any? (; it == it2 )` -- a member call whose single anonymous-function argument
+		# dropped its own parens (the spread-lambda sugar).
 		any = conditional.when_true.first
-		assert_kind_of Lost::Infix_Expr, any
-		assert_kind_of Lost::Func_Expr, any.right
-		assert_kind_of Lost::Infix_Expr, any.right.expressions.first
-		assert_equal 'it', any.right.expressions.first.left.value
-		assert_equal 'it2', any.right.expressions.first.right.value
+		assert_kind_of Lost::Call_Expr, any
+		assert_kind_of Lost::Infix_Expr, any.receiver
+		assert_equal '.', any.receiver.operator.value
+		assert_equal 'any?', any.receiver.right.value
+		assert_equal 1, any.arguments.count
+		assert_kind_of Lost::Func_Expr, any.arguments.first
+		assert_kind_of Lost::Infix_Expr, any.arguments.first.expressions.first
+		assert_equal 'it', any.arguments.first.expressions.first.left.value
+		assert_equal 'it2', any.arguments.first.expressions.first.right.value
 	end
 
 	def test_function_calls
@@ -613,6 +620,44 @@ class Parser_Test < Base_Test
 		assert_kind_of Lost::Call_Expr, out.first
 		assert_kind_of Lost::Infix_Expr, out.first.receiver
 		assert_kind_of Lost::Number_Expr, out.first.arguments.first
+	end
+
+	def test_spread_lambda_single_anon_func_argument_drops_its_parens
+		# `xs.map(x; x*2)` is sugar for `xs.map((x; x*2))` -- only when the receiver is a member
+		# access / call / subscript (never a bare identifier, which stays a `f(x; body)` declaration).
+		spread  = Lost.parse('xs.map(x; x * 2)').first
+		wrapped = Lost.parse('xs.map((x; x * 2))').first
+
+		assert_kind_of Lost::Call_Expr, spread
+		assert_kind_of Lost::Infix_Expr, spread.receiver
+		assert_equal '.', spread.receiver.operator.value
+		assert_equal 1, spread.arguments.count
+		assert_kind_of Lost::Func_Expr, spread.arguments.first
+		assert_equal 1, spread.arguments.first.parameters.count
+		assert_equal 'x', spread.arguments.first.parameters.first.name.value
+
+		# same shape as the explicitly wrapped form
+		assert_equal wrapped.class, spread.class
+		assert_equal wrapped.arguments.first.class, spread.arguments.first.class
+	end
+
+	def test_spread_lambda_chains
+		out = Lost.parse 'xs.map(x; x * 2).filter(n; n > 2)'
+		assert_kind_of Lost::Call_Expr, out.first
+		assert_kind_of Lost::Infix_Expr, out.first.receiver           # .filter
+		assert_kind_of Lost::Call_Expr, out.first.receiver.left       # xs.map(...)
+	end
+
+	def test_spread_lambda_does_not_touch_bare_identifier_declarations
+		# `f(x; body)` at a bare identifier is still a function *declaration*, unchanged.
+		assert_kind_of Lost::Func_Expr, Lost.parse('double(n; n * 2)').first
+	end
+
+	def test_spread_lambda_only_for_a_lone_param_shaped_argument
+		# a number then more is not "one anonymous-function argument" -- no spread, and (important) no
+		# parser hang trying to read `0` as a parameter.
+		result = Timeout.timeout(5) { Lost.parse('xs.accumulate(0, a, x; a + x)') rescue :parse_error }
+		refute_nil result, 'parser must terminate on this shape rather than spinning'
 	end
 
 	def test_return_is_an_identifier

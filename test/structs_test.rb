@@ -177,8 +177,19 @@ class Structs_Test < Base_Test
 		assert_equal ['some_string', 'num'], out.first.tag.names
 
 		type = Lost.interp 'Type\\<some_string: String, num: Number> {}'
-		assert_equal 'String', type.tag_declaration.declarations['some_string'].name
-		assert_equal 'Number', type.tag_declaration.declarations['num'].name
+		assert_equal ['some_string', 'num'], type.tag_declaration.names
+		assert_equal ['String', 'Number'], type.tag_declaration.type_names
+	end
+
+	def test_unset_named_typed_member_reads_as_nil_not_the_declared_type
+		# `<flag: Bool>` with no value used to resolve `thing.flag` to the Bool *type* object (truthy!),
+		# breaking every `if thing.flag` check. It must read as nil, same as `x: Number` everywhere else.
+		out = Lost.interp <<~CODE
+		    thing := <flag: Bool, count: Number>
+		    (thing.flag, thing.count)
+		CODE
+		assert_nil out.values[0]
+		assert_nil out.values[1]
 	end
 
 	def test_tag_declaration_captures_default_values

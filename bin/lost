@@ -93,12 +93,12 @@ begin
 		interpreter, result = interp_and_print_output File.read(ARGV[1]), file: ARGV[1], load_standard_library: false
 		puts interpreter.stringify_for_display(result) if print_output
 	when 'run'
-		interpreter, result = interp_and_print_output File.read(ARGV[1]), file: ARGV[1]
-		puts interpreter.stringify_for_display(result) if print_output
+		interpreter, result = Lost::Hot_Reloader.new(ARGV[1]).run
+		puts interpreter.stringify_for_display(result) if print_output && interpreter
 	else
 		if ARGV[0]
-			interpreter, result = interp_and_print_output File.read(ARGV[0]), file: ARGV[0]
-			puts interpreter.stringify_for_display(result) if print_output
+			interpreter, result = Lost::Hot_Reloader.new(ARGV[0]).run
+			puts interpreter.stringify_for_display(result) if print_output && interpreter
 		else
 			puts "Error: No file specified.\n#{INSTRUCTIONS}"
 			exit 1

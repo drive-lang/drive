@@ -1,13 +1,16 @@
 module Lost
+	DOM_CONSTRUCTOR_PROP_NAMES       = %w(onclick key)
+	DOM_CONSTRUCTOR_PROP_PREFIXES    = %w(html_ css_)
+	HTML_ATTRS                       = %w(id class href)
+	HTTP_VERBS                       = %w(get put patch post delete head options connect trace)
+	VOID_HTML_TAGS                   = %w(area base br col command embed hr img input keygen link meta param source track wbr)
+	HTTP_VERB_SEPARATOR              = '://'
+
 	BUILTIN_OPERATOR                  = '@'
 	NIL_INIT_POSTFIX                  = ','
 	FUNCTION_DELIMITER                = ';'
 	PERCENT_LITERALS                  = %w(string symbol str Str STR sym Sym SYM)
 	FOR_VERBS                         = %w(each map select reject count)
-	HTML_ATTRS                        = %w(id class href)
-	HTTP_VERBS                        = %w(get put patch post delete head options connect trace)
-	VOID_HTML_TAGS                    = %w(area base br col command embed hr img input keygen link meta param source track wbr)
-	HTTP_VERB_SEPARATOR               = '://'
 	BROWSER_VIEW_SIZE                 = 'browser_view_size'
 	INTERPOLATE_CHAR                  = '`' # easily distinguishable betwen ```
 	COMMENT_CHAR                      = '#'
@@ -35,7 +38,7 @@ module Lost
 	SCOPE_OPERATORS                   = %w(~/ ./ ../)
 	SELF_KEYWORDS                     = %w(self Self)
 	DOT_ACCESS_OPERATORS              = %w(. .?)
-	TAG_OPERATOR          = '\\'
+	TAG_OPERATOR                      = '\\'
 	TYPE_COMPOSITION_OPERATORS        = %w(| & ~ ^) # Union, Intersection, Removal, Symmetric Difference
 	ANY_IDENTIFIER                    = %i(identifier Identifier IDENTIFIER)
 	TYPE_IDENTIFIER                   = %i(Identifier IDENTIFIER)

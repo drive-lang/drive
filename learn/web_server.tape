@@ -69,3 +69,9 @@ Camp | Server {
 camp := Camp()
 @start_server camp
 @stop_server camp
+
+
+### Hot reload
+
+Run a server file with `bin/lost <file>` and it keeps watching. Editing that file, or any `.tape` it loads, tears the server down, re-runs the whole program, and restarts it on the same port -- just refresh the page. Ctrl+C stops it. There is nothing to enable; it is how `bin/lost` runs any file that starts a server.
+###
