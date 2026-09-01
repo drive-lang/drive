@@ -46,7 +46,7 @@ module Lost
 				structure = expression.tag.to_s
 			end
 
-			expected_structured_type = "#{name}#{structure} {}"
+			expected_structured_type = "#{name}\\#{structure} {}"
 			"#{Ascii.bold name} structured with #{Ascii.bold structure} not found:\n\n\t#{Ascii.bold expected_structured_type}"
 		end
 	end
@@ -92,6 +92,19 @@ module Lost
 	end
 
 	class Invalid_Dot_Infix_Right_Operand < Error
+	end
+
+	class Receiver_Is_Nil < Error
+		# `expression` is the `.`/`.?` Lost::Infix_Expr whose left side evaluated to nil, for both reads
+		# (`task.type`) and writes (`task.type = x`). `.right.value` is the member being reached for;
+		# `.left.value`, when the left is a plain identifier, names the nil receiver.
+		def detail_message
+			return nil unless expression.respond_to?(:right) && expression.right.respond_to?(:value)
+			member   = ".#{expression.right.value}"
+			receiver = expression.left.respond_to?(:value) ? expression.left.value : nil
+			return "the receiver is nil -- no member #{Ascii.bold member} to reach" unless receiver
+			"#{Ascii.bold receiver} is nil -- no member #{Ascii.bold member} to reach"
+		end
 	end
 
 	class Invalid_Array_Index < Error

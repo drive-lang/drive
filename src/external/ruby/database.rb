@@ -47,6 +47,7 @@ module Lost
 					column_name = member.name.to_sym
 					case member.type.name
 					when 'Primary_Key'
+						# todo; check tag for subtype of primary key
 						primary_key column_name
 					when 'String', 'Text'
 						column column_name, ::String
@@ -56,15 +57,14 @@ module Lost
 						column column_name, ::Numeric
 					when 'Bool'
 						column column_name, ::TrueClass
-						# ####
-						# note; no Lost types yet for these below
-						# ####
 					when 'Date'
 						column column_name, ::Date
 					when 'Date_Time'
 						column column_name, ::DateTime
 					when 'Time'
 						column column_name, ::Time
+						
+						# note; no Lost types yet for these below
 					when 'Flt', 'Float'
 						column column_name, ::Float
 					when 'Decimal'
@@ -73,6 +73,7 @@ module Lost
 						column column_name, ::File
 					else
 						if member.type.is_a? Lost::Enum
+							# todo; should these be considered strings? Or maybe integers? Can it be more complex?
 							column column_name, ::String
 						end
 					end

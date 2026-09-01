@@ -20,6 +20,9 @@ Printable {
 # @load 'and_this'      # no .tape extension required
 
 @load 'lost/file_system'
+@load 'lost/date'
+@load 'lost/time'
+@load 'lost/date_time'
 @load 'lost/number'
 @load 'lost/array'
 @load 'lost/dictionary'

@@ -3,7 +3,7 @@ Dom {
 	html_element := 'div'
 	children,
 	onclick,
-	key,   # optional stable id for this element's handler/input token -- see #next_render_token
+	key,   # optional stable id for this element's handler/input token
 
 	new ( children := [];
 		self.children = children
@@ -201,8 +201,7 @@ Img | Dom {
 }
 
 # Tables
-# `Html_Table`, not `Table` -- `Table` is the ORM type (lost/table.tape), and a
-# bare `Table | Dom {}` here reopens that same shared type instead of making a new one.
+# To avoid collision with database Table, this is called Html_Table, since both are likely to be used together.
 Html_Table | Dom {
 	html_element := 'table'
 }

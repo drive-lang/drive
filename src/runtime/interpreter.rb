@@ -248,12 +248,8 @@ module Lost
 		end
 
 		def add_onclick_handler handler, render_scope, element_key = nil
-			token                                = next_render_token(render_scope, element_key)
-			# Stored with the component this render pass belongs to (`render_scope[:component]`, the
-			# nearest html_id-bearing Dom instance) so #handle_request re-renders *that* on a click. The
-			# handler's own closure is captured lexically and runs correctly wherever it was written --
-			# a `.map` callback, a plain helper, a method -- so "which component to swap" no longer
-			# depends on the handler's scope chain reaching an Instance.
+			token = next_render_token(render_scope, element_key)
+			# Stored with the component this render pass belongs to (`render_scope[:component]`, the nearest html_id-bearing Dom instance) so #handle_request re-renders *that* on a click. The handler's own closure is captured lexically and runs correctly wherever it was written. A `.map` callback, a plain helper, a method, so "which component to swap" no longer depends on the handler's scope chain reaching an Instance.
 			dom_onclick_function_handlers[token] = { handler: handler, component: render_scope[:component] }
 			token
 		end
@@ -518,7 +514,7 @@ module Lost
 			path_string  = request.path
 			query_string = request.query_string
 			http_method  = request.request_method.downcase
-			path_parts = request.path.split('/').reject { _1.empty? }
+			path_parts   = request.path.split('/').reject { _1.empty? }
 
 			# CGI.parse only understands application/x-www-form-urlencoded bodies (key1=value1&key2=...).
 			# A JSON body has no top-level `=` for it to split on, so it used to fall back to treating the
@@ -624,11 +620,11 @@ module Lost
 					if response.body.to_s =~ /<html|<body|<head/i
 						response.body.prepend "<!DOCTYPE html>"
 
-						dom_js     = self.class.cached_asset_source_by_path['src/runtime/dom.js'] ||= File.read('src/runtime/dom.js')
-						script_tag = "<script>#{dom_js}</script>"
+						dom_js              = self.class.cached_asset_source_by_path['src/runtime/dom.js'] ||= File.read('src/runtime/dom.js')
+						script_tag          = "<script>#{dom_js}</script>"
 						view_transition_css = self.class.cached_asset_source_by_path['src/runtime/view_transition.css'] ||= File.read('src/runtime/view_transition.css')
 						view_transition_tag = "<style>#{view_transition_css}</style>"
-						body_str = response.body.to_s
+						body_str            = response.body.to_s
 
 						if body_str.include?('<head>')
 							response.body = body_str.sub('<head>', '<head>' + script_tag + view_transition_tag)
@@ -678,14 +674,19 @@ module Lost
 		end
 
 		def match_route http_method, path_parts, routes
-			routes.values.find do |route|
-				next unless route.http_method.value == http_method
-				next unless route.parts.count == path_parts.count
+			candidates = routes.values.select do |route|
+				next false unless route.http_method.value == http_method
+				next false unless route.parts.count == path_parts.count
 
 				path_parts.zip(route.parts).all? do |req_part, route_part|
 					(req_part == route_part) || (route_part.start_with?(':'))
 				end
 			end
+
+			# A route that matches every segment literally beats one that leaned on a `:param` placeholder,
+			# regardless of declaration order -- so `get://favicon.ico` wins over `get://:id` for
+			# `/favicon.ico`. Fewest `:param` segments wins; #min_by keeps the first on a tie.
+			candidates.min_by { |route| route.parts.count { |part| part.start_with?(':') } }
 		end
 
 		def extract_url_params path_parts, route
@@ -1268,6 +1269,14 @@ module Lost
 			receiver = interpret target.left
 			property = target.right.value
 
+			# `interpret` here isn't run through #maybe_instance, so a nil receiver is still Ruby nil; a
+			# self-declared-but-unset member (`x,`) comes back as Lost::Nil. Either way `x.foo = 1` has no
+			# receiver to write to -- name that directly instead of a generic "undeclared identifier". A
+			# member `nil` itself declares is left alone, matching the read path in #interp_dot_scope.
+			if receiver.nil? || (receiver.is_a?(Lost::Nil) && !receiver.has?(property))
+				raise Lost::Receiver_Is_Nil.new(target)
+			end
+
 			# `self`/`Self` are keyword sugar for `./`/`../` (see #interp_identifier) but arrive here as an ordinary `.` dot-target. `./x`/`../x` writes (#interp_infix_declaration's scope-operator branch, #interp_infix_assignment's general flow) never run Cannot_Reassign_Constant or check_dot_access_permissions! at all -- only the external-`.`-write rules below do (see "Member Creation Is Strict") -- so self/Self route around both entirely here too, for both `=` and `:=`, matching `./`/`../` exactly rather than just the not-yet-declared case.
 			self_keyword = target.left.is_a?(Lost::Identifier_Expr) && !target.left.scope_operator &&
 			               Lost::SELF_KEYWORDS.include?(target.left.value)
@@ -1347,7 +1356,7 @@ module Lost
 
 				interp_dot_scope receiver, expr
 			end
-		rescue Lost::Undeclared_Identifier, Lost::Cannot_Call_Instance_Member_On_Type
+		rescue Lost::Undeclared_Identifier, Lost::Cannot_Call_Instance_Member_On_Type, Lost::Receiver_Is_Nil
 			raise unless expr.operator.value == '.?'
 			nil
 		end
@@ -1455,6 +1464,12 @@ module Lost
 			check_dot_access_permissions! scope, expr.right.value, expr
 
 			interp_member_access scope, expr.right, exclude_global_scope: true
+		rescue Lost::Undeclared_Identifier
+			# `nil` is a real scope with its own declared members (`to_s`, ...), so a lookup that actually
+			# reaches one still works. Only a genuinely missing member on a nil receiver becomes this --
+			# far clearer than "<member> has not been declared", which reads as a missing type.
+			raise Lost::Receiver_Is_Nil.new(expr) if scope.is_a?(Lost::Nil)
+			raise
 		end
 
 		def interp_each_loop collection, func_expr
@@ -3092,10 +3107,11 @@ module Lost
 
 				result = target.send proxy_method, *func_scope.arguments
 
-				# Auto-link instances created by proxy methods to their global types
+				# Auto-link instances created by proxy methods to their global types, and refresh `.types` off that type -- a Ruby-built instance (`Lost::String.new` in a proxy) seeds `@types` from `self.class.name` (`"Lost::String"`), so without this a proxy return fails every `===`/`=>=`/return-type contract check. Mirrors #finish_intrinsic_instance.
 				if result.is_a?(Lost::Instance) && result.enclosing_scope.nil?
 					type_name = result.class.name.split('::').last
 					link_instance_to_type result, type_name
+					result.types = result.enclosing_scope.types if result.enclosing_scope
 				end
 
 				result

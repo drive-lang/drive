@@ -91,6 +91,44 @@ class E2E_Server_Test < Minitest::Test
 		assert_includes response.body, 'Not Found'
 	end
 
+	# A route matching every segment literally wins over one that leaned on a `:param`, regardless of
+	# declaration order. This is what makes `lost/server.tape`'s `get://favicon.ico` route actually
+	# shield an app's own `get://:id` from the browser's automatic icon probes.
+	def test_literal_route_beats_a_param_route_regardless_of_order
+		code = <<~TAPE
+		    Server {
+		    	port,
+		    	new ( port := #{@port};
+		    		self.port = port
+		    	)
+		    }
+
+		    Web_App | Server {
+		    	get://:id ( id; "dynamic `id`" )
+		    	get://favicon.ico (; "the literal one" )
+		    }
+
+		    app := Web_App()
+		TAPE
+
+		@interpreter    = Lost::Interpreter.new
+		server_instance = @interpreter.run code
+
+		@server_runner        = server_instance
+		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
+		@interpreter.start_server @server_runner
+
+		literal = Net::HTTP.get_response URI("http://localhost:#{@port}/favicon.ico")
+		assert_equal '200', literal.code
+		assert_equal 'the literal one', literal.body
+
+		# A path with no literal route still reaches the dynamic one.
+		dynamic = Net::HTTP.get_response URI("http://localhost:#{@port}/42")
+		assert_equal '200', dynamic.code
+		assert_equal 'dynamic 42', dynamic.body
+	end
+
 	def test_query_parameters
 		code = <<~TAPE
 		    Server {

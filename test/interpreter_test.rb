@@ -2399,19 +2399,19 @@ class Interpreter_Test < Base_Test
 
 	def test_neat_usage_of_operator_overloads
 		prelude = <<~CODE
-		    Time {
+		    Clock {
 		    	hour, minute, second,
 		    	period, # am/pm
 		    }
 
 		    @operator : @infix 700 ( hour, minute;
-		    	time := Time()
+		    	time := Clock()
 		    	time.hour = hour
 		    	time.minute = minute
 		    	time
 		    )
 
-		    @operator pm @postfix 600 ( left: Time;
+		    @operator pm @postfix 600 ( left: Clock;
 		        left.period = 'pm'
 		        left
 		    )

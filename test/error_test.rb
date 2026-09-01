@@ -15,6 +15,40 @@ class Error_Test < Base_Test
 		end
 	end
 
+	def test_receiver_is_nil_on_member_read
+		error = assert_raises Lost::Receiver_Is_Nil do
+			Lost.interp "task,\ntask.type"
+		end
+		# Ascii.bold wraps parts of the message in escape codes when stdout is a TTY -- strip them so the
+		# assertion holds whether or not the test run is attached to a terminal.
+		plain = error.message.gsub(/\e\[[\d;]*m/, '')
+		assert_includes plain, 'task is nil -- no member .type to reach'
+	end
+
+	def test_receiver_is_nil_on_member_call
+		assert_raises Lost::Receiver_Is_Nil do
+			Lost.interp "x,\nx.foo()"
+		end
+	end
+
+	def test_receiver_is_nil_on_member_write_and_declare
+		assert_raises Lost::Receiver_Is_Nil do
+			Lost.interp "x,\nx.foo = 1"
+		end
+
+		assert_raises Lost::Receiver_Is_Nil do
+			Lost.interp "x,\nx.foo := 1"
+		end
+	end
+
+	def test_nil_still_reaches_its_own_declared_members
+		assert_equal 'nil', Lost.interp('nil.to_s()')
+	end
+
+	def test_safe_navigation_on_nil_returns_nil
+		assert_nil Lost.interp("x,\nx.?foo")
+	end
+
 	def test_cannot_reassign_constant
 		assert_raises Lost::Cannot_Reassign_Constant do
 			Lost.interp 'CONST := 5, CONST = 10'

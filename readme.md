@@ -730,6 +730,32 @@ n.to_s()            # '42'
 n.clamp(0, 100)     # Clamp to range
 ```
 
+## Dates & Times
+
+`Date`, `Time`, and `Date_Time` are always available -- no `@load`.
+
+```lost
+Date.today()                # today
+Date.parse('2020-03-15')
+Time.now()
+Time.at(1_700_000_000)      # from epoch seconds
+Date_Time.now()
+Date_Time.parse('2020-03-15T09:30:00+00:00')
+
+d := Date.parse('2020-03-15')
+d.year         # 2020
+d.month        # 3
+d.day          # 15
+d.weekday      # 0   (0 = Sunday .. 6 = Saturday; Date only)
+d.iso8601()    # '2020-03-15'
+
+Time.now().epoch()   # Unix seconds (Time only)
+
+Date.parse('2020-01-01') < Date.parse('2021-01-01')   # true -- all of < > <= >= == != work
+```
+
+`Time` and `Date_Time` also have `.hour`, `.minute`, `.second`.
+
 ## Ranges
 
 1. `...` inclusive range
@@ -899,50 +925,57 @@ get://api/data (;
 
 ## Database
 
-1. Use `Sqlite` for SQLite databases
-2. Connect with `@connect` directive
+1. `@load 'lost/database.tape'` -- this pulls in `lost/table.tape` too
+2. `Sqlite(url)` builds a database; `@connect` opens it and **returns it**
+3. `Sqlite.memory()` for an in-memory db, `Sqlite.local('name')` for `temp/name.db`
 
 ```lost
 @load 'lost/database.tape'
 
-db := Sqlite('./data/app.db')
-@connect db
-
-db.create_table('users', {
-    id: 'primary_key',
-    name: 'String',
-    email: 'String'
-})
-
-db.table_exists?('users')  # true
-db.tables()                # ['users']
-db.delete_table('users')
+db := @connect Sqlite('./data/app.db')
 ```
+
+A schema is a **named Struct** -- one member per column, its type deciding the column type. The table name comes from the struct's name (`User` -> `users`), so the struct has to be named.
+
+```lost
+User <
+    id: Primary_Key
+    name: String
+    email: String
+    joined_at: Date_Time
+>
+
+db.find_or_create_table(User)   # -> a Table (creates it if missing)
+db.table_exists?(User)          # true          (also takes a bare :users)
+db.tables()                     # [users]  -- Symbols
+db.find_table('users')          # -> a Table, or nil
+db.delete_table!(User)          # also takes a bare :users
+```
+
+Column types: `Primary_Key`, `String`/`Text`, `Int`, `Number`, `Bool`, `Date`, `Time`, `Date_Time`. `Flt`/`Decimal`/`Blob` are mapped but not backed by a Lost type yet.
 
 ## Record ORM
 
-1. Compose with `Table` type
-2. Set static `Self.database` and instance `table_name`
+`db.find_or_create_table(schema)` returns a `Table`. CRUD lives on that object -- no model composition, no statics.
 
 ```lost
-@load 'lost/table.tape'
+users := db.find_or_create_table(User)
 
-User | Table {
-    Self.database := ~/db
-    table_name := 'users'
-}
+cooper := users.create(<name := 'Cooper'>)   # attrs are a `:=`-member Struct
+users.create(<name := 'Luna'>)
 
-# CRUD operations
-User.create({name: 'Alice', email: 'alice@example.com'})   # returns the created record
-users := User.all()                          # Array of Dictionaries
-user := User.find(1)                         # Dictionary
-User.find_by({email: 'alice@example.com'})   # Dictionary, or nil
-User.where({name: 'Alice'})                  # Array of Dictionaries
-User.update(1, {name: 'Alicia'})
-User.delete(1)
+users.all()                       # Array of record Structs
+users.find(cooper.id)             # one record Struct, or nil
+users.find_by(<name := 'Luna'>)   # first match, or nil
+users.where(<name := 'Luna'>)     # Array of matches
+users.update(cooper.id, <name := 'Cooper II'>)
+users.delete(cooper.id)
+users.count()
 ```
 
-Records come back as Dictionaries for this plain pattern. Compose `Table` with a tagged reference instead (`Tasks | Table\<'tasks', Task> {}`) and every CRUD method returns a real `Task`-shaped Struct instead.
+- A record is a `Struct` named after the schema -- read members by name (`record.name`), or `record.to_h` for the whole row
+- `Bool` columns round-trip as real `true`/`false`; `Date`/`Time`/`Date_Time` columns round-trip as the matching wrapper (`record.joined_at.year`)
+- A filter naming a column the schema doesn't have raises `Lost::Table_Invalid_Filter_Column`
 
 ## HTML Elements
 
@@ -1192,6 +1225,7 @@ lying(5)   # raises Lost::Type_Contract_Violation — declared Number, actually 
 3. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Lost::Undeclared_Type_Structure`
 4. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new(;)` runs, never forwarded as constructor args
 5. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
+6. A bare integer after `\` is shorthand for a one-member tag — `Abc\4815` means `Abc\<4815>` (a "version tag"). A capitalized name after `\` is still a named reference, not this
 
 ```lost
 String\<dict: Dictionary> {

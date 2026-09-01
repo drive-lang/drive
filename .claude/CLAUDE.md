@@ -260,6 +260,8 @@ Identifiers starting with `_` are considered private by convention (e.g., `_priv
 
 **Dot access (`x.y`)** resolves `y` only against `x` (plus global scope) via `#interp_member_access` (`interpreter.rb`), never the ambient call stack — without this, a member missing on `x` could fall through to an unrelated same-named member still active further down the interpreter's stack (e.g. the very method currently executing) instead of raising `Undeclared_Identifier`.
 
+**Nil receiver.** `x.y` / `x.y()` / `x.y = z` / `x.y := z` where `x` is `nil` raises `Lost::Receiver_Is_Nil` (`"`x` is nil — no member `.y` to reach"`), not a bare `Undeclared_Identifier` (which read as if `y` were a missing type). `nil` is still a real scope with its own declared members, so `nil.to_s()` and the like keep working — the read path (`#interp_dot_scope`) only translates an `Undeclared_Identifier` to `Receiver_Is_Nil` when the lookup genuinely finds nothing and the receiver is `Lost::Nil`; the write path (`#assign_dot_member`) guards Ruby `nil` and any not-actually-declared member on `Lost::Nil` up front. `x.?y` on a nil `x` still returns `nil` (`Receiver_Is_Nil` is in `#interp_dot_infix`'s `.?` rescue list).
+
 ### `self` / `Self` Keywords
 
 `self` and `Self` are keyword sugar for `./` and `../` respectively — `self.x` and `./x` (`Self.x` and `../x`) are exactly the same thing, just spelled differently. **The user prefers `self`/`Self` over `./`/`../` in new/edited Lost code** (`.tape` files under `learn/`, `lost/`, `examples/`, and `readme.md`) — `./`/`../` still work and aren't being removed, but default to `self`/`Self` when writing or updating Lost source unless the surrounding code is specifically demonstrating the scope-operator spelling itself (e.g. the Scope Operators section above).
@@ -335,6 +337,7 @@ t.missing = 5                       # raises Lost::Cannot_Assign_Undeclared_Iden
 - Not yet covered: the equivalent restriction for `../` creating a brand-new *static* member from outside the type's original body walk — no "still being defined" signal exists for `Type` the way `has?('new')` does for `Instance`
 - A constant-named member (`X.SOME_CONST = ...`) can never be reassigned via `.`, raising `Lost::Cannot_Reassign_Constant`
 - All three `.`-write forms — plain `=`, plain `:=`, and destructuring dot-targets (see Destructuring below) — share one implementation, `#assign_dot_member` in `interpreter.rb`. `:=` onto an *existing* member re-infers/overwrites its recorded type (same as re-running `:=` on a plain identifier); `=` checks the new value against any previously recorded type instead
+- A `.`-write onto a `nil` receiver (`x.y = z` / `x.y := z` where `x` is `nil`) raises `Lost::Receiver_Is_Nil`, not `Cannot_Assign_Undeclared_Identifier` — see "Nil receiver" under Scope System above
 
 ## Class Composition Operators
 
@@ -347,16 +350,14 @@ Lost uses composition operators instead of inheritance. Applied as `Class | Othe
 
 Multiple operators can be chained: `Admin | Read_Permissions | Write_Permissions { }`.
 
-Built-in types like `Server`, `Table`, and `Dom` are composed this way:
+Built-in types like `Server` and `Dom` are composed this way:
 
 ```lost
 Web_App | Server { get:// (; "Hello" ) }
-Post | Table {
-	Self.database := ~/db
-	table_name := 'posts'
-}
 Layout | Dom { render (; Html([Body("Hello")]) ) }
 ```
+
+(`Table` used to be composed too — `Post | Table { Self.database := ~/db }` — but the ORM moved to plain `Database` instance methods; see Database and ORM below.)
 
 ## Type Comparison Operators
 
@@ -422,6 +423,8 @@ thing: <String, Number>        # bare struct, no type name at all — a standalo
 z := Abc\<4815>                # a reference tagged with an actual value rather than a type
 z()                            # constructs Abc, with .tag bound before new(;) runs
 Abc\<4815>()                   # same, in one step
+Abc\4815                       # bare integer, no `<...>` — shorthand for Abc\<4815> (a "version tag")
+Primary_Key\Int               # bare identifier RHS is still a named reference, not this shorthand
 Def {}
 Def()                          # untagged types are completely unaffected
 ```
@@ -429,6 +432,7 @@ Def()                          # untagged types are completely unaffected
 A named reference's RHS must resolve to a real `Lost::Struct` or `Lost::Type` — anything else raises `Lost::Tag_Reference_Must_Be_Type_Or_Struct`. Referencing a name that's a real declared Type but has no matching tagged variant yet doesn't raise — it auto-declares one on the spot (an implicit empty body via `#declare_tagged_type_variant`), so `Array\String` "just works" without requiring `Array\String {}` to have been written first; declaring it for real later reopens/extends this same auto-created variant.
 
 - A member is any expression (`Abc\<1+2+3/123>`, `Abc\<this, that>`), not just a type name — evaluated normally at interpret time, so an identifier like `Number` resolves to the actual `Lost::Type`
+- **Bare integer shorthand** (`Abc\4815`, no angle brackets): a "version tag", parsed identically to `Abc\<4815>` — a single unnamed member holding that integer. Handled by `#integer_tag_next?`/`#type_then_integer_tag_next?`/`#integer_tag_struct_expr` (`parser.rb`), in both the primary-expression dispatch and `#parse_identifier_expr`'s trailing-tag handling. Only a bare integer triggers it; `Abc\Name` stays a named reference. Used by `lost/database.tape`'s `Primary_Key\Int` (an `Int`-tagged primary key) and left open for schema-version tagging
 - Named members (`Type\<some_string: String, num: Number> {}`) reuse `parse_identifier_expr`'s existing `: Type` annotation parsing for each member — no separate grammar needed. Only two named forms exist: `name: Type` and `name := value` — there's no general `name: value` the way Dictionaries have one. `:` immediately after a bare identifier, followed by anything that isn't a capitalized type name or `<...>` (almost always a lowercase value, mistaken for Dictionary-style `key: value`), raises `Lost::Invalid_Struct_Member_Annotation` at parse time in `#parse_struct` — without that check, `#parse_identifier_expr`'s own `: Type` lookahead just declines to consume the `:` (it can never be a type), leaving it to be reparsed on the next loop iteration as an unrelated `:symbol` prefix literal starting a whole new member, since commas are optional between struct members same as any other list — `<columns: cols>` would otherwise silently become the two members `columns, :cols` instead of erroring anywhere
 - A struct is only ever reachable via `.tag` (`.tag.types`, `.tag.some_string` for named members) — never auto-unpacked into `./`
 - A bare identifier immediately followed by `,` inside `<...>` (`<String, Number>`) is special-cased in `parse_struct` to parse as a plain identifier rather than the nil-init idiom (`ident,` ⇒ `ident = ident or nil`), which would otherwise misfire on the exact same shape
@@ -896,6 +900,35 @@ Methods: `to_s()`, `abs()`, `floor()`, `ceil()`, `round()`, `sqrt()`, `even?()`,
 
 Defined in: `lost/number.tape`, implemented in `scopes.rb` as `Lost::Number`
 
+### Date / Time / Date_Time
+
+Three temporal wrappers, always available (loaded by `lost/preload.tape` — no `@load` needed). Each wraps a Ruby stdlib value: `Date` → `::Date`, `Time` → `::Time`, `Date_Time` → `::DateTime`.
+
+```lost
+Date.today()                       # today's Date
+Date.parse('2020-03-15')           # Date from an ISO string
+Time.now()                         # current Time
+Time.at(1_700_000_000)             # Time from epoch seconds
+Date_Time.now()
+Date_Time.parse('2020-03-15T09:30:00+00:00')
+
+d := Date.parse('2020-03-15')
+d.year        # 2020
+d.month       # 3
+d.day         # 15
+d.weekday     # 0  (0 = Sunday .. 6 = Saturday; Date only)
+d.iso8601()   # '2020-03-15'
+d.to_s()      # same as iso8601()
+
+Time.now().epoch()   # Unix seconds (Time only)
+```
+
+- **Common members**: `year`, `month`, `day`, `iso8601()`, `to_s()` (all three). `Time`/`Date_Time` add `hour`, `minute`, `second`. `Time` adds `epoch()`. `Date` adds `weekday`.
+- **Comparison**: `<`, `>`, `<=`, `>=`, `==`, `!=` all work, against another wrapper or a raw Ruby value — `Temporal#<=>` unwraps either side (`src/external/ruby/temporal.rb`).
+- **Static constructors**: `Date.today`, `Date.parse`; `Time.now`, `Time.at`, `Time.parse`; `Date_Time.now`, `Date_Time.parse`.
+- Backing bodies: `lost/date.tape`, `lost/time.tape`, `lost/date_time.tape`. Ruby classes and the shared `Temporal` mixin: `src/external/ruby/temporal.rb`. Tests: `test/temporal_test.rb`.
+- These are the types a `Date` / `Time` / `Date_Time` table column maps to — a value read back from such a column comes out as the matching wrapper, linked to its global type via `Table#linked_temporal` (`table.rb`).
+
 ### File_System (File I/O)
 
 Static methods for reading and writing files:
@@ -1087,116 +1120,89 @@ The base test class provides `refute_raises` helper for asserting no exceptions.
 
 ## Database and ORM
 
-Lost includes built-in database support with an ActiveRecord-style ORM using Sequel and SQLite.
+Lost includes built-in database support with an ActiveRecord-style ORM using Sequel and SQLite. `lost/database.tape` (which itself `@load`s `lost/table.tape`) gives you both `Database`/`Sqlite` and `Table`.
 
-### Database Connection
+### Connecting
+
+`@connect` opens the connection and **returns the `Database`** — so the idiom is one line:
 
 ```lost
 @load 'lost/database.tape'
 
-db := Sqlite('./data/myapp.db')
-@connect db  # Establishes connection
+db := @connect Sqlite('./data/myapp.db')   # a real path
+db := @connect Sqlite.memory()             # ':memory:', nothing hits disk
+db := @connect Sqlite.local('demo')        # <@root>/temp/demo.db (adds `.db` if missing)
 ```
 
-**Database methods:**
-- `create_table(name, schema)` - Create table from a named Struct schema
-- `delete_table(name)` - Drop table
-- `table_exists?(name)` - Check if table exists
-- `tables()` - List all tables
+- `Sqlite(url)` builds an unconnected `Database` (`adapter`/`url` set, `connection` still nil). `@connect` interprets its argument, links it to the `Database` type, and lazily builds + caches the Sequel connection on it (`#interp_directive`'s `'connect'` case → `#interp_database`, `interpreter.rb`). A second `@connect` on the same `Database` returns the same cached `Sequel::SQLite::Database`.
+- `@connect db` (statement form, no assignment) still works — it returns the same value, you just ignore it.
+- Connecting with no `url` raises `Lost::Url_Not_Set_For_Database_Instance`.
 
-A table's schema is a named Struct: one member per column, its own type deciding the column type. `Primary_Key` is a standard/provided marker type (`lost/database.tape`, same as `String`/`Bool`/etc) that marks a member as the table's primary key.
+### Schemas
+
+A schema is a **named Struct** — one member per column, the member's type name deciding the column type. The struct's `.name` is what the table name is derived from (`User` → `users`, `Log_Schema` → `log_schemas`, via `Sequel::Inflections` pluralize/underscore), so an **anonymous** schema struct raises `Lost.assert` (a `RuntimeError`) in every method that takes one.
 
 ```lost
-Users_Schema <
+User <
     id: Primary_Key
     name: String
-    email: String
+    joined_at: Date_Time
 >
-
-db.create_table('users', Users_Schema)
-
-db.table_exists?('users')  # => true
-db.tables()                # => ['users']
 ```
 
-### Record ORM
+Column type names, matched by string in `Database#proxy_create_table` (`database.rb`):
 
-The `Table` type (`lost/table.tape`) provides ActiveRecord-style ORM functionality:
+| schema type | column |
+|---|---|
+| `Primary_Key` | auto-increment primary key (declared `Primary_Key\Int` in `lost/database.tape`) |
+| `String`, `Text` | text |
+| `Int` | integer |
+| `Number` | numeric |
+| `Bool` | boolean (SQLite stores 0/1/NULL — see round-trip note below) |
+| `Date`, `Time`, `Date_Time` | the matching Ruby date/time column |
+| `Flt`/`Float`, `Decimal`, `Blob`/`Binary` | mapped, but no Lost type backs these yet |
+| an `Enum`-typed member | text |
+
+### Database methods
+
+- `find_or_create_table(schema)` → a `Table` (creates the table if missing, otherwise just binds to it). The usual entry point.
+- `create_table(schema)` → a `Table` (fails if the table already exists at the Sequel level)
+- `find_table(name_or_schema)` → a `Table`, or `nil` if the table doesn't exist. Passing the schema struct also sets the returned `Table`'s `.columns`; passing a bare name (`'widgets'` / `:widgets`) does not.
+- `delete_table!(name_or_schema)` — drop it. Takes a bare `Symbol`/`String` name too, so you don't need the original schema in scope to drop a table.
+- `table_exists?(name_or_schema)` → `Bool`
+- `tables()` → `Array` of table-name `Symbol`s
+- `to_s()` → `"Database{<object_id>}"`
+
+### Records (the `Table` instance)
+
+The `Table` you get back carries `.columns` (the schema struct), `.database`, and `.table_name` (a plain `String`, e.g. `'users'`). Its CRUD methods are **instance methods on that object** — there is no `User | Table {}` model composition or `Self.database` static pattern anymore (removed deliberately, so one schema can be bound to more than one database). `lost/table.tape` has no `Self.` members.
 
 ```lost
-@load 'lost/table.tape'
+users := db.find_or_create_table(User)
 
-User | Table {
-    Self.database := ~/db  # Set database (static declaration)
-}
+cooper := users.create(<name := 'Cooper'>)   # attrs are a `:=`-member Struct, not a Dictionary
+users.create(<name := 'Luna'>)
+
+users.all()                    # Array of record Structs
+users.find(cooper.id)          # one record Struct, or nil
+users.find_by(<name := 'Luna'>)  # first match, or nil
+users.where(<name := 'Luna'>)    # Array of matches
+users.update(cooper.id, <name := 'Cooper II'>)
+users.delete(cooper.id)
+users.count()
 ```
 
-`table_name` self-infers on first read from the composed type's own name (`User` -> `users`, singular Capitalcase to plural lowercase — `proxy_infer_table_name_from_class!`, `table.rb`) — no manual declaration needed. Declare `table_name := 'custom_name'` in the body to override the inferred name.
+- **A record is an `Lost::Struct`**, named after the schema, built by `Table#row_to_struct` → `Interpreter#build_struct` (`table.rb`). Read members by name (`record.name`, `record.id`); `.to_h` gives the whole row.
+- `find`/`update`/`delete` take a primary key (`pk`). `find_by`/`where`/`create`/`update` take a Struct of `name := value` members.
+- A filter/attrs Struct naming a column the schema doesn't have raises `Lost::Table_Invalid_Filter_Column` (checked proactively in `#check_filter_columns!`, before the query runs).
+- **`Bool` round-trip**: SQLite has no boolean type, so a `Bool` column stores 0/1 (or NULL when unset). `#coerce_column_value` maps it back to a real `true`/`false` so `if record.done` and `record.done == true` both behave — before this fix an unset value read as the truthy `Bool` *type* object.
+- **`Date`/`Time`/`Date_Time` round-trip**: read back as the matching wrapper instance (`record.joined_at.year`, comparisons, etc.), GC-safely linked to its global type via `#linked_temporal`.
 
-**Table class methods (static):**
-- `all()` - Fetch all records as an Array of records
-- `find(id)` - Find record by ID, returns a record or nil
-- `find_by(attributes)` - Find first record matching a Dictionary of conditions, returns a record or nil
-- `where(attributes)` - Find all records matching a Dictionary of conditions, returns an Array of records
-- `create(attributes)` - Insert new record, returns the created record
-- `update(id, attributes)` - Update record by ID
-- `delete(id)` - Delete record by ID
+### Implementation
 
-`attributes`/a returned record is a Dictionary for the plain `User | Table { Self.database := ~/db }` pattern; for a model composed with a structured `Table` reference (`Tasks | Table\<'tasks', Task> {}`, see `lost/2nd/task_app/main.tape` — that file is a work in progress, don't treat it as a settled example), `create`/`find`/`find_by`/`where`/`all` return a real `Task`-shaped Struct instead (`Lost::Table#record_struct`, `table.rb`), read off the model's own `.tag.columns`.
-
-```lost
-`Create records
-User.create({name: "Alice", email: "alice@example.com"})
-User.create({name: "Bob", email: "bob@example.com"})
-
-`Query records
-users := User.all()        # => Array of records
-user := User.find(1)       # => a record, {id: 1, name: "Alice", ... }
-User.find_by({email: "alice@example.com"})
-User.where({name: "Alice"})
-
-`Update and delete records
-User.update(1, {name: "Alicia"})
-User.delete(1)
-```
-
-### Full Example
-
-```lost
-@load 'lost/database.tape'
-@load 'lost/table.tape'
-
-db := Sqlite('./temp/blog.db')
-@connect db
-
-# Create schema
-Posts_Schema <
-    id: Primary_Key
-    title: String
-    body: String
->
-db.create_table('posts', Posts_Schema)
-
-# Define model
-Post | Table {
-    Self.database := ~/db  # table_name self-infers to 'posts'
-}
-
-# Use ORM
-Post.create({title: "Hello", body: "World"})
-posts := Post.all()
-
-for posts
-    @puts "`it[:title]`: `it[:body]`"
-end
-```
-
-**Implementation:**
-- Database operations use Ruby's Sequel gem
-- Table methods are proxy methods (see `src/external/ruby/table.rb`)
-- Table methods return `Lost::Dictionary` instances, not typed model instances (see `table.rb`'s own `# todo: Convert this to a Record instance`)
-- Static declarations (`Self.database`) link models to database
-- `table_name` self-infers on first read (`Table#table_name`, `table.rb`) — checked own-declaration-first, then `enclosing_scope` (the older static pattern), same fallback order `database` already uses; a tagged `Table\<name: String, columns: Struct>` reference's `new(;)` no longer auto-creates its table on construction — call `db.create_table(...)` explicitly, same as the plain pattern above
+- Sequel + SQLite. `Database`/`Table` proxy methods: `src/external/ruby/database.rb`, `src/external/ruby/table.rb`. Tests: `test/database_test.rb`, plus the temporal-column round-trip in `test/temporal_test.rb`.
+- `Database#find_table` is a `proxy_overload` — `Lost::Struct` → `#find_table_struct`, `::String` → `#find_table_named`.
+- `#table_name_for` is the single place a table name is derived from a schema struct; every struct-accepting method funnels through it, so the "must be named" assert covers all of them at once.
 
 ## Web Server Features
 
@@ -1205,6 +1211,7 @@ Lost has built-in web server support:
 - **Server class composition** - Create servers by composing with the built-in `Server` class using `|` operator
 - **Route syntax** - Routes defined as `method://path` (e.g., `get://`, `post://users/:id`)
 - **URL parameters** - Use `:param` syntax in routes, accessed via route function parameters
+- **Route precedence** - `#match_route` (`interpreter.rb`) collects every route whose segment count and literal/`:param` segments match, then picks the one with the *fewest* `:param` segments — so a fully literal route always beats a `:param` route for the same path, regardless of declaration order (`get://favicon.ico` wins over an app's own `get://:id`). `#min_by` keeps the first on a tie, matching the old `.find` order. This is what makes `lost/server.tape`'s built-in `get://favicon.ico` / `get://apple-touch-icon.png` / `get://apple-touch-icon-precomposed.png` routes (all `ok200`) actually shield an app from the browser's automatic icon probes hitting `get://:id`
 - **Query strings** - Available via `request.query` dictionary
 - **Request/Response objects** - Automatically available in route handlers (from `scopes.rb`)
 - **HTTP redirects** - `response.redirect(url)` for POST/Redirect/GET pattern (uses 303 See Other)

@@ -30,24 +30,24 @@ piped := 4 -> double -> add_fifteen
 
 ### Inventing new literal-like syntax
 
-`@infix` and `@postfix` can combine to make something that reads like a brand new literal. Here `:` builds a `Time` from two numbers, and `pm` tags it afterward:
+`@infix` and `@postfix` can combine to make something that reads like a brand new literal. Here `:` builds a `Clock` from two numbers, and `pm` tags it afterward:
 ###
-Time { hour, minute, period, }
+Clock { hour, minute, period, }
 
 @operator : @infix 700 ( hour, minute;
-	t := Time()
+	t := Clock()
 	t.hour = hour
 	t.minute = minute
 	t
 )
 
-@operator pm @postfix 600 ( left: Time;
+@operator pm @postfix 600 ( left: Clock;
 	left.period = 'pm'
 	left
 )
 
 t := 11:22pm
-@assert t.hour == 11 && t.minute == 22 && t.period == 'pm', 'the combined infix/postfix operators should build a Time and tag it'
+@assert t.hour == 11 && t.minute == 22 && t.period == 'pm', 'the combined infix/postfix operators should build a Clock and tag it'
 
 
 ### Prefix operators

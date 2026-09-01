@@ -35,14 +35,19 @@ String {
 	reverse (; @ruby )
 	split ( delimiter := nil; @ruby )
 	start_with? ( prefix; @ruby )
+	starts_with? ( prefix; start_with?(prefix))
 	to_md5_hash (; @ruby )
 	trim_left (; @ruby )
 	trim_right (; @ruby )
 	upcase (; @ruby )
 	chars (; @ruby )
 	index ( substr; @ruby )
-	slice ( substr; @ruby )
+	slice ( start, length; @ruby )
 	to_f (; @ruby )
 	to_i (; @ruby )
 	trim (; @ruby )
+
+	lines (;
+		value.split('\n')
+	)
 }

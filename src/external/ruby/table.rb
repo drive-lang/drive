@@ -86,9 +86,20 @@ module Lost
 			case type_name
 			when 'Bool'
 				![nil, 0, 0.0, false, '0', 'f', 'false'].include?(raw)
+			when 'Date'
+				raw.nil? ? nil : linked_temporal(Lost::Date.new(raw.is_a?(::Date) ? raw : ::Date.parse(raw.to_s)), 'Date')
+			when 'Time'
+				raw.nil? ? nil : linked_temporal(Lost::Time.new(raw.is_a?(::Time) ? raw : ::Time.parse(raw.to_s)), 'Time')
+			when 'Date_Time'
+				raw.nil? ? nil : linked_temporal(Lost::Date_Time.new(raw.is_a?(::DateTime) ? raw : ::DateTime.parse(raw.to_s)), 'Date_Time')
 			else
 				raw
 			end
+		end
+
+		def linked_temporal instance, type_name
+			Lost::Interpreter.current&.link_instance_to_type instance, type_name
+			instance
 		end
 
 		def table

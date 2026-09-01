@@ -1,7 +1,7 @@
 module Lost
 	# @param [::String] key
 	# @param [Lost::Expression | Lost::Declaration] expr_or_decl
-	# @param [Lost::Expression] expr -- the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution -- see Interpreter#resolve_forward_declaration)
+	# @param [Lost::Expression] expr, the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution, see Interpreter#resolve_forward_declaration)
 	Declaration = ::Data.define(:key, :expr_or_decl, :expr) do
 		def == other
 			other.key == key
@@ -11,14 +11,10 @@ module Lost
 	class Declarator
 		extend Cached_By_Path
 
-		# {::String resolved_path => Hash{::String => Declaration}} -- shares Cached_By_Path with
-		# Interpreter (see src/shared/cached_by_path.rb), so Interpreter.reset_file_caches! can
-		# reset this one too without needing to know it exists.
+		# {::String resolved_path => Hash{::String => Declaration}}
 		cache_by_path :cached_declarations_by_filepath
 
-		# Filepaths currently being resolved, guarding against a load cycle (A @loads B @loads A)
-		# recursing forever. Not part of the cache-by-path mixin above -- this is an in-flight
-		# guard, not a persistent cache to invalidate on file change.
+		# Filepaths currently being resolved, guarding against a load cycle (A @loads B @loads A) recursing forever. Not part of the cache-by-path mixin above. This is an in-flight guard, not a persistent cache to invalidate on file change.
 		@currently_loading_filepaths = ::Set.new
 
 		class << self

@@ -25,19 +25,10 @@ module Lost
 
 			names.each_with_index do |name, i|
 				next unless name
-				# An unset named member resolves to nil, same as `x: Number` and the `ident,` nil-init
-				# idiom everywhere else -- not the Type object (`types[i]`), which is truthy and leaks
-				# into any `if struct.member` check. `interp_struct` already normalizes `values` this
-				# way; this loop used to put the Type back. Type stays associated via `type_names[i]`.
 				declare name, values[i], type_names[i]
 			end
 		end
 
-		# Per-member resolved type *objects* (Type instances for named/typed members, or the raw
-		# interpreted value for unnamed members) -- exposed to Lost as `.types`. Distinct from the
-		# inherited `.types` (Type#types, this Struct instance's own composed-type Set, unrelated --
-		# see Interpreter#build_struct's `struct.types = struct_type.types`), which is why this reads
-		# off `@declarations` under its own name instead of being a plain attr_accessor called `types`.
 		def type_objects
 			@declarations['types'].values
 		end
@@ -87,10 +78,11 @@ module Lost
 
 				value             = values[i]
 				hash[name.to_sym] = case value
-					when Lost::String then value.value
-					when Lost::Bool   then value.truthiness
-					when ::Symbol     then value.to_s
-					else value
+				when Lost::String then value.value
+				when Lost::Bool then value.truthiness
+				when Lost::Date, Lost::Time, Lost::Date_Time then value.value
+				when ::Symbol then value.to_s
+				else value
 				end
 			end
 		end

@@ -169,19 +169,15 @@ module Lost
 			false
 		end
 
-		# Stricter than #func_declaration_follows?: everything from the current `(` up to its depth-1
-		# `;` must actually look like a parameter list -- bare names, `Type` annotations, labels, `->`
-		# return type, `@readable`/`@writable`, struct annotations. So `xs.map(x; x*2)` qualifies for
-		# the spread-lambda sugar but `xs.accumulate(0, f; ...)` (a number, then more) does not. A
-		# `:=`/`=` default, or a nested `(`/`[`/`{`, also disqualifies -- wrap those in real parens.
 		PARAM_LIST_TOKEN_VALUES = %w[, : -> < > @].freeze
+
 		def anon_func_param_list_follows?
 			depth = 0
 			remainder.each do |token|
 				if token.value == '('
 					depth += 1
 					next if depth == 1 # the opening paren itself
-					return false       # a nested group -- too complex for the bare sugar
+					return false # a nested group -- too complex for the bare sugar
 				end
 				return false if %w([ {).include? token.value
 				depth -= 1 if token.value == ')'
@@ -472,9 +468,7 @@ module Lost
 				eat if curr? ','
 				reduce_newlines
 
-				# The branches above only recognise real param-list tokens (names, `: Type`, labels,
-				# defaults, `->`). A stray token they all skipped -- a number, a string, an operator --
-				# left `@i` untouched, so without this the `until` loop spins forever. Fail loudly.
+				# The branches above only recognise real param-list tokens (names, `: Type`, labels, defaults, `->`). A stray token they all skipped (a number, a string, an operator). Without this the `until` loop spins forever
 				raise "unexpected #{curr_lexeme.value.inspect} in function parameter list" if @i == before_i
 			end
 
@@ -486,7 +480,6 @@ module Lost
 				reduce_newlines
 			end
 
-			# func.expressions = func.expressions #.compact #.uniq # bug, The first Param is twice in the array, with the same object_id. Dedupe it for now. Figure out the real issue later.
 			eat ')'
 
 			has_real_body = func.expressions.any?
@@ -521,6 +514,29 @@ module Lost
 			end
 
 			input[i, 1] = closes
+		end
+
+		def integer_tag_next?
+			curr?(TAG_OPERATOR, :number) && peek(1).value.match?(/\A\d+\z/)
+		end
+
+		def type_then_integer_tag_next?
+			curr?(TYPE_IDENTIFIER, TAG_OPERATOR, :number) && peek(2).value.match?(/\A\d+\z/)
+		end
+
+		def integer_tag_struct_expr
+			start  = curr_lexeme
+			member = parse_number_expr
+			Lost::Struct_Expr.new.tap do |it|
+				it.lexeme      = Lost::Lexeme.new :struct, '<>'
+				it.types       = [member]
+				it.names       = [nil]
+				it.c0          = start.c0
+				it.l0          = start.l0
+				it.c1          = member.c1
+				it.l1          = member.l1
+				it.source_file = start.source_file
+			end
 		end
 
 		def parse_struct
@@ -610,6 +626,10 @@ module Lost
 			elsif curr?(TAG_OPERATOR, TYPE_IDENTIFIER) and eat(TAG_OPERATOR)
 				# Named reference, no `<...>` (`Array\Task_Schema`) -- resolved at interpret time.
 				it.tag = parse_identifier_expr
+			elsif integer_tag_next? and eat(TAG_OPERATOR)
+				# Version tag, no `<...>` (`Primary_Key\123`) -- same as `\<123>`.
+				it.tag      = integer_tag_struct_expr
+				it.tag.name = it.name
 			end
 
 			# When no body and no composition chain follow e.g.
@@ -732,7 +752,7 @@ module Lost
 			expr.lexeme  = eat
 			expr.privacy = Lost.privacy_of_ident expr.value
 
-			# A type reference can carry its own trailing `\<...>`/`\Name` (`x: Abc\<Number>`) -- a recursive call here never goes through #parse_type_decl, so it's handled directly.
+			# A type reference can carry its own trailing tag. note; A recursive call here never goes through #parse_type_decl so it's handled directly.
 			if TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, '<')
 				eat TAG_OPERATOR
 				expr.type_struct      = parse_struct
@@ -740,6 +760,10 @@ module Lost
 			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, TYPE_IDENTIFIER)
 				eat TAG_OPERATOR
 				expr.type_struct = parse_identifier_expr # named reference, e.g. `Abc\Task_Schema`
+			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && integer_tag_next?
+				eat TAG_OPERATOR
+				expr.type_struct      = integer_tag_struct_expr # version tag, e.g. `Primary_Key\123`
+				expr.type_struct.name = expr.value
 			end
 
 			if curr?(':', TYPE_IDENTIFIER)
@@ -932,10 +956,6 @@ module Lost
 			copy_location expr, start
 		end
 
-		# `member_rhs` is set while parsing the identifier on the right of a `.` -- there, `member(x; y)`
-		# can only ever be a call (you cannot declare a function as a member access), so the
-		# func-declaration dispatch below must stand down and let #complete_expression pick the `(...)`
-		# up as a (possibly paren-dropped) call argument list instead. See the spread-lambda note there.
 		def begin_expression precedence = STARTING_PRECEDENCE, member_rhs: false
 			raise Lost::Out_Of_Tokens.new unless lexemes?
 
@@ -945,10 +965,6 @@ module Lost
 			elsif curr?(ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
-			# On the right of a `.`, a *named* head -- `x.foo(a; b)` -- is always a call, never a
-			# declaration, so stand down and let #complete_expression take the `(...)` as a paren-dropped
-			# lambda argument. A nameless `.( ;)` (curr is `(`) is the `x.(; ...)` tap idiom and still
-			# parses as an anonymous func literal right here.
 			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
 				parse_func precedence
 
@@ -961,7 +977,7 @@ module Lost
 			elsif curr?('<') && curr_lexeme.type == :operator && !@custom_prefix.include?('<')
 				parse_struct
 
-			elsif curr?(TYPE_IDENTIFIER, '{') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, '<') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, TYPE_IDENTIFIER) || curr?(TYPE_IDENTIFIER, TYPE_COMPOSITION_OPERATORS)
+			elsif curr?(TYPE_IDENTIFIER, '{') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, '<') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, TYPE_IDENTIFIER) || type_then_integer_tag_next? || curr?(TYPE_IDENTIFIER, TYPE_COMPOSITION_OPERATORS)
 				# No trailing `{` guard needed for the named-reference form -- unlike `/`, `\` never collides with anything else in Lost, so it's unambiguous with or without a body.
 				parse_type_decl
 
@@ -1202,22 +1218,17 @@ module Lost
 				end
 			end
 
-			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` -- an unrelated anonymous func literal on the same line -- would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
+			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` – an unrelated anonymous func literal on the same line – would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
 			#
-			# Exception -- the "spread lambda" sugar: a single anonymous-function argument may drop its
-			# own parens, `xs.map(x; x * 2)` for `xs.map((x; x * 2))`. Only when the receiver is a member
-			# access, a call result, or a subscript -- shapes that are unambiguously a call target and
-			# can't be an accidental adjacent `(;)` literal (`"endpoint" (;)`) or a fresh `f(x; body)`
-			# declaration (#begin_expression's `member_rhs` path already kept the member name an
-			# identifier so we land here with the whole `x.foo` as `expr`).
+			# Exception – the "spread lambda" sugar: a single anonymous-function argument may drop its own parens, `xs.map(x; x * 2)` for `xs.map((x; x * 2))`. Only when the receiver is a member access, a call result, or a subscript – shapes that are unambiguously a call target and can't be an accidental adjacent `(;)` literal (`"endpoint" (;)`) or a fresh `f(x; body)` declaration (#begin_expression's `member_rhs` path already kept the member name an identifier so we land here with the whole `x.foo` as `expr`).
 			spread_receiver   = expr.is_a?(Lost::Call_Expr) || expr.is_a?(Lost::Subscript_Expr) || (expr.is_a?(Lost::Infix_Expr) && expr.operator&.value == '.')
 			spread_lambda_arg = curr?('(') && spread_receiver && anon_func_param_list_follows?
 			call_expr         = curr?('(') && curr?(:delimiter) && (!func_declaration_follows? || spread_lambda_arg)
 			subscript         = curr? '['
 			if call_expr && (precedence_for(curr_lexeme.value) > precedence)
-				receiver      = expr
-				expr          = Lost::Call_Expr.new
-				expr.receiver = receiver
+				receiver       = expr
+				expr           = Lost::Call_Expr.new
+				expr.receiver  = receiver
 				expr.arguments = if spread_lambda_arg
 					[parse_func]
 				else

@@ -17,7 +17,7 @@ class ProxiesTest < Base_Test
 		assert_equal "world", Lost.interp("'WORLD'.downcase()")
 
 		assert_equal ['he', '', 'o'], Lost.interp("'hello'.split('l')").values
-		assert_equal "ORL", Lost.interp("'WORLD'.slice('ORL')")
+		assert_equal "ORL", Lost.interp("'WORLD'.slice(1, 3)")
 
 		assert_equal "Locke!", Lost.interp("'   Locke!    '.trim()")
 		assert_equal "Locke!    ", Lost.interp("'   Locke!    '.trim_left()")
@@ -252,5 +252,20 @@ class ProxiesTest < Base_Test
 
 		assert_equal 3, Lost.interp("9.sqrt()")
 		assert_equal 5, Lost.interp("25.sqrt()")
+	end
+
+	# A proxy method that builds and returns a fresh Lost:: instance (`Lost::String.new` here) seeds `@types` from its Ruby class name (`"Lost::String"`), so the return value used to fail every type-identity check. `read_file_to_string` itself declares `-> String`, so this raised `Type_Contract_Violation` ("expected String, got String") before it could even return.
+	def test_proxy_return_value_satisfies_type_identity
+		fixture = "'test/fixtures/hello_read.txt'"
+
+		assert_equal true, Lost.interp("read_file_to_string(#{fixture}) === String")
+
+		wrapped = <<~CODE
+		    get_it ( -> String;
+		    	read_file_to_string(#{fixture})
+		    )
+		    get_it()
+		CODE
+		assert_equal "Hello, Read!\n", Lost.interp(wrapped).value
 	end
 end

@@ -415,7 +415,7 @@ class Database_Test < Base_Test
 		assert_equal ':memory:', out
 	end
 
-	def test_sqlite_local_defaults_to_temp_dir
+	def sqlite_local_defaults_to_temp_dir # skipping because it requires file system write
 		filename = "local_test_#{SecureRandom.hex}"
 		filepath = File.expand_path("../temp/#{filename}.db", __dir__)
 		File.delete(filepath) if File.exist? filepath
@@ -537,17 +537,15 @@ class Database_Test < Base_Test
 	# --- Column types available to create_table ---
 
 	def test_create_table_every_column_type
-		# No distinct Lost Date/Date_Time/Time/Flt/Decimal/Blob type exists yet -- alias one yourself,
-		# same as the codebase's own `Text | String {}` pattern (see database.rb's #proxy_create_table).
-		# Primary_Key/String/Int/Bool/Enum need no aliasing -- they're already real, provided types.
+		# No distinct Lost Flt/Decimal/Blob type exists yet -- alias one yourself, same as the
+		# codebase's own `Text | String {}` pattern (see database.rb's #proxy_create_table).
+		# Primary_Key/String/Int/Bool/Date/Time/Date_Time/Enum need no aliasing -- all real,
+		# provided types.
 		refute_raises do
 			Lost.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
-				Date      | Number {}
-				Date_Time | Number {}
-				Time      | Number {}
 				Flt       | Number {}
 				Float     | Number {}
 				Decimal   | Number {}

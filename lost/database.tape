@@ -2,7 +2,7 @@
 
 Sequel_Sqlite_Database {}
 
-Primary_Key | Int {
+Primary_Key\Int {
 	name: String
 }
 
@@ -13,7 +13,7 @@ Database {
 
 	find_or_create_table (struct: Struct -> Table; @ruby )
 	create_table (struct: Struct -> Table; @ruby )
-	find_table   (by_name_or_struct; @ruby )  # no `-> Table` -- returns nil when the table doesn't exist, same as Table#find_by
+	find_table   (by_name_or_struct; @ruby )  # Does not specify `-> Table` return because it can return nil when the table doesn't exist
 	delete_table! (name: Symbol; @ruby )
 	table_exists? (name: Symbol -> Bool; @ruby )
  	tables (; @ruby )

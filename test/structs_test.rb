@@ -43,6 +43,31 @@ class Structs_Test < Base_Test
 		assert_equal 3, result
 	end
 
+	# `Primary_Key\123` (no angle brackets) is a version tag -- sugar for `Primary_Key\<123>`. Both spell
+	# the same single-unnamed-member struct, in a declaration, a bare reference, and a `: Type` annotation.
+	def test_bare_integer_version_tag_matches_the_bracketed_form
+		bare    = Lost.parse 'Abc\\7'
+		bracket = Lost.parse 'Abc\\<7>'
+		assert_equal bracket.first.tag.types.map(&:value), bare.first.tag.types.map(&:value)
+		assert_equal bracket.first.tag.names, bare.first.tag.names
+
+		# Declaration then reference resolves, same as the bracketed form.
+		bare_type = Lost.interp "Abc\\7 {}\nAbc\\7"
+		assert_kind_of Lost::Type, bare_type
+
+		# As a struct member annotation, the surrounding named struct still registers -- the misparse this
+		# guards against used to leave `\` and `123` as two extra nil-named members, which silently
+		# stopped `Thing` from being declared at all.
+		names = Lost.interp "Abc\\9 {}\nThing <id: Abc\\9, text: String>\nThing.names"
+		assert_equal %w(id text), names.values
+	end
+
+	# A dotted number (`\1.5`, `\1.2.3`) is not a version tag -- only a plain run of digits is.
+	def test_non_integer_after_tag_operator_is_not_a_version_tag
+		parsed = Lost.parse 'x: Abc\\1.5'
+		assert_nil parsed.first.type_struct
+	end
+
 	def test_interprets_standalone_struct_literal_to_struct_instance
 		out = Lost.interp '<String, Number>'
 		assert_kind_of Lost::Struct, out
