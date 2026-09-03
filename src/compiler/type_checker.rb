@@ -52,7 +52,7 @@ module Lost
 			return unless expr.name
 			return unless expr.parameters.any?(&:type)
 
-			param_types = expr.parameters.map { _1.type&.value }
+			param_types = expr.parameters.map { |p| p.type&.value unless p.type.is_a?(Lost::Struct_Expr) } # structural params aren't checked statically
 			declare :funcs, expr.name.value, param_types
 			@type_info[@type_stack.last][:methods][expr.name.value] = param_types if @type_stack.last
 		end
@@ -94,6 +94,7 @@ module Lost
 		# `x: Type = value` is the only case with an explicit declared type to actually compare a literal RHS against.
 		def check_typed_assignment expr
 			return nil unless expr.left.respond_to?(:type) && expr.left.type
+			return nil if expr.left.type.is_a? Lost::Struct_Expr # structural annotations aren't checked statically
 
 			declared = expr.left.type.value # e.g. "String"
 			declare_member expr.left.value, declared
@@ -147,6 +148,7 @@ module Lost
 
 		def check_param expr
 			return nil unless expr.type && expr.default
+			return nil if expr.type.is_a? Lost::Struct_Expr # structural annotations aren't checked statically
 			declared = expr.type.value
 			inferred = infer_type expr.default
 			return nil if inferred.nil?

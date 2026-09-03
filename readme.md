@@ -1220,12 +1220,13 @@ lying(5)   # raises Lost::Type_Contract_Violation — declared Number, actually 
 
 ## Structs
 
-1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value or a reference to an existing type. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), or `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type)
-2. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `new`/methods
-3. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Lost::Undeclared_Type_Structure`
-4. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new(;)` runs, never forwarded as constructor args
-5. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
-6. A bare integer after `\` is shorthand for a one-member tag — `Abc\4815` means `Abc\<4815>` (a "version tag"). A capitalized name after `\` is still a named reference, not this
+1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type), `Primary_Key\4815` (a bare integer, a "version tag")
+2. `\` chains: `Thing\One\Two {}` tags `Thing` with `One`, which is itself tagged with `Two`. `.tag` is `One`, `.tag.tag` is `Two`
+3. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `new`/methods, and `Thing\One\Two` and `Thing\One\Three` are distinct too
+4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Lost::Undeclared_Type_Structure`
+5. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new(;)` runs, never forwarded as constructor args
+6. `x.tag = new_tag` re-tags at runtime, but only on a value whose type was declared with a tag, and only when `new_tag` composes at least everything the current tag does, at every chain link (`=>=`) — otherwise `Lost::Tag_Signature_Violation`
+7. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
 
 ```lost
 String\<dict: Dictionary> {
@@ -1237,6 +1238,12 @@ String\<num: Number> {
 
 String\<{x=1}>().to_s()   # "dict: {x: 1}"
 String\<5>().to_s()       # "number: 5"
+
+Format_A {} Format_B {} Format_C {}
+Payload\Format_A\Format_B\Format_C {
+    trace (; [self.tag.type_names.0, self.tag.tag.type_names.0, self.tag.tag.tag.type_names.0] )
+}
+Payload\Format_A\Format_B\Format_C().trace()   # ['Format_A', 'Format_B', 'Format_C']
 
 Thing := <String, Number>   # anonymous struct -- .name is nil
 n := Named<String, Number>  # bare <...>, no `\` -- Named is undeclared, so this builds a plain named struct instead

@@ -65,7 +65,7 @@ class Structs_Test < Base_Test
 	# A dotted number (`\1.5`, `\1.2.3`) is not a version tag -- only a plain run of digits is.
 	def test_non_integer_after_tag_operator_is_not_a_version_tag
 		parsed = Lost.parse 'x: Abc\\1.5'
-		assert_nil parsed.first.type_struct
+		assert_nil parsed.first.tag
 	end
 
 	def test_interprets_standalone_struct_literal_to_struct_instance
@@ -123,14 +123,14 @@ class Structs_Test < Base_Test
 
 	def test_annotation_form_captures_struct
 		out = Lost.parse 'x: Abc\\<Number>'
-		assert_kind_of Lost::Struct_Expr, out.first.type_struct
-		assert_equal %w(Number), out.first.type_struct.types.map(&:value)
+		assert_kind_of Lost::Struct_Expr, out.first.tag
+		assert_equal %w(Number), out.first.tag.types.map(&:value)
 	end
 
 	def test_bare_struct_annotation_with_no_type_name
 		out = Lost.parse 'thing: <String, Number>'
-		assert_kind_of Lost::Struct_Expr, out.first.type_struct
-		assert_equal %w(String Number), out.first.type_struct.types.map(&:value)
+		assert_kind_of Lost::Struct_Expr, out.first.type
+		assert_equal %w(String Number), out.first.type.types.map(&:value)
 	end
 
 	def test_type_reference_with_struct_does_not_mutate_shared_type
@@ -652,9 +652,9 @@ class Structs_Test < Base_Test
 	def test_struct_typed_param_parses
 		out   = Lost.parse 'f ( right: <name: String, type: Any, value: Any>; right )'
 		param = out.first.parameters.first
-		assert_kind_of Lost::Struct_Expr, param.type_struct
-		assert_equal %w(name type value), param.type_struct.names
-		assert_equal %w(String Any Any), param.type_struct.types.map { |member| member.type.value }
+		assert_kind_of Lost::Struct_Expr, param.type
+		assert_equal %w(name type value), param.type.names
+		assert_equal %w(String Any Any), param.type.types.map { |member| member.type.value }
 	end
 
 	def test_struct_typed_param_accepts_structurally_compatible_argument
@@ -728,8 +728,8 @@ class Structs_Test < Base_Test
 		out   = Lost.parse 'f ( x: Abc\\<Number>; x )'
 		param = out.first.parameters.first
 		assert_equal 'Abc', param.type.value
-		assert_kind_of Lost::Struct_Expr, param.type_struct
-		assert_equal 'Abc', param.type_struct.name
+		assert_kind_of Lost::Struct_Expr, param.tag
+		assert_equal 'Abc', param.tag.name
 	end
 
 	# --- `<>` immediately followed by `;`/`,` (no space) -- lexer regression ---
@@ -889,7 +889,7 @@ class Structs_Test < Base_Test
 
 	# --- A struct member's own `: Type` annotation carrying a `\`-tag ---
 
-	# `id: Array\String` parses `\String` onto the *annotation's* `.type_struct` (#parse_identifier_expr's
+	# `id: Array\String` parses `\String` onto the *annotation's* `.tag` (#parse_identifier_expr's
 	# recursive `: Type` handling), a different AST shape than a bare `Array\String` reference -- #interp_struct
 	# used to just `interpret` that annotation directly, silently resolving the untagged `Array` and dropping
 	# the tag. `#interp_type_annotation` routes it through the same reference resolution a bare `Array\String`
@@ -971,5 +971,71 @@ class Structs_Test < Base_Test
 		    Container\\Named_Struct.display_name
 		CODE
 		assert_equal 'Container\\Named_Struct', out
+	end
+
+	# --- Tag chains (`Ab\Cd\Ef`) ---
+
+	def test_tag_chain_parses_into_nested_tag
+		t = Lost.parse('Array\\A\\B\\C { }').first
+		assert_equal 'A', t.tag.value
+		assert_equal 'B', t.tag.tag.value
+		assert_equal 'C', t.tag.tag.tag.value
+	end
+
+	def test_tag_chain_readable_at_each_level
+		out = Lost.interp <<~CODE
+		    A {} B {} C {}
+		    Thing\\A\\B\\C {
+		        probe (; [self.tag.type_names.0, self.tag.tag.type_names.0, self.tag.tag.tag.type_names.0] )
+		    }
+		    Thing\\A\\B\\C().probe()
+		CODE
+		assert_equal %w(A B C), out.values
+	end
+
+	# Two chains sharing a prefix are distinct variants with distinct bodies.
+	def test_tag_chains_with_shared_prefix_are_distinct_variants
+		out = Lost.interp <<~CODE
+		    A {} B {} C {}
+		    Thing\\A\\B { which (; 'B' ) }
+		    Thing\\A\\C { which (; 'C' ) }
+		    (Thing\\A\\B().which(), Thing\\A\\C().which())
+		CODE
+		assert_equal %w(B C), out.values
+	end
+
+	# --- Runtime `.tag =` ---
+
+	def test_tag_reassignment_accepts_a_value_that_composes_the_current_tag
+		out = Lost.interp <<~CODE
+		    Base {} Sub | Base {}
+		    Thing\\Base {}
+		    z := Thing\\Base()
+		    z.tag = Sub
+		    z.tag.type_names.0
+		CODE
+		assert_equal 'Sub', out
+	end
+
+	def test_tag_reassignment_rejects_a_value_that_does_not_compose_the_current_tag
+		assert_raises Lost::Tag_Signature_Violation do
+			Lost.interp <<~CODE
+			    Base {} Other {}
+			    Thing\\Base {}
+			    z := Thing\\Base()
+			    z.tag = Other
+			CODE
+		end
+	end
+
+	# `.tag` is only writable on a value whose type was declared with a tag.
+	def test_tag_reassignment_on_untagged_type_raises_undeclared
+		assert_raises Lost::Cannot_Assign_Undeclared_Identifier do
+			Lost.interp <<~CODE
+			    Thingy {}
+			    t := Thingy()
+			    t.tag = 5
+			CODE
+		end
 	end
 end

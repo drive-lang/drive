@@ -1,7 +1,9 @@
 module Lost
 	class Expression
+		attr_accessor :lexemes # the entire span of lexemes that make up this expression
+
 		attr_accessor :value, :type, :l0, :c0, :l1, :c1, :source_file
-		attr_reader :lexeme
+		attr_reader :lexeme # todo; this should become #lexeme that returns @lexemes.first
 
 		def initialize lexeme = nil
 			self.lexeme = lexeme
@@ -47,7 +49,7 @@ module Lost
 	end
 
 	class Param_Expr < Expression
-		attr_accessor :name, :label, :type, :type_struct, :default, :add_to_readable, :add_to_writable
+		attr_accessor :name, :label, :type, :tag, :default, :add_to_readable, :add_to_writable
 	end
 
 	class Func_Expr < Expression
@@ -201,7 +203,7 @@ module Lost
 	end
 
 	class Identifier_Expr < Expression
-		attr_accessor :kind, :unpack, :scope_operator, :directive, :privacy, :binding, :type_struct, :member_default
+		attr_accessor :kind, :unpack, :scope_operator, :directive, :privacy, :binding, :tag, :member_default
 	end
 
 	class Composition_Expr < Expression

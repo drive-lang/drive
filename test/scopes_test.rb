@@ -267,7 +267,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_add_readable_scope_with_nil_argument_is_silently_accepted
-		# Gap in the falsy-guard: maybe_instance(nil) -> Lost::Nil.shared, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
+		# Gap in the falsy-guard: maybe_instance(nil) -> a Lost::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
 		refute_raises Lost::Invalid_Directive_Usage do
 			Lost.interp '@add_readable_scope nil'
 		end

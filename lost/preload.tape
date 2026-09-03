@@ -1,17 +1,7 @@
 # Builtin types I'm experimenting with, very much incomplete. Each of these should have an equivalent Lost::Type in ./src/runtime/scopes.rb
 
-Nil {
-	to_s (; 'nil' )
-}
-
 Any {
 	to_s (; 'Any' )
-}
-
-Printable {
-	to_s (;
-		"Override to_s(;) on your class to control how @puts displays your object."
-	)
 }
 
 # @load 'lost/table.tape' # lost/ is the stdlib found in ./lost/
@@ -19,6 +9,7 @@ Printable {
 # @load 'that.tape'      # relative to wherever you ran bin/lost from (cwd)
 # @load 'and_this'      # no .tape extension required
 
+@load 'lost/nil'
 @load 'lost/file_system'
 @load 'lost/date'
 @load 'lost/time'
@@ -31,10 +22,6 @@ Printable {
 @load 'lost/struct'
 @load 'lost/statement'
 @load 'lost/enum'
-
-Iterable { # todo: This is unused, but here to remind me to think about how to make composing with Iterable behave like Protocols in Swift.
-	next (;)
-}
 
 Range {}
 

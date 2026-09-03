@@ -442,11 +442,11 @@ module Lost
 
 					if curr?(':', TYPE_IDENTIFIER)
 						eat ':'
-						param.type        = parse_identifier_expr # picks up a trailing `\<...>`/`\Name` itself, see #parse_identifier_expr
-						param.type_struct = param.type.type_struct
+						param.type = parse_identifier_expr # picks up a trailing `\<...>`/`\Name` itself, see #parse_identifier_expr
+						param.tag  = param.type.tag
 					elsif curr?(':', '<')
 						eat ':'
-						param.type_struct = parse_struct # bare struct annotation, e.g. `right: <name: String, type: Any, value: Any>` -- structural rather than nominal, see #check_struct_type_contract
+						param.type = parse_struct # bare struct annotation, e.g. `right: <name: String, type: Any, value: Any>` -- structural rather than nominal, see #check_struct_type_contract
 					elsif curr?(':', '(')
 						eat ':'
 						# A param typed with an inline func signature, e.g. `callable: (;)`/`callable: (Number -> Number;)` -- unlike the top-level self-declaring signature form, there's no name here to attach to, so this is a plain recursive #parse_func call, not routed through the `func.type && !has_real_body` -> Func_Signature_Expr repackaging at the bottom of #parse_func. Without this branch, the `:` was never consumed here (only TYPE_IDENTIFIER/`<` were recognized after it), so the outer param loop kept re-reading the same un-consumed `:` forever -- an infinite loop, not a parse error.
@@ -717,11 +717,11 @@ module Lost
 				ident = infix
 			end
 
-			# A composed operand can itself be a tagged reference (`| Other\<'users'>`) -- #parse_identifier_expr already consumed it onto `.type_struct`; repackage into a Type_Expr so #interp_composition resolves it properly instead of dropping it.
-			if ident.is_a?(Lost::Identifier_Expr) && ident.type_struct
+			# A composed operand can itself be a tagged reference (`| Other\<'users'>`) -- #parse_identifier_expr already consumed it onto `.tag`; repackage into a Type_Expr so #interp_composition resolves it properly instead of dropping it.
+			if ident.is_a?(Lost::Identifier_Expr) && ident.tag
 				type_ref      = Lost::Type_Expr.new
 				type_ref.name = ident.value
-				type_ref.tag  = ident.type_struct
+				type_ref.tag  = ident.tag
 				copy_location type_ref, ident
 				ident = type_ref
 			end
@@ -752,27 +752,27 @@ module Lost
 			expr.lexeme  = eat
 			expr.privacy = Lost.privacy_of_ident expr.value
 
-			# A type reference can carry its own trailing tag. note; A recursive call here never goes through #parse_type_decl so it's handled directly.
+			# A type reference can carry its own trailing tag. A named reference recurses, so `Abc\Cd\Ef` nests as `.tag.tag`. note; A recursive call here never goes through #parse_type_decl so it's handled directly.
 			if TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, '<')
 				eat TAG_OPERATOR
-				expr.type_struct      = parse_struct
-				expr.type_struct.name = expr.value if expr.type_struct
+				expr.tag      = parse_struct
+				expr.tag.name = expr.value if expr.tag
 			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, TYPE_IDENTIFIER)
 				eat TAG_OPERATOR
-				expr.type_struct = parse_identifier_expr # named reference, e.g. `Abc\Task_Schema`
+				expr.tag = parse_identifier_expr # named reference, e.g. `Abc\Task_Schema`
 			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && integer_tag_next?
 				eat TAG_OPERATOR
-				expr.type_struct      = integer_tag_struct_expr # version tag, e.g. `Primary_Key\123`
-				expr.type_struct.name = expr.value
+				expr.tag      = integer_tag_struct_expr # version tag, e.g. `Primary_Key\123`
+				expr.tag.name = expr.value
 			end
 
 			if curr?(':', TYPE_IDENTIFIER)
 				eat ':'
-				expr.type        = parse_identifier_expr
-				expr.type_struct = expr.type.type_struct
+				expr.type = parse_identifier_expr
+				expr.tag  = expr.type.tag
 			elsif curr?(':', '<')
 				eat ':'
-				expr.type_struct = parse_struct # bare struct annotation, e.g. `thing: <String, Number>`
+				expr.type = parse_struct # bare struct annotation, e.g. `thing: <String, Number>` -- sugar for `thing: Struct<String, Number>`
 			end
 
 			expr.kind = Lost.type_of_identifier expr.value

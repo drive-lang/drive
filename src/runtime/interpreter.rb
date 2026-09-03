@@ -325,7 +325,7 @@ module Lost
 			when ::Hash
 				finish_intrinsic_instance Lost::Dictionary.new(expr), 'Dictionary'
 			when nil
-				nil_instance = Lost::Nil.shared
+				nil_instance = Lost::Nil.new
 				link_instance_to_type nil_instance, 'Nil'
 				nil_instance
 			when true
@@ -917,7 +917,7 @@ module Lost
 						return scope.send(proxy_method)
 					end
 				elsif scope.is_a?(Lost::Instance) && scope.enclosing_scope&.is_a?(Lost::Type) && scope.enclosing_scope&.has?(expr.value)
-					if expr.type || expr.type_struct
+					if expr.type || expr.tag
 						# A bare annotated identifier (`x: Number`) must self-declare its own per-instance copy, exactly like the nil-init idiom (`x,`) already does (see #interp_nil_init's identical shadowing fix) -- reading straight through to the enclosing Type's own nil placeholder instead would mean the instance never gets its own key, so a later `./x = value` would wrongly raise Cannot_Assign_Undeclared_Identifier.
 						self_declare_annotated_identifier expr
 					else
@@ -925,7 +925,7 @@ module Lost
 						# Method/property exists on the Type, not the instance
 						return rebind_func_to_scope(scope.enclosing_scope.get(expr.value), scope)
 					end
-				elsif expr.type || expr.type_struct
+				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				else
 					raise Lost::Undeclared_Identifier.new(expr)
@@ -934,7 +934,7 @@ module Lost
 				# When scope is nil, errors must be raised
 				if %w(./ ../).include? expr.scope_operator&.value
 					raise_missing_scope_operator_target! expr, expr.scope_operator.value
-				elsif expr.type || expr.type_struct
+				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				elsif stack.any? { |s| s.equal? global } && resolve_forward_declaration(expr.value) && global.has?(expr.value)
 					# not reached yet in file order, but declared somewhere later on -- forced early. Identity check (not #include?, which is `==` and can hit an Lost type's own overload -- e.g. Lost::Array#== assumes its operand also has .values). Global being absent from the stack means we're deliberately excluding it (a plain `x.y` dot access, #interp_dot_scope's exclude_global_scope: true) -- a member missing on x should stay missing, not quietly resolve to an unrelated global
@@ -1025,7 +1025,7 @@ module Lost
 			assignment_scope = scope_for_identifier expr.left # Reminder; this returns a scope whether or not the identifier exists
 
 			# A type annotation (`x: Number = value`) is itself a declaration, so it's allowed to introduce a brand-new identifier just like `:=`, even though plain `=` otherwise requires the identifier to already exist. An inline signature (`x: Type(Param;) = value`) is the same idea — expr.left is a Func_Signature_Expr instead of a plain annotated Identifier_Expr, but it's just as self-declaring. A bare struct annotation (`thing: <String, Number> = value`) is self-declaring the same way, even with no `expr.left.type`.
-			has_type_annotation = (expr.left.is_a?(Lost::Identifier_Expr) && (expr.left.type || expr.left.type_struct)) ||
+			has_type_annotation = (expr.left.is_a?(Lost::Identifier_Expr) && (expr.left.type || expr.left.tag)) ||
 			                      expr.left.is_a?(Lost::Func_Signature_Expr)
 			assignment_scope    ||= stack.last if has_type_annotation
 
@@ -1103,6 +1103,9 @@ module Lost
 					# `expr.left.type` covers the first, self-declaring assignment (the annotation is right here on this expression); the recorded type_by_identifier value covers every reassignment after that, once the annotation itself is gone. An inline signature (Func_Signature_Expr) supplies its own type directly, since it has no name to look up.
 					type      = if expr.left.is_a? Lost::Func_Signature_Expr
 						build_func_signature expr.left
+					elsif expr.left.type.is_a? Lost::Struct_Expr
+						# A bare struct annotation (`x: <String, Number>`) is structural, not nominal -- not enforced here.
+						assignment_scope.type_by_identifier[expr.left.value]
 					else
 						expr.left.type&.value || assignment_scope.type_by_identifier[expr.left.value]
 					end
@@ -1127,7 +1130,7 @@ module Lost
 				raise Lost::Cannot_Assign_Undeclared_Identifier.new(expr)
 			end
 
-			if expr.left.is_a?(Lost::Identifier_Expr) && expr.left.type
+			if expr.left.is_a?(Lost::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Lost::Struct_Expr)
 				assignment_scope.type_by_identifier[expr.left.value] = expr.left.type.value
 			elsif expr.left.is_a? Lost::Func_Signature_Expr
 				# Recorded so future reassignments (which are plain Identifier_Exprs with no annotation of their own) still resolve back to this signature to check against.
@@ -1231,7 +1234,7 @@ module Lost
 		end
 
 		def declare_destructuring_local expr, target, value
-			if target.type
+			if target.type && !target.type.is_a?(Lost::Struct_Expr)
 				expected = target.type.value
 				actual   = type_name_to_string value
 				if actual != expected
@@ -1275,6 +1278,20 @@ module Lost
 			# member `nil` itself declares is left alone, matching the read path in #interp_dot_scope.
 			if receiver.nil? || (receiver.is_a?(Lost::Nil) && !receiver.has?(property))
 				raise Lost::Receiver_Is_Nil.new(target)
+			end
+
+			# `.tag =` re-tags a value declared with a tag. The new tag must keep the declared
+			# signature: compose at least everything the current tag does, at every chain link
+			# (`=>=`). A value with no tag has no `.tag` to write -- Member Creation Is Strict
+			# handles that below.
+			if property == 'tag' && receiver.is_a?(Lost::Scope) && receiver.has?('tag')
+				new_tag = tag_struct_for_reassignment value, target
+				unless tag_chains_satisfy? receiver.tag_instance, new_tag
+					raise Lost::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
+				end
+				receiver.tag_instance = new_tag
+				declare_tag receiver
+				return value
 			end
 
 			# `self`/`Self` are keyword sugar for `./`/`../` (see #interp_identifier) but arrive here as an ordinary `.` dot-target. `./x`/`../x` writes (#interp_infix_declaration's scope-operator branch, #interp_infix_assignment's general flow) never run Cannot_Reassign_Constant or check_dot_access_permissions! at all -- only the external-`.`-write rules below do (see "Member Creation Is Strict") -- so self/Self route around both entirely here too, for both `=` and `:=`, matching `./`/`../` exactly rather than just the not-yet-declared case.
@@ -1951,6 +1968,12 @@ module Lost
 					# `supplied.type_objects`, not `resolved_values`, for the types argument -- a schema-only unnamed member's own value is nil (see #interp_struct), no longer interchangeable with its type object the way `resolved_values` (built for the *values* result, see the comment above) used to assume.
 					referenced.tag_instance                     = build_struct declaration_names, declaration_type_names, supplied.type_objects, resolved_values
 					referenced.tag_instance.bare_reference_name = supplied.bare_reference_name
+
+					# Carry a chained tag (`Ab\Cd\Ef`) across the rebuild above, which only re-associates the top level's own members.
+					if supplied.tag_instance
+						referenced.tag_instance.tag_instance = supplied.tag_instance
+						declare_tag referenced.tag_instance
+					end
 				end
 				declare_tag referenced
 				return referenced
@@ -2023,24 +2046,44 @@ module Lost
 			type
 		end
 
-		# Resolves `expr.tag` (either form of `\`'s RHS) to a real Lost::Struct -- an inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering.
-		def resolve_tag_reference expr, allow_spread: true
-			return interp_struct expr.tag, allow_spread: allow_spread if expr.tag.is_a? Lost::Struct_Expr
-
-			value = interpret expr.tag
-			if value.is_a? Lost::Struct
-				value.bare_reference_name ||= expr.tag.value
-				return value
+		# Resolves one `\` RHS node to a real Lost::Struct. An inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering. A nested `.tag` on the node (`Ab\Cd\Ef`) is resolved recursively and hung off this struct's own `.tag`, so `x.tag.tag` walks the chain; `\<...>` is always terminal.
+		def resolve_tag_node tag_node, allow_spread: true
+			struct = if tag_node.is_a? Lost::Struct_Expr
+				interp_struct tag_node, allow_spread: allow_spread
+			else
+				value = interpret tag_node
+				case value
+				when Lost::Struct
+					value.bare_reference_name ||= tag_node.value
+					value
+				when Lost::Type
+					# The single member's own value stays nil, same as any other schema-only member (see #interp_struct) -- `value` here is always a bare Type, not real data.
+					wrapped                     = build_struct [nil], [type_name_to_string(value)], [value], [nil]
+					wrapped.bare_reference_name = tag_node.value
+					wrapped
+				else
+					raise Lost::Tag_Reference_Must_Be_Type_Or_Struct.new(tag_node)
+				end
 			end
 
-			unless value.is_a? Lost::Type
-				raise Lost::Tag_Reference_Must_Be_Type_Or_Struct.new(expr)
+			if tag_node.respond_to?(:tag) && tag_node.tag
+				struct.tag_instance = resolve_tag_node tag_node.tag, allow_spread: allow_spread
+				declare_tag struct
 			end
 
-			# The single member's own value stays nil, same as any other schema-only member (see #interp_struct) -- `value` here is always a bare Type (just checked above), not real data.
-			struct                     = build_struct [nil], [type_name_to_string(value)], [value], [nil]
-			struct.bare_reference_name = expr.tag.value
 			struct
+		end
+
+		def resolve_tag_reference expr, allow_spread: true
+			resolve_tag_node expr.tag, allow_spread: allow_spread
+		end
+
+		# Normalizes the RHS of a `.tag =` to its tag Struct: a Struct is itself; a Type/Instance contributes its own `.tag_instance`, or is wrapped as a single-member struct when it has none (mirrors #resolve_tag_node's bare-Type case).
+		def tag_struct_for_reassignment value, node
+			return value if value.is_a? Lost::Struct
+			return value.tag_instance if value.respond_to?(:tag_instance) && value.tag_instance
+			return build_struct [nil], [type_name_to_string(value)], [value], [nil] if value.is_a? Lost::Type
+			raise Lost::Tag_Reference_Must_Be_Type_Or_Struct.new(node)
 		end
 
 		# A tagged declaration (`String\<dict: Dictionary> { ... }`) is its own type, separate from the bare `String` and every other tag under the same name -- this stops one variant's `new`/methods from clobbering another's (a real bug this fixed).
@@ -2052,7 +2095,8 @@ module Lost
 		# Shared by a real declaration and an auto-declared reference (interp_type) -- both just extend-or-create a Type variant under `name` tagged with `struct`.
 		def declare_tagged_type_variant name, struct, body_expressions
 			existing = tagged_variants_for(name, current_scope_only: true).find do |variant|
-				variant.tag_declaration.structure_declaration_equal? struct
+				variant.tag_declaration.structure_declaration_equal?(struct) &&
+					tag_chains_equal?(variant.tag_declaration.tag_instance, struct.tag_instance)
 			end
 
 			if existing
@@ -2076,7 +2120,7 @@ module Lost
 		# A struct-typed param (`right: <name: String, ...>`) is structural, not nominal -- any argument with those declarations, compatibly typed, satisfies it. Raises Type_Contract_Violation on mismatch. `Any` is a wildcard.
 		def check_struct_type_contract param, value, expr
 			# Interpreted fresh per call, not cached -- a Param_Expr can be shared across Interpreter instances.
-			struct = interp_struct param.type_struct, allow_spread: false
+			struct = interp_struct param.type, allow_spread: false
 
 			struct.names.each_with_index do |name, i|
 				next unless name # unnamed members have nothing to check by name
@@ -2133,9 +2177,31 @@ module Lost
 				names.each_with_index.all? { |name, i| name.nil? || declared_names[i] == name }
 			end
 
+			# A chained tag (`Ab\Cd\Ef`) only matches a variant whose own declared chain matches in lockstep.
+			candidates = candidates.select { |variant| tag_chains_satisfy? variant.tag_declaration.tag_instance, supplied.tag_instance }
+
 			exact_types = candidate_lists.map(&:first)
 			candidates.find { |variant| variant.tag_declaration.type_names == exact_types } ||
 				candidates.find { |variant| variant.tag_declaration.satisfied_by_candidates? candidate_lists }
+		end
+
+		# Exact structural equality of two tag-chain links, recursively down `.tag_instance`. Both-nil is equal, so an unchained tag is unaffected. Used for declaration-time collision (does `Ab\Cd\Ef {}` reopen an existing variant, or start a new one?).
+		def tag_chains_equal? a, b
+			return true  if a.nil? && b.nil?
+			return false if a.nil? || b.nil?
+			a.structure_declaration_equal?(b) && tag_chains_equal?(a.tag_instance, b.tag_instance)
+		end
+
+		# Compositional (`=>=`-style) match of a declared tag chain against a supplied one, in lockstep down `.tag_instance`. Used for reference resolution.
+		def tag_chains_satisfy? declared, supplied
+			return true  if declared.nil? && supplied.nil?
+			return false if declared.nil? || supplied.nil?
+
+			lists = (supplied.type_objects || []).map { |value| member_candidate_type_names value }
+			return false if lists.length != declared.type_names.length
+			return false unless declared.type_names == lists.map(&:first) || declared.satisfied_by_candidates?(lists)
+
+			tag_chains_satisfy? declared.tag_instance, supplied.tag_instance
 		end
 
 		# Tagged variants declared under `base_name`, searched the same way #find_in_stack resolves a plain identifier -- innermost to outermost, stopping at the first scope that has any (lexical shadowing, not merging). `current_scope_only` restricts the search to `stack.last` alone, for declaration-time collision checks -- a nested tagged declaration should only ever collide with another declared in that exact scope, never one from an enclosing one.
@@ -2435,7 +2501,7 @@ module Lost
 					raise Lost::Argument_Label_Mismatch.new(expr, param.label&.value, supplied_label)
 				end
 
-				check_struct_type_contract param, value, expr if param.type_struct
+				check_struct_type_contract param, value, expr if param.type.is_a?(Lost::Struct_Expr)
 
 				stack.last.declare param.name.value, value
 
@@ -3310,13 +3376,14 @@ module Lost
 			end
 		end
 
-		# Resolves a `: Type` annotation's value, honoring a trailing `\<...>`/`\Name` tag (`id: Array\String`) if one was parsed onto it. `type_expr` is an Identifier_Expr, not a Type_Expr (see #parse_identifier_expr), so a tagged annotation is resolved through a synthetic Type_Expr reference instead of #interpret directly -- same trick #interp_func_body etc. use to reuse existing dispatch via a synthetic Call_Expr.
+		# Resolves a `: Type` annotation's value. A bare struct annotation (`id: <a: Number>`) interprets straight to a Struct. An Identifier_Expr carrying a trailing `\` tag (`id: Array\String`, `id: Thing\One\Two`) resolves through a synthetic Type_Expr reference so the tag chain is bound; a plain one just interprets. `type_expr` is an Identifier_Expr, not a Type_Expr (see #parse_identifier_expr), hence the synthetic reference -- same trick #interp_func_body etc. use to reuse existing dispatch.
 		def interp_type_annotation type_expr
-			return interpret type_expr unless type_expr.type_struct
+			return interp_struct type_expr if type_expr.is_a? Lost::Struct_Expr
+			return interpret type_expr unless type_expr.tag
 
 			reference      = Lost::Type_Expr.new
 			reference.name = type_expr.value
-			reference.tag  = type_expr.type_struct
+			reference.tag  = type_expr.tag
 			interp_type reference
 		end
 
@@ -3330,7 +3397,7 @@ module Lost
 				if expr.names[i]
 					# note; Named member (e.g. `some_string: String`), the member's own identifier (`some_string`) is just a label, not something to look up; resolve its declared type instead. Named members are never spread: the name is always its namespace (`.tag.columns`), even when the value is itself a Struct.
 					if member.type
-						# `member.type` is already a full Identifier_Expr (#parse_identifier_expr's `: Type` recurses), not a bare Lexeme -- directly interpretable, no rewrapping needed. A trailing `\<...>`/`\Name` on that annotation (`id: Array\String`) only ever populates `.type_struct` there (see #parse_identifier_expr), not a real `Type_Expr` -- a plain #interpret would silently resolve the untagged base type, so route through #interp_type_annotation instead.
+						# `member.type` is already a full Identifier_Expr (#parse_identifier_expr's `: Type` recurses) or a bare Struct_Expr (`id: <a: Number>`), not a bare Lexeme -- directly interpretable, no rewrapping needed. A trailing `\<...>`/`\Name` on that annotation (`id: Array\String`) only ever populates `.tag` there (see #parse_identifier_expr), not a real `Type_Expr` -- a plain #interpret would silently resolve the untagged base type, so route through #interp_type_annotation instead.
 						types << interp_type_annotation(member.type)
 						if member.member_default
 							default_value = interpret(member.member_default)

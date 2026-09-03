@@ -182,14 +182,7 @@ module Lost
 		end
 	end
 
-	class Nil < Instance # Like Ruby's NilClass, this represents the absence of a value.
-		NIL = new('Nil')
-
-		def self.shared
-			NIL
-		end
-
-		private_class_method :new # prevent external instantiation
+	class Nil < Instance # Like Ruby's NilClass, this represents the absence of a value. An ordinary instance -- constructible like any other type, so `Nil()` / a tagged `Nil\Error()` work and Lost code can hold its own shared nil.
 	end
 
 	class Bool < Instance

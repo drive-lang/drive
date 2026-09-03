@@ -55,7 +55,8 @@ module Lost
 	# @expression: Lost::Type_Expr
 	class Tag_Reference_Must_Be_Type_Or_Struct < Error
 		def detail_message
-			"`#{Ascii.bold expression.name}#{Lost::TAG_OPERATOR}#{expression.tag.value}` -- the right-hand side of `#{Lost::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
+			label = expression.respond_to?(:name) ? "#{expression.name}#{Lost::TAG_OPERATOR}#{expression.tag&.value}" : expression.value
+			"`#{Ascii.bold label}` -- the right-hand side of `#{Lost::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
 		end
 	end
 
@@ -67,6 +68,21 @@ module Lost
 	end
 
 	class Cannot_Reassign_Constant < Error
+	end
+
+	# `x.tag = new_tag` where new_tag doesn't keep x's declared tag signature -- a replacement must compose at least everything the current tag does, at every link of the chain (`=>=`).
+	class Tag_Signature_Violation < Error
+		attr_accessor :declared, :given
+
+		def initialize expression, declared, given
+			@declared = declared
+			@given    = given
+			super expression
+		end
+
+		def detail_message
+			"`.tag` here is `#{Ascii.bold declared}` -- a replacement must compose at least everything it does (`=>=`), but `#{Ascii.bold given}` does not."
+		end
 	end
 
 	class Cannot_Assign_Incompatible_Type < Error

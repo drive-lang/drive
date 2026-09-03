@@ -1,10 +1,10 @@
 module Lost
-	DOM_CONSTRUCTOR_PROP_NAMES       = %w(onclick key)
-	DOM_CONSTRUCTOR_PROP_PREFIXES    = %w(html_ css_)
-	HTML_ATTRS                       = %w(id class href)
-	HTTP_VERBS                       = %w(get put patch post delete head options connect trace)
-	VOID_HTML_TAGS                   = %w(area base br col command embed hr img input keygen link meta param source track wbr)
-	HTTP_VERB_SEPARATOR              = '://'
+	DOM_CONSTRUCTOR_PROP_NAMES    = %w(onclick key)
+	DOM_CONSTRUCTOR_PROP_PREFIXES = %w(html_ css_)
+	HTML_ATTRS                    = %w(id class href)
+	HTTP_VERBS                    = %w(get put patch post delete head options connect trace)
+	VOID_HTML_TAGS                = %w(area base br col command embed hr img input keygen link meta param source track wbr)
+	HTTP_VERB_SEPARATOR           = '://'
 
 	BUILTIN_OPERATOR                  = '@'
 	NIL_INIT_POSTFIX                  = ','
@@ -66,6 +66,7 @@ module Lost
 		@
 		~/ ./ ../
 		``` #
+		\
 
 		for
 		if elif elsif else
@@ -88,7 +89,7 @@ module Lost
 		              '**' => 1000,
 
 		              # Unary
-		              '!' => 900, 'not' => 900,
+		              '!' => 900, 'not' => 900, '\\' => 900,
 
 		              # Multiplicative
 		              '*' => 800, '/' => 800, '%' => 800,
