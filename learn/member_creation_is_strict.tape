@@ -10,7 +10,7 @@ survivor := Castaway()
 survivor.name = 'Jack'      # fine -- name already exists
 @assert survivor.name == 'Jack', 'writing to an existing member should work'
 
-# survivor.number = 4       -- raises Lost::Cannot_Assign_Undeclared_Identifier, number was never declared
+# survivor.number = 4       -- raises Tape::Cannot_Assign_Undeclared_Identifier, number was never declared
 
 
 ### Self-declaring with self is legitimate -- but only during construction
@@ -38,5 +38,5 @@ Raft2 {
 }
 
 r2 := Raft2()
-# r2.add_sail() would raise Lost::Cannot_Assign_Undeclared_Identifier
+# r2.add_sail() would raise Tape::Cannot_Assign_Undeclared_Identifier
 @assert r2.planks == 6, 'the member declared during construction is still fine to use'

@@ -1,8 +1,8 @@
 ### Introduction by Claude
 
-Tuples (`(...)`) and Structs (`<...>`) both hold an ordered list of values, and both can be pulled apart into their individual pieces with the same destructuring syntax: `(targets) := source`. This file is about how the two work together through that. See learn/structs.tape and learn/tagged_types.tape for Structs on their own first if you haven't already. Loading `lost/struct.tape` (like those two files do) is what gives a Struct's `.values` a proper `to_s` for display below -- not required for destructuring itself, which works either way.
+Tuples (`(...)`) and Structs (`<...>`) both hold an ordered list of values, and both can be pulled apart into their individual pieces with the same destructuring syntax: `(targets) := source`. This file is about how the two work together through that. See learn/structs.tape and learn/tagged_types.tape for Structs on their own first if you haven't already. Loading `tapes/struct.tape` (like those two files do) is what gives a Struct's `.values` a proper `to_s` for display below -- not required for destructuring itself, which works either way.
 ###
-@load 'lost/struct.tape'
+@load 'tapes/struct.tape'
 
 pair := (1, 2)
 trio := <1, 2, 3>

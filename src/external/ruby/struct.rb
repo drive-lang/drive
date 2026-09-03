@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	# Represents a set of declarations which make up an object (including dictionaries and their keys)
 	#
 	#   name, type, value
@@ -18,10 +18,10 @@ module Lost
 
 			# Only ever set for a bare named struct (`Named <Struct>`, see #interp_type) -- nil for every other construction path, including the plain `<...>`/`ANY_IDENT := <struct>` forms, which stay anonymous (reachable only through whatever variable holds them).
 			declare 'name', nil
-			declare 'names', Lost::Array.new(names), 'Array'
-			declare 'values', Lost::Array.new(values), 'Array'
-			declare 'type_names', Lost::Array.new(type_names), 'Array'
-			declare 'types', Lost::Array.new(types), 'Array'
+			declare 'names', Tape::Array.new(names), 'Array'
+			declare 'values', Tape::Array.new(values), 'Array'
+			declare 'type_names', Tape::Array.new(type_names), 'Array'
+			declare 'types', Tape::Array.new(types), 'Array'
 
 			names.each_with_index do |name, i|
 				next unless name
@@ -68,7 +68,7 @@ module Lost
 		# Named members only, keyed by Symbol -- an unnamed member has no key to hash under, same
 		# `next unless name` skip #proxy_create_table already uses. Values are unwrapped just enough
 		# for a plain Ruby caller (Sequel's own #where/#insert, primarily -- see Table#proxy_find_by)
-		# to use directly: an Lost::String yields its raw ::String, and a raw ::Symbol (an enum
+		# to use directly: an Tape::String yields its raw ::String, and a raw ::Symbol (an enum
 		# member's value, e.g. :TODO) is stringified -- Sequel already treats a bare Symbol as a
 		# column/identifier reference, not a literal, so left alone it would build the wrong query.
 		# Everything else passes through as-is.
@@ -78,9 +78,9 @@ module Lost
 
 				value             = values[i]
 				hash[name.to_sym] = case value
-				when Lost::String then value.value
-				when Lost::Bool then value.truthiness
-				when Lost::Date, Lost::Time, Lost::Date_Time then value.value
+				when Tape::String then value.value
+				when Tape::Bool then value.truthiness
+				when Tape::Date, Tape::Time, Tape::Date_Time then value.value
 				when ::Symbol then value.to_s
 				else value
 				end

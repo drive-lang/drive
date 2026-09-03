@@ -1,9 +1,33 @@
 ### Introduction
 
-Number literals (integers and floats alike) are all backed by `Lost::Number`. `abs` returns the absolute value.
+Numbers mirror Ruby: an integer literal is an `Integer`, a literal with a fractional part is a `Float`,
+and both compose `Number` (Ruby's `Numeric`). Each wraps the matching Ruby value in `value`. `abs`
+returns the absolute value.
 ###
 days_off_course := -8
 @assert days_off_course.abs() == 8, 'abs should return the absolute value'
+@assert days_off_course.value == -8, 'value is the wrapped Ruby number itself'
+
+
+### Integer, Float, Number
+
+`===` checks the exact type; `=>=` checks "is-a" (composes at least).
+###
+@assert 6 === Integer, 'an integer literal is an Integer'
+@assert 2.5 === Float, 'a literal with a decimal point is a Float'
+@assert 6 =>= Number, 'every Integer composes Number'
+@assert 2.5 =>= Number, 'every Float composes Number'
+@assert (6 === Number) == false, '=== is exact -- an Integer is not literally Number'
+
+
+### numerator, denominator
+
+Straight off the wrapped Ruby number.
+###
+@assert 6.numerator() == 6, 'a whole number is its own numerator'
+@assert 6.denominator() == 1, 'a whole number is over 1'
+@assert 2.5.numerator() == 5, 'Float parts come from Ruby to_r: 2.5 is 5/2'
+@assert 2.5.denominator() == 2, ''
 
 
 ### floor, ceil, round

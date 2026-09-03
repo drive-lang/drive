@@ -1,8 +1,8 @@
 ### Introduction
 
-`lost/html.tape` isn't part of the default preload -- it needs an explicit `@load`. It declares one generic `Dom` type plus a predefined element for each common tag (`Div`, `P`, `H1`, `A`, ...), each just `Dom` composed with its own `html_element` tag name. Calling `.to_s()` renders an element (and its `children`) straight to an HTML string.
+`tapes/html.tape` isn't part of the default preload -- it needs an explicit `@load`. It declares one generic `Dom` type plus a predefined element for each common tag (`Div`, `P`, `H1`, `A`, ...), each just `Dom` composed with its own `html_element` tag name. Calling `.to_s()` renders an element (and its `children`) straight to an HTML string.
 ###
-@load 'lost/html.tape'
+@load 'tapes/html.tape'
 
 sign := Div([P('Welcome to the beach')])
 @assert sign.to_s() == '<div><p>Welcome to the beach</p></div>', 'to_s() should render the element and its children'
@@ -43,7 +43,7 @@ card := Card(P('Found supplies'))
 
 ### Setting attributes at construction
 
-A Dom element's constructor also accepts `html_*`, `css_*`, `onclick`, and `key` as named arguments (learn/named_arguments.tape) and sets them straight onto the instance -- no subclass and no separate assignment. Only those names are accepted, and only on Dom types; anything else raises `Lost::Unknown_Named_Argument`.
+A Dom element's constructor also accepts `html_*`, `css_*`, `onclick`, and `key` as named arguments (learn/named_arguments.tape) and sets them straight onto the instance -- no subclass and no separate assignment. Only those names are accepted, and only on Dom types; anything else raises `Tape::Unknown_Named_Argument`.
 ###
 tent := Div([P('Shelter')], html_class := 'tent', css_border := '1px solid')
 @assert tent.html_class == 'tent', 'a Dom constructor should accept html_* as a named argument'
@@ -56,7 +56,7 @@ flare := Button('Signal', key := 'flare', onclick := (; 'lit' ))
 
 ### CSS anchor positioning
 
-CSS anchor positioning needs no new Lost-side plumbing at all -- it's plain CSS, expressed with the same `css_*` prefix already covered above. One element (the anchor) names itself; another element (the one being positioned) points back at that name and describes its position relative to it, using the `anchor()` function inside an ordinary property value.
+CSS anchor positioning needs no new Tape-side plumbing at all -- it's plain CSS, expressed with the same `css_*` prefix already covered above. One element (the anchor) names itself; another element (the one being positioned) points back at that name and describes its position relative to it, using the `anchor()` function inside an ordinary property value.
 
 A common pairing is a Popover-API element (`html_popover`) positioned next to whatever triggered it -- the popover shows/hides itself, and anchor positioning places it. Neither needs the other, but they're built for exactly this combination.
 ###
@@ -78,7 +78,7 @@ trigger := Trigger('Open menu')
 menu     := Menu()
 @assert trigger.css_anchor_name == '--menu-trigger', 'the anchor names itself with a custom-ident value'
 @assert menu.css_position_anchor == '--menu-trigger', 'the positioned element points back at that same name'
-@assert menu.css_top == 'anchor(bottom)', 'anchor() reads as a plain string -- Lost never needs to parse what is inside it'
+@assert menu.css_top == 'anchor(bottom)', 'anchor() reads as a plain string -- Tape never needs to parse what is inside it'
 
 Close | Button {
 	html_popovertarget := 'menu'

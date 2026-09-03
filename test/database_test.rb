@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/lost'
+require_relative '../src/tape'
 require_relative 'base_test'
 require 'net/http'
 require 'uri'
@@ -7,8 +7,8 @@ require 'sequel'
 require 'securerandom'
 
 class Database_Test < Base_Test
-	DATABASE = "@load 'lost/database.tape'"
-	RECORD   = "@load 'lost/table.tape'"
+	DATABASE = "@load 'tapes/database.tape'"
+	RECORD   = "@load 'tapes/table.tape'"
 
 	def before_setup
 		@filepath = "./temp#{SecureRandom.hex}.db"
@@ -20,14 +20,14 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_instance
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 			db := Database()
 		    sq := Sqlite('#{@filepath}')
 			(db, sq)
 		TAPE
-		assert_instance_of Lost::Database, out.values.first
-		assert_instance_of Lost::Database, out.values.last
+		assert_instance_of Tape::Database, out.values.first
+		assert_instance_of Tape::Database, out.values.last
 
 		assert_nil out.values.first.get 'adapter'
 		assert_nil out.values.first.get 'url'
@@ -40,7 +40,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_connection_instance
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    @connect db
@@ -51,7 +51,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_connection_is_cached
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    c1 := @connect db
@@ -62,14 +62,14 @@ class Database_Test < Base_Test
 	end
 
 	def test_connect_directive_creates_database_connection
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			db.connection
 		TAPE
 		assert_nil out
 
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
@@ -79,7 +79,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_creating_table
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
@@ -92,11 +92,11 @@ class Database_Test < Base_Test
 
 			(pre_tables, post_tables)
 		TAPE
-		assert_equal [[], [:users]], out.values.map { |lost_array| lost_array.get('values') }
+		assert_equal [[], [:users]], out.values.map { |tape_array| tape_array.get('values') }
 	end
 
 	def test_record_database_reference
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -124,7 +124,7 @@ class Database_Test < Base_Test
 
 	def test_create_table_column_types
 		refute_raises do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -140,7 +140,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_update
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -161,7 +161,7 @@ class Database_Test < Base_Test
 	# coerce it back so `if record.done` behaves; before the fix an unset value read as the truthy
 	# Bool *type* and a set one read as a truthy Integer.
 	def test_bool_column_round_trips_as_a_usable_boolean
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -190,7 +190,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_find_by
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -208,7 +208,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_find_by_returns_nil_when_not_found
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -224,7 +224,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_where
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -246,7 +246,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_or_create_table_creates_when_missing
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -266,7 +266,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_or_create_table_reuses_existing_table
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -286,7 +286,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_by_struct
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -304,7 +304,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_by_name
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -317,7 +317,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_returns_nil_when_missing
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    db.find_table('ghosts')
@@ -326,7 +326,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_delete_table
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -342,7 +342,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_delete_table_by_name_without_the_struct_in_hand
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -360,7 +360,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_exists_false_for_missing_table
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    Widget <id: Primary_Key>
@@ -370,7 +370,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_exists_by_name
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -383,7 +383,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_tables_lists_every_table
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -398,7 +398,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_to_s
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := Database()
 		    db.to_s()
@@ -407,7 +407,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_sqlite_memory_does_not_persist_to_disk
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite.memory()
 		    db.url
@@ -420,7 +420,7 @@ class Database_Test < Base_Test
 		filepath = File.expand_path("../temp/#{filename}.db", __dir__)
 		File.delete(filepath) if File.exist? filepath
 
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite.local('#{filename}')
 		    db.url
@@ -432,7 +432,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_find_returns_nil_when_missing
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -448,7 +448,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_delete
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -468,11 +468,11 @@ class Database_Test < Base_Test
 		assert_nil out.values[1]
 	end
 
-	# --- Lost.assert failure paths ---
+	# --- Tape.assert failure paths ---
 
 	def test_create_table_raises_for_non_struct
 		error = assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table('not a struct')
@@ -483,7 +483,7 @@ class Database_Test < Base_Test
 
 	def test_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table(<id: Primary_Key>)
@@ -493,7 +493,7 @@ class Database_Test < Base_Test
 
 	def test_find_or_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_or_create_table(<id: Primary_Key>)
@@ -503,7 +503,7 @@ class Database_Test < Base_Test
 
 	def test_find_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_table(<id: Primary_Key>)
@@ -516,7 +516,7 @@ class Database_Test < Base_Test
 	# caught there instead, one guard covering every caller.
 	def test_table_exists_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.table_exists?(<id: Primary_Key>)
@@ -526,7 +526,7 @@ class Database_Test < Base_Test
 
 	def test_delete_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.delete_table!(<id: Primary_Key>)
@@ -537,16 +537,16 @@ class Database_Test < Base_Test
 	# --- Column types available to create_table ---
 
 	def test_create_table_every_column_type
-		# No distinct Lost Flt/Decimal/Blob type exists yet -- alias one yourself, same as the
+		# No distinct Tape Flo/Decimal/Blob type exists yet -- alias one yourself, same as the
 		# codebase's own `Text | String {}` pattern (see database.rb's #proxy_create_table).
 		# Primary_Key/String/Int/Bool/Date/Time/Date_Time/Enum need no aliasing -- all real,
 		# provided types.
 		refute_raises do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
-				Flt       | Number {}
+				Flo       | Number {}
 				Float     | Number {}
 				Decimal   | Number {}
 				Blob      | Number {}
@@ -560,7 +560,7 @@ class Database_Test < Base_Test
 					happened_on: Date
 					logged_at: Date_Time
 					duration: Time
-					ratio: Flt
+					ratio: Flo
 					percent: Float
 					price: Decimal
 					attachment: Blob
@@ -574,7 +574,7 @@ class Database_Test < Base_Test
 	# --- Building a Table by hand instead of through Database ---
 
 	def test_table_built_manually_and_linked_to_a_database
-		out = Lost.interp <<~TAPE
+		out = Tape.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -601,7 +601,7 @@ class Database_Test < Base_Test
 
 	def test_create_raises_for_dictionary
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -617,7 +617,7 @@ class Database_Test < Base_Test
 
 	def test_update_raises_for_dictionary
 		assert_raises RuntimeError do
-			Lost.interp <<~TAPE
+			Tape.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -635,8 +635,8 @@ class Database_Test < Base_Test
 	# --- find_by/where filtering on a column the schema doesn't have ---
 
 	def test_find_by_raises_for_unknown_column
-		error = assert_raises Lost::Table_Invalid_Filter_Column do
-			Lost.interp <<~TAPE
+		error = assert_raises Tape::Table_Invalid_Filter_Column do
+			Tape.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -653,8 +653,8 @@ class Database_Test < Base_Test
 	end
 
 	def test_where_raises_for_unknown_column
-		error = assert_raises Lost::Table_Invalid_Filter_Column do
-			Lost.interp <<~TAPE
+		error = assert_raises Tape::Table_Invalid_Filter_Column do
+			Tape.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 

@@ -6,19 +6,19 @@
 	}
 
 	document.addEventListener('click', async (event) => {
-		const element = event.target.closest('a[href], button, input:not([type="hidden"]), select, textarea, summary, [data-lost-onclick]')
+		const element = event.target.closest('a[href], button, input:not([type="hidden"]), select, textarea, summary, [data-tape-onclick]')
 
 		if (!element) return
-		if (!element.hasAttribute('data-lost-onclick')) return
-		const object_id = element.dataset.lostOnclick
+		if (!element.hasAttribute('data-tape-onclick')) return
+		const object_id = element.dataset.tapeOnclick
 
 		event.preventDefault()
 		event.stopPropagation()
 
 		const inputs = {};
-		document.querySelectorAll('[data-lost-id]').forEach(el => {
+		document.querySelectorAll('[data-tape-id]').forEach(el => {
 			if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
-				inputs[el.dataset.lostId] = el.value;
+				inputs[el.dataset.tapeId] = el.value;
 			}
 		});
 
@@ -45,7 +45,7 @@
         }
 
 		const body = await response.text()
-		const target_id = response.headers.get('X-Lost-Target-Id')
+		const target_id = response.headers.get('X-Tape-Target-Id')
 		const target = document.getElementById(target_id)
         update_target_html(target, body)
 	})

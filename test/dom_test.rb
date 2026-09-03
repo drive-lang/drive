@@ -1,22 +1,22 @@
 require 'minitest/autorun'
-require_relative '../src/lost'
+require_relative '../src/tape'
 require_relative 'base_test'
 
 class Dom_Test < Base_Test
 	# Runs `src`, returns [interpreter, rendered-html-of-the-result].
 	def render src
-		interp   = Lost::Interpreter.new
+		interp   = Tape::Interpreter.new
 		instance = interp.run src
 		[interp, interp.render_dom_to_html(instance)]
 	end
 
 	# Invokes a registered onclick handler the way a POST /onclick/<token> does, minus the HTTP layer.
 	def fire interp, token
-		route             = Lost::Route.new
+		route             = Tape::Route.new
 		route.handler     = interp.dom_onclick_function_handlers.fetch(token)[:handler]
 		route.param_names = []
-		req = interp.build_lost_request "/onclick/#{token}", 'post', {}, {}, {}, {}
-		res = interp.build_lost_response Struct.new(:status, :body).new
+		req = interp.build_tape_request "/onclick/#{token}", 'post', {}, {}, {}, {}
+		res = interp.build_tape_response Struct.new(:status, :body).new
 		interp.interp_route_body route, req, res
 	end
 
@@ -24,7 +24,7 @@ class Dom_Test < Base_Test
 
 	def test_re_rendering_a_component_reuses_the_same_tokens
 		interp, html1 = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Panel | Div {
 		    	html_id := 'panel'
 		    	n := 0
@@ -42,15 +42,15 @@ class Dom_Test < Base_Test
 
 		assert_equal html1, html2
 		assert_equal html2, html3
-		assert_includes html1, 'data-lost-onclick="panel-0"'
-		assert_includes html1, 'data-lost-id="panel-1"'
+		assert_includes html1, 'data-tape-onclick="panel-0"'
+		assert_includes html1, 'data-tape-id="panel-1"'
 		assert_equal 1, interp.dom_onclick_function_handlers.size, 'handler map must not grow across re-renders'
 		assert_equal 1, interp.dom_input_elements.size
 	end
 
 	def test_token_namespace_is_anchored_by_the_nearest_html_id
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Outer | Div {
 		    	html_id := 'outer'
 		    	render (; [Button("x", onclick := (; 1 )), Inner()] )
@@ -61,13 +61,13 @@ class Dom_Test < Base_Test
 		    }
 		    Outer()
 		TAPE
-		assert_includes html, 'data-lost-onclick="outer-0"'
-		assert_includes html, 'data-lost-onclick="inner-0"'
+		assert_includes html, 'data-tape-onclick="outer-0"'
+		assert_includes html, 'data-tape-onclick="inner-0"'
 	end
 
 	def test_handler_defined_in_render_still_works_after_re_render
 		interp, _ = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Counter | Div {
 		    	html_id := 'c'
 		    	count := 0
@@ -95,7 +95,7 @@ class Dom_Test < Base_Test
 		# reconstructed from the handler's scope chain), and the callback keeps its closure through
 		# `.map`, so its onclick can still reach a member of the enclosing component.
 		interp, _ = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    List | Div {
 		    	html_id := 'list'
 		    	items := [1, 2, 3]
@@ -122,7 +122,7 @@ class Dom_Test < Base_Test
 
 	def test_key_pins_the_token_and_does_not_consume_a_slot
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Page | Div {
 		    	html_id := 'page'
 		    	render (;
@@ -134,15 +134,15 @@ class Dom_Test < Base_Test
 		    }
 		    Page()
 		TAPE
-		assert_includes html, 'data-lost-onclick="page-first"'
-		assert_includes html, 'data-lost-onclick="page-0"', 'the unkeyed sibling keeps slot 0 -- a key must not advance the counter'
+		assert_includes html, 'data-tape-onclick="page-first"'
+		assert_includes html, 'data-tape-onclick="page-0"', 'the unkeyed sibling keeps slot 0 -- a key must not advance the counter'
 	end
 
 	# --- #3  Dom constructor named arguments (whitelisted) ---
 
 	def test_constructor_sets_whitelisted_html_and_css_attrs
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Button("Save", html_id := 'save', html_class := 'primary', css_color := 'red')
 		TAPE
 		assert_includes html, 'id="save"'
@@ -153,7 +153,7 @@ class Dom_Test < Base_Test
 
 	def test_constructor_onclick_registers_a_handler
 		interp, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Page | Div {
 		    	html_id := 'p'
 		    	n := 0
@@ -161,25 +161,25 @@ class Dom_Test < Base_Test
 		    }
 		    Page()
 		TAPE
-		assert_includes html, 'data-lost-onclick="p-go"'
+		assert_includes html, 'data-tape-onclick="p-go"'
 		refute_nil interp.dom_onclick_function_handlers['p-go']
 	end
 
 	def test_non_whitelisted_named_arg_on_a_dom_type_still_raises
-		assert_raises Lost::Unknown_Named_Argument do
-			Lost.interp "@load 'lost/html'\nButton(\"x\", bogus := 1)"
+		assert_raises Tape::Unknown_Named_Argument do
+			Tape.interp "@load 'tapes/html'\nButton(\"x\", bogus := 1)"
 		end
 	end
 
 	def test_whitelisted_named_arg_on_a_non_dom_type_still_raises
-		assert_raises Lost::Unknown_Named_Argument do
-			Lost.interp "Widget { new (; ) }\nWidget(html_id := 'x')"
+		assert_raises Tape::Unknown_Named_Argument do
+			Tape.interp "Widget { new (; ) }\nWidget(html_id := 'x')"
 		end
 	end
 
 	def test_a_declared_param_wins_over_the_prop_shortcut
-		out = Lost.interp <<~TAPE
-		    @load 'lost/html'
+		out = Tape.interp <<~TAPE
+		    @load 'tapes/html'
 		    Tag | Div {
 		    	seen,
 		    	new ( key := nil; self.seen = key )
@@ -193,7 +193,7 @@ class Dom_Test < Base_Test
 
 	def test_unset_boolean_attr_is_not_rendered
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    O | Option { html_selected: Bool }
 		    O()
 		TAPE
@@ -202,7 +202,7 @@ class Dom_Test < Base_Test
 
 	def test_true_boolean_attr_renders_bare
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    O | Option {
 		    	html_selected: Bool
 		    	new (; self.html_selected = true )
@@ -216,7 +216,7 @@ class Dom_Test < Base_Test
 
 	def test_false_and_nil_html_attrs_are_dropped
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    D | Div {
 		    	html_hidden := false
 		    	html_title,
@@ -231,7 +231,7 @@ class Dom_Test < Base_Test
 
 	def test_dialog_renders_with_a_closing_tag
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Dialog()
 		TAPE
 		assert_includes html, '<dialog>'
@@ -240,7 +240,7 @@ class Dom_Test < Base_Test
 
 	def test_dialog_open_renders_bare
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Dialog(html_open := true)
 		TAPE
 		assert_includes html, '<dialog open>'
@@ -249,7 +249,7 @@ class Dom_Test < Base_Test
 
 	def test_dialog_without_open_has_no_open_attr
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Dialog()
 		TAPE
 		refute_includes html, 'open'
@@ -257,7 +257,7 @@ class Dom_Test < Base_Test
 
 	def test_popover_true_renders_bare_not_as_the_string_true
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Div(html_popover := true)
 		TAPE
 		assert_includes html, '<div popover>'
@@ -266,7 +266,7 @@ class Dom_Test < Base_Test
 
 	def test_popover_with_a_real_value_keeps_that_value
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Div(html_popover := 'manual')
 		TAPE
 		assert_includes html, 'popover="manual"'
@@ -274,7 +274,7 @@ class Dom_Test < Base_Test
 
 	def test_popovertarget_has_no_hyphen
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Button("Open", html_popovertarget := 'my-dialog')
 		TAPE
 		assert_includes html, 'popovertarget="my-dialog"'
@@ -283,7 +283,7 @@ class Dom_Test < Base_Test
 
 	def test_popovertargetaction_has_no_hyphen
 		_, html = render <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 		    Button("Close", html_popovertargetaction := 'hide')
 		TAPE
 		assert_includes html, 'popovertargetaction="hide"'

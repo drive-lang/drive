@@ -1,5 +1,5 @@
 # This app demonstrates using html fences (```html\n...```) to render html as opposed to Dom compositions. (see examples/todo_app.tape)
-@load 'lost/server.tape'
+@load 'tapes/server.tape'
 
 App | Server {
 	get:// home (;

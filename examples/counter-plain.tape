@@ -1,8 +1,8 @@
 # Counter Example (Plain)
 # A minimal example of reactive state with server-side re-rendering.
 
-@load 'lost/html.tape'
-@load 'lost/server.tape'
+@load 'tapes/html.tape'
+@load 'tapes/server.tape'
 
 # Counter component with in-memory state
 Counter | Div {

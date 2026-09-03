@@ -13,7 +13,7 @@ r.crew = 4
 @add_readable_scope r
 @assert length == 12, 'length should be reached via the readable scope, no r. prefix needed'
 @remove_readable_scope r
-# @puts length would now raise Lost::Undeclared_Identifier -- r was removed from the readable scope
+# @puts length would now raise Tape::Undeclared_Identifier -- r was removed from the readable scope
 
 
 ### Auto-unpack in function parameters -- @readable
@@ -49,7 +49,7 @@ island.name = 'The Island'
 @add_readable_scope island
 @assert name == 'The Island', 'manually adding a readable scope should unpack it the same way'
 @remove_readable_scope island
-# @puts name would now raise Lost::Undeclared_Identifier -- island was removed from the readable scope
+# @puts name would now raise Tape::Undeclared_Identifier -- island was removed from the readable scope
 
 
 ### Medium alias
@@ -92,7 +92,7 @@ ration_report (;
 
 ### Weak references, not strong ones
 
-Adding something to a readable scope doesn't keep it alive. It's a *weak* reference -- once nothing else in your program refers to it anymore, it's free to be garbage collected, even though it's technically still "added". Lost doesn't expose garbage collection directly, so you'll never observe this from inside the language, but it means `@remove_readable_scope` is only for explicitly cutting something off early -- you don't need it just to avoid a leak.
+Adding something to a readable scope doesn't keep it alive. It's a *weak* reference -- once nothing else in your program refers to it anymore, it's free to be garbage collected, even though it's technically still "added". Tape doesn't expose garbage collection directly, so you'll never observe this from inside the language, but it means `@remove_readable_scope` is only for explicitly cutting something off early -- you don't need it just to avoid a leak.
 ###
 add_temporary_reading ( @readable vec;
 	# vec is only reachable via the readable scope for the duration of this call -- nothing needs

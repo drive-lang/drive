@@ -1,7 +1,7 @@
 ### What's here?
 
-This [`examples`](.) folder contains examples written in Lost.
+This [`examples`](.) folder contains examples written in Tape.
 
 ```bash
-bundle exec bin/lost examples/file.tape
+bundle exec bin/tape examples/file.tape
 ```

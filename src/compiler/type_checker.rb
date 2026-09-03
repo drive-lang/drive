@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Type_Checker
 		attr_accessor :input
 
@@ -16,14 +16,25 @@ module Lost
 			raise Type_Checking_Failed.new errors if errors.any?
 		end
 
-		# Maps an expression to its Lost type name. Returns nil if unknown.
+		NUMERIC_FAMILY = %w[Number Integer Float Decimal].freeze
+
+		# Two type names are compatible if equal, or if both are in the numeric family and at least one
+		# side is the family base `Number` -- so `x: Number = 4` (Number vs Integer) passes, while
+		# `x: Integer = 4.5` (Integer vs Float) is still flagged.
+		def numeric_compatible? declared, inferred
+			return true if declared == inferred
+			return false unless NUMERIC_FAMILY.include?(declared) && NUMERIC_FAMILY.include?(inferred)
+			declared == 'Number' || inferred == 'Number'
+		end
+
+		# Maps an expression to its Tape type name. Returns nil if unknown.
 		def infer_type expr
 			case expr
-			when Lost::String_Expr then 'String'
-			when Lost::Number_Expr then 'Number'
-			when Lost::Symbol_Expr then 'Symbol'
-			when Lost::Identifier_Expr then type_by_identifier expr.value
-			when Lost::Infix_Expr then infer_dot_type expr
+			when Tape::String_Expr then 'String'
+			when Tape::Number_Expr then expr.type == :float ? 'Float' : 'Integer'
+			when Tape::Symbol_Expr then 'Symbol'
+			when Tape::Identifier_Expr then type_by_identifier expr.value
+			when Tape::Infix_Expr then infer_dot_type expr
 			else nil
 			end
 		end
@@ -31,7 +42,7 @@ module Lost
 		# Resolves `receiver`'s own static type, then looks up `member` as a declared member on that type. Returns nil the moment any link in the chain isn't statically known (an untyped local, a plain untagged bare type, etc), same "skip rather than guess" philosophy as the rest of this checker.
 		def infer_dot_type expr
 			return nil unless expr.operator&.value == '.'
-			return nil unless expr.right.is_a? Lost::Identifier_Expr
+			return nil unless expr.right.is_a? Tape::Identifier_Expr
 
 			receiver_type = infer_type expr.left
 			return nil unless receiver_type
@@ -52,16 +63,16 @@ module Lost
 			return unless expr.name
 			return unless expr.parameters.any?(&:type)
 
-			param_types = expr.parameters.map { |p| p.type&.value unless p.type.is_a?(Lost::Struct_Expr) } # structural params aren't checked statically
+			param_types = expr.parameters.map { |p| p.type&.value unless p.type.is_a?(Tape::Struct_Expr) } # structural params aren't checked statically
 			declare :funcs, expr.name.value, param_types
 			@type_info[@type_stack.last][:methods][expr.name.value] = param_types if @type_stack.last
 		end
 
 		# `expr` is a Call_Expr's receiver: either a bare function name (`add(...)`) or a `.`-chain ending in a method name (`app.servers.push(...)`). Returns the param type array for whichever one it resolves to, or nil if neither does.
 		def resolve_call_signature receiver
-			if receiver.is_a? Lost::Identifier_Expr
+			if receiver.is_a? Tape::Identifier_Expr
 				func_signature_by_identifier receiver.value
-			elsif receiver.is_a?(Lost::Infix_Expr) && receiver.operator&.value == '.' && receiver.right.is_a?(Lost::Identifier_Expr)
+			elsif receiver.is_a?(Tape::Infix_Expr) && receiver.operator&.value == '.' && receiver.right.is_a?(Tape::Identifier_Expr)
 				receiver_type = infer_type receiver.left
 				receiver_type && @type_info[receiver_type][:methods][receiver.right.value]
 			end
@@ -76,7 +87,7 @@ module Lost
 				next nil unless expected
 				inferred = infer_type arg
 				next nil if inferred.nil?
-				next nil if expected == inferred
+				next nil if numeric_compatible? expected, inferred
 				Type_Mismatch.new arg, expected, inferred
 			end
 		end
@@ -94,21 +105,21 @@ module Lost
 		# `x: Type = value` is the only case with an explicit declared type to actually compare a literal RHS against.
 		def check_typed_assignment expr
 			return nil unless expr.left.respond_to?(:type) && expr.left.type
-			return nil if expr.left.type.is_a? Lost::Struct_Expr # structural annotations aren't checked statically
+			return nil if expr.left.type.is_a? Tape::Struct_Expr # structural annotations aren't checked statically
 
 			declared = expr.left.type.value # e.g. "String"
 			declare_member expr.left.value, declared
-			inferred = infer_type expr.right # e.g. "Number" or nil
+			inferred = infer_type expr.right # e.g. "Integer" or nil
 
 			return nil if inferred.nil?
-			return nil if declared == inferred
+			return nil if numeric_compatible? declared, inferred
 
 			Type_Mismatch.new expr, declared, inferred
 		end
 
 		# `x := Type(...)` / `x := Type<Struct>(...)`.
 		def check_inferred_declaration expr
-			return unless expr.left.is_a? Lost::Identifier_Expr
+			return unless expr.left.is_a? Tape::Identifier_Expr
 
 			constructed = constructed_type_name expr.right
 			return unless constructed
@@ -122,25 +133,25 @@ module Lost
 		end
 
 		def constructed_type_name expr
-			return nil unless expr.is_a? Lost::Call_Expr
+			return nil unless expr.is_a? Tape::Call_Expr
 			receiver = expr.receiver
 
 			case receiver
-			when Lost::Type_Expr
+			when Tape::Type_Expr
 				qualified_type_name receiver
-			when Lost::Identifier_Expr
+			when Tape::Identifier_Expr
 				receiver.value if Helpers.type_identifier? receiver.value
 			end
 		end
 
 		def qualified_type_name expr
-			return nil unless expr.is_a? Lost::Type_Expr
+			return nil unless expr.is_a? Tape::Type_Expr
 			return expr.name unless expr.tag
 
 			# A named reference (`Abc\Task_Schema`) has no member list to render -- just use its own name.
-			return "#{expr.name}#{Lost::TAG_OPERATOR}#{expr.tag.value}" unless expr.tag.is_a? Lost::Struct_Expr
+			return "#{expr.name}#{Tape::TAG_OPERATOR}#{expr.tag.value}" unless expr.tag.is_a? Tape::Struct_Expr
 
-			member_names = expr.tag.types.map { |t| t.value if t.is_a? Lost::Identifier_Expr }
+			member_names = expr.tag.types.map { |t| t.value if t.is_a? Tape::Identifier_Expr }
 			return nil if member_names.any?(&:nil?)
 
 			"#{expr.name}<#{member_names.join(',')}>"
@@ -148,11 +159,11 @@ module Lost
 
 		def check_param expr
 			return nil unless expr.type && expr.default
-			return nil if expr.type.is_a? Lost::Struct_Expr # structural annotations aren't checked statically
+			return nil if expr.type.is_a? Tape::Struct_Expr # structural annotations aren't checked statically
 			declared = expr.type.value
 			inferred = infer_type expr.default
 			return nil if inferred.nil?
-			return nil if declared == inferred
+			return nil if numeric_compatible? declared, inferred
 
 			Type_Mismatch.new expr, declared, inferred
 		end
@@ -161,28 +172,28 @@ module Lost
 		# @return nil, Error, or Array of Errors.
 		def check expr
 			case expr
-			when Lost::Infix_Expr
+			when Tape::Infix_Expr
 				check_infix expr
 
-			when Lost::Param_Expr
+			when Tape::Param_Expr
 				check_param expr
 
-			when Lost::Directive_Expr
+			when Tape::Directive_Expr
 				check expr.expression
-			when Lost::Prefix_Expr
+			when Tape::Prefix_Expr
 				check expr.expression
-			when Lost::Postfix_Expr
+			when Tape::Postfix_Expr
 				check expr.expression
-			when Lost::Route_Expr
+			when Tape::Route_Expr
 				check expr.expression
 
-			when Lost::Circumfix_Expr
+			when Tape::Circumfix_Expr
 				check expr.expressions
-			when Lost::Func_Expr
+			when Tape::Func_Expr
 				# #register_func runs before the new scope is pushed, so the function's own name is declared into the *enclosing* scope (visible to siblings, and to the function's own body too since lookups search outward so recursive calls still resolve).
 				register_func expr
 				with_new_scope { check expr.parameters + expr.expressions }
-			when Lost::Type_Expr
+			when Tape::Type_Expr
 				if expr.expressions
 					@type_stack.push qualified_type_name(expr)
 					result = with_new_scope { check expr.expressions }
@@ -190,14 +201,14 @@ module Lost
 					result
 				end
 
-			when Lost::Subscript_Expr
+			when Tape::Subscript_Expr
 				[check(expr.receiver), check(expr.expression)]
-			when Lost::For_Loop_Expr
+			when Tape::For_Loop_Expr
 				[check(expr.collection), check(expr.body)]
-			when Lost::Call_Expr
+			when Tape::Call_Expr
 				check_call expr
 
-			when Lost::Conditional_Expr
+			when Tape::Conditional_Expr
 				[
 					check(expr.condition),
 					check(expr.when_true),

@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/lost'
+require_relative '../src/tape'
 require_relative 'base_test'
 
 # Runs every learn/*.tape file end to end and asserts none of them raise -- these are meant to be
@@ -13,7 +13,7 @@ class Learn_Test < Base_Test
 
 		define_method "test_#{name}" do
 			refute_raises do
-				Lost.interp_file filepath
+				Tape.interp_file filepath
 			end
 		end
 	end

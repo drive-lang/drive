@@ -1,5 +1,5 @@
-@load 'lost/database.tape'
-@load 'lost/table.tape'
+@load 'tapes/database.tape'
+@load 'tapes/table.tape'
 
 Position {
 	C := 0

@@ -1,4 +1,4 @@
-@load 'lost/table'
+@load 'tapes/table'
 
 Sequel_Sqlite_Database {}
 

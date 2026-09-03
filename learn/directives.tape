@@ -15,11 +15,11 @@ Prints a value. Anything Scope-shaped (an Array, a custom Instance, etc.) goes t
 
 ### @assert
 
-`@assert condition` raises `Lost::Assert_Triggered` if `condition` is falsy. A second, comma-separated argument becomes the failure message.
+`@assert condition` raises `Tape::Assert_Triggered` if `condition` is falsy. A second, comma-separated argument becomes the failure message.
 ###
 survivors := 12
 @assert survivors > 0, 'need at least one survivor'   # passes silently
-# @assert survivors > 100, 'camp is over capacity'  -- raises Lost::Assert_Triggered: camp is over capacity
+# @assert survivors > 100, 'camp is over capacity'  -- raises Tape::Assert_Triggered: camp is over capacity
 
 
 ### @declare
@@ -27,7 +27,7 @@ survivors := 12
 `@declare` puts a new identifier directly on the current scope, without going through `:=`. Handy when the name itself is only known at runtime -- `:=` needs a literal identifier written in the source, `@declare` takes a String.
 ###
 
-# flare_count                         # raises Lost::Undeclared_Identifier since it isn't declared yt
+# flare_count                         # raises Tape::Undeclared_Identifier since it isn't declared yt
 @declare 'flare_count'            # name only -- declares nil
 @assert flare_count == nil, '@declare with just a name should declare nil'
 

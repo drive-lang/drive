@@ -2,7 +2,7 @@
 
 Every route body gets `request` and `response` for free, no parameter needed -- see learn/web_server.tape first if routes themselves are new. `request.body` is a Dictionary of submitted form fields.
 ###
-@load 'lost/server.tape'
+@load 'tapes/server.tape'
 
 Camp | Server {
 	new (;

@@ -53,7 +53,7 @@ Array {
 		nil
 	)
 
-	# note; Implemented in Lost (not @ruby) so `==` goes through the interpreter -- a @ruby proxy would fall through to Ruby's native Array#include?, which uses Ruby's own == and never sees an Lost-level operator overload (e.g. a custom Instance's `@operator ==`)
+	# note; Implemented in Tape (not @ruby) so `==` goes through the interpreter -- a @ruby proxy would fall through to Ruby's native Array#include?, which uses Ruby's own == and never sees an Tape-level operator overload (e.g. a custom Instance's `@operator ==`)
 	include? ( item;
 		for values
 			if it == item
@@ -127,7 +127,7 @@ Array {
 		right
 	)
 
-	# note; Implemented in Lost, same reason as include? above the the Ruby-level Array#== (array.rb)compares elements with Ruby's own native == via the underlying Ruby array, and never sees an Lost-level `@operator ==` overload on a custom Instance (e.g. two structurally-equal Members compared unequal). Declaring this here takes precedence over that Ruby fallback(an operand's own declarations are always checked before it -- see #find_operator_overload).
+	# note; Implemented in Tape, same reason as include? above the the Ruby-level Array#== (array.rb)compares elements with Ruby's own native == via the underlying Ruby array, and never sees an Tape-level `@operator ==` overload on a custom Instance (e.g. two structurally-equal Members compared unequal). Declaring this here takes precedence over that Ruby fallback(an operand's own declarations are always checked before it -- see #find_operator_overload).
 	@operator == @infix ( left, right;
 		if !right or left.length() != right.length()
 			return false

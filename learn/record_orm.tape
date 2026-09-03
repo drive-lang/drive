@@ -1,11 +1,11 @@
 ### Introduction
 
-`Table` (`lost/table.tape`) is an ActiveRecord-style ORM. It sits on top of `lost/database.tape`. Read learn/database.tape first if `Sqlite` and `@connect` are new to you.
+`Table` (`tapes/table.tape`) is an ActiveRecord-style ORM. It sits on top of `tapes/database.tape`. Read learn/database.tape first if `Sqlite` and `@connect` are new to you.
 
 CRUD works through one instance. Take a schema Struct. Call `db.find_or_create_table(Schema)` on it. This single call returns one ready `Table` instance. The instance is already wired to the database and the schema. This method needs no separate composition step. It needs no static `Self.database` declaration. Every method below (`all`, `find`, `create`, and more) runs directly on this instance.
 ###
-@load 'lost/database.tape'
-@load 'lost/table.tape'
+@load 'tapes/database.tape'
+@load 'tapes/table.tape'
 
 db := @connect Sqlite(':memory:')
 

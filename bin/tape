@@ -1,14 +1,14 @@
 #!/usr/bin/env ruby
 
-require_relative '../src/lost'
+require_relative '../src/tape'
 
 INSTRUCTIONS = <<~INST
     Usage:
-        bundle exec bin/lost <file>          Execute file and keep running until interrupt
-        bundle exec bin/lost [command]       Run command
+        bundle exec bin/tape <file>          Execute tape file and keep running until interrupt
+        bundle exec bin/tape [command]       Run command
 
     COMMANDS:
-        run <file>            Execute file and keep running until interrupt
+        run <file>            Execute tape file and keep running until interrupt
         check <file>          Run basic type check on file
 
         repl                  Enter repl mode, type code press enter
@@ -29,10 +29,10 @@ INSTRUCTIONS = <<~INST
         -h | --help           Show help instructions
 
     EXAMPLES:
-        lost examples/hello.tape
-        lost lex "x = 5 + 3"
-        lost parsef examples/hello.tape
-        lost interp "4815"
+        tape examples/hello.tape
+        tape lex "x = 5 + 3"
+        tape parsef examples/hello.tape
+        tape interp "4815"
 INST
 
 if ARGV.empty?
@@ -41,7 +41,7 @@ if ARGV.empty?
 end
 
 def interp_and_print_output source_code, file: nil, load_standard_library: true
-	interpreter                       = Lost::Interpreter.new
+	interpreter                       = Tape::Interpreter.new
 	interpreter.load_standard_library = load_standard_library
 	interpreter.register_source file, source_code if file
 	result = interpreter.run source_code
@@ -53,38 +53,38 @@ begin
 
 	case ARGV[0]
 	when '-v', '--version'
-		puts "Lost #{Lost::VERSION}"
+		puts "Tape #{Tape::VERSION}"
 		exit 0
 	when '-h', '--help'
 		puts INSTRUCTIONS
 		exit 0
 	when 'repl'
-		Lost::REPL.new.run
+		Tape::REPL.new.run
 	when 'check'
-		Lost.type_check ARGV[1]
+		Tape.type_check ARGV[1]
 	when 'lex'
-		result = Lost.lex ARGV[1]
+		result = Tape.lex ARGV[1]
 		pp result if print_output
 	when 'parse'
-		result = Lost.parse ARGV[1]
+		result = Tape.parse ARGV[1]
 		pp result if print_output
 	when 'interp'
 		interpreter, result = interp_and_print_output ARGV[1]
 		puts interpreter.stringify_for_display(result) if print_output
 	when 'lexf'
-		result = Lost.lex_file ARGV[1]
+		result = Tape.lex_file ARGV[1]
 		pp result if print_output
 	when 'parsef'
-		result = Lost.parse_file ARGV[1]
+		result = Tape.parse_file ARGV[1]
 		pp result if print_output
 	when 'declare'
-		result = Lost.declare ARGV[1]
+		result = Tape.declare ARGV[1]
 		pp result if print_output
 	when 'declaref'
-		result = Lost.declare_file ARGV[1]
+		result = Tape.declare_file ARGV[1]
 		pp result if print_output
 	when 'interpf'
-		result = Lost.interp_file ARGV[1]
+		result = Tape.interp_file ARGV[1]
 		pp result if print_output
 	when 'interp-nostd'
 		interpreter, result = interp_and_print_output ARGV[1], load_standard_library: false
@@ -93,11 +93,11 @@ begin
 		interpreter, result = interp_and_print_output File.read(ARGV[1]), file: ARGV[1], load_standard_library: false
 		puts interpreter.stringify_for_display(result) if print_output
 	when 'run'
-		interpreter, result = Lost::Hot_Reloader.new(ARGV[1]).run
+		interpreter, result = Tape::Hot_Reloader.new(ARGV[1]).run
 		puts interpreter.stringify_for_display(result) if print_output && interpreter
 	else
 		if ARGV[0]
-			interpreter, result = Lost::Hot_Reloader.new(ARGV[0]).run
+			interpreter, result = Tape::Hot_Reloader.new(ARGV[0]).run
 			puts interpreter.stringify_for_display(result) if print_output && interpreter
 		else
 			puts "Error: No file specified.\n#{INSTRUCTIONS}"
@@ -108,7 +108,7 @@ rescue Errno::ENOENT => e
 	$stderr.puts "Could not find file `#{ARGV[0]}`\n\n#{e.full_message}"
 	exit 1
 
-rescue Lost::Error => e
+rescue Tape::Error => e
 	$stderr.puts e.message
 	exit 1
 end

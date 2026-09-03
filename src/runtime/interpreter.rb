@@ -1,21 +1,22 @@
 require 'webrick'
 require 'cgi'
 require 'json'
+require 'securerandom' # #initialize mints @live_reload_token with this
 
-module Lost
+module Tape
 	class Interpreter
 		extend Cached_By_Path
 
 		# Source lines by filepath, keyed the same way #register_source always has -- kept class-level (not per-instance) so Error_Formatter can read a snippet without holding a live Interpreter, which used to be the only reason errors.rb needed a `runtime` reference at all.
 		cache_by_path :cached_source_by_filename # {filepath: [String]}
 
-		# Parsed ASTs by resolved filepath, kept class-level (not per-instance) for the same reason: `lost/preload.tape` (and everything it transitively @loads) is immutable source, identical for every Interpreter in the process, so re-lexing/re-parsing it fresh on every `Lost.interp` call was pure waste -- it used to be instance-level, meaning a brand-new Interpreter (which every `Lost.interp` call constructs) never saw a warm cache. Doesn't cache the *interpretation* of that AST (each Interpreter still builds its own fresh Standard_Library scope from it), only the lex+parse step, so per-instance isolation (mutating a builtin in one test can't leak into another) is unaffected.
-		cache_by_path :cached_expressions_by_filepath # {filepath: [Lost::Expression]}
+		# Parsed ASTs by resolved filepath, kept class-level (not per-instance) for the same reason: `tapes/preload.tape` (and everything it transitively @loads) is immutable source, identical for every Interpreter in the process, so re-lexing/re-parsing it fresh on every `Tape.interp` call was pure waste -- it used to be instance-level, meaning a brand-new Interpreter (which every `Tape.interp` call constructs) never saw a warm cache. Doesn't cache the *interpretation* of that AST (each Interpreter still builds its own fresh Standard_Library scope from it), only the lex+parse step, so per-instance isolation (mutating a builtin in one test can't leak into another) is unaffected.
+		cache_by_path :cached_expressions_by_filepath # {filepath: [Tape::Expression]}
 
 		# Resolved filepaths whose AST has already passed type-checking at least once, kept class-level alongside the cache above. Type-checking is a pure function of the AST (no interpreter state involved) -- a cached, never-changing file that already passed once will always pass, so re-walking it on every subsequent load is pure waste, same as re-parsing was.
 		cache_by_path :type_checked_filepaths # {filepath: true}
 
-		# Raw source of runtime assets injected into every matching response (dom.js, view_transition.css) -- not Lost source, so it never goes through the lex/parse caches above. Kept class-level for the same reason: identical for every Interpreter in the process, so re-reading from disk on every request is pure waste.
+		# Raw source of runtime assets injected into every matching response (dom.js, view_transition.css) -- not Tape source, so it never goes through the lex/parse caches above. Kept class-level for the same reason: identical for every Interpreter in the process, so re-reading from disk on every request is pure waste.
 		cache_by_path :cached_asset_source_by_path # {filepath: String}
 
 		class << self
@@ -30,27 +31,35 @@ module Lost
 			# src/shared/cached_by_path.rb), so this just delegates to each one's own generic reset.
 			def reset_file_caches! paths = nil
 				reset_cached_by_path! paths
-				Lost::Declarator.reset_cached_by_path! paths
+				Tape::Declarator.reset_cached_by_path! paths
 			end
 		end
 
-		attr_accessor :input, :lexer, :parser, :load_standard_library, :stack, :route_functions_by_route_name, :servers, :dom_onclick_function_handlers, :dom_input_elements, :last_output, :current_source_file, :stdlib_scope, :declarations, :global, :serve_in_foreground
+		attr_accessor :input, :lexer, :parser, :load_standard_library, :stack, :route_functions_by_route_name, :servers, :dom_onclick_function_handlers, :dom_input_elements, :last_output, :current_source_file, :stdlib_scope, :declarations, :global, :serve_in_foreground, :live_reload, :live_reload_token
 
 		def initialize
-			@dom_input_elements            = {} # {element_hash: Lost::Instance} for inputs/textareas
-			@dom_onclick_function_handlers = {} # {handler_hash: Lost::Func}
-			@route_functions_by_route_name = {} # {route: Lost::Route}
+			@dom_input_elements            = {} # {element_hash: Tape::Instance} for inputs/textareas
+			@dom_onclick_function_handlers = {} # {handler_hash: Tape::Func}
+			@route_functions_by_route_name = {} # {route: Tape::Route}
 
 			@load_standard_library = true
 			@serve_in_foreground   = true # Hot_Reloader flips this -- see #run
-			@input                 = [] # [Lost::Expression]
-			@stack                 = [] # [Lost::Scope]
-			@servers               = [] # [Lost::Server]
+			@input                 = [] # [Tape::Expression]
+			@stack                 = [] # [Tape::Scope]
+			@servers               = [] # [Tape::Server]
+
+			# Live reload (browser auto-refresh on save). Only Hot_Reloader turns @live_reload on, so a
+			# plain `tape interpf` / production server never streams events or injects the client script.
+			# @live_reload_token is unique per Interpreter instance: a hot reload builds a fresh
+			# Interpreter, so the token the /_tape/live-reload stream reports changes, which is exactly
+			# the "the server rebooted, refresh now" signal the browser watches for.
+			@live_reload           = false
+			@live_reload_token     = SecureRandom.hex(8)
 
 			@lexer               = Lexer.new
 			@parser              = Parser.new
-			@declarations        = {} # {::String => Lost::Declaration}, see Declarator
-			@forced_declarations = Set.new # identity-tracked Lost::Expression, see #resolve_forward_declaration
+			@declarations        = {} # {::String => Tape::Declaration}, see Declarator
+			@forced_declarations = Set.new # identity-tracked Tape::Expression, see #resolve_forward_declaration
 
 			Interpreter.current = self
 		end
@@ -59,14 +68,14 @@ module Lost
 			top_level_source_file = current_source_file
 
 			if @stack.empty?
-				# todo; Global should be created by interping lost/global.tape, which is what I want to rename lost/preload.tape to
+				# todo; Global should be created by interping tapes/global.tape, which is what I want to rename tapes/preload.tape to
 				global  = Global.new
 				@global = global # kept separately from @stack -- #interp_member_access temporarily swaps @stack out for dot-access resolution, so `stack.first` isn't reliably Global the way this needs
 				@stack << global
 				if load_standard_library
 					# Stdlib lives in its own Scope, reachable via Global's readable scope -- not Global's own declarations. Reassigning a builtin can't mutate it (readable_scopes never redirects writes), just shadows locally. Composing and deliberate @push_scope reopening still work. `global` is pushed before this load so `~/` still resolves to Global while the stdlib itself loads.
 					# Also held here as a real instance var, not just the WeakMap entry above -- readable/writable scope membership deliberately never keeps anything alive on its own (see CLAUDE.md), which is correct for things a caller adds and is expected to hold their own reference to elsewhere, but @stdlib_scope has no other holder anywhere. Without this, it's one GC pass away from being collected mid-program, taking the entire standard library (String, Array, everything) down with it.
-					@stdlib_scope = Lost::Scope.new('Standard_Library')
+					@stdlib_scope = Tape::Scope.new('Standard_Library')
 					load_file_into_scope STANDARD_LIBRARY_PATH, @stdlib_scope
 					global.add_readable_scope @stdlib_scope
 				end
@@ -118,9 +127,9 @@ module Lost
 			return false unless expr.is_a?(Infix_Expr) && %w(:= =).include?(expr.operator.value)
 			return true if hoistable_declaration_expr? expr.right
 
-			# `Ident := @load 'file'` / `IDENT := @load 'file'` -- a named load builds a scope of its own, same declarative category as `This := That {}` above. Only a Capitalized/UPPERCASE left-hand name opts in, matching Lost's own casing convention for a namespace-like binding -- a lowercase `mod := @load 'file'` stays a plain variable, not hoisted
+			# `Ident := @load 'file'` / `IDENT := @load 'file'` -- a named load builds a scope of its own, same declarative category as `This := That {}` above. Only a Capitalized/UPPERCASE left-hand name opts in, matching Tape's own casing convention for a namespace-like binding -- a lowercase `mod := @load 'file'` stays a plain variable, not hoisted
 			expr.right.is_a?(Directive_Expr) && expr.right.name.value == 'load' &&
-				%i(Identifier IDENTIFIER).include?(Lost.type_of_identifier(expr.left.value))
+				%i(Identifier IDENTIFIER).include?(Tape.type_of_identifier(expr.left.value))
 		end
 
 		# A bare `@load 'file'` (no assignment) merges directly into the current scope -- always hoistable, no casing concept applies since there's no left-hand name to check. Kept separate from #hoistable_declaration_expr?'s recursive `:=`/`=` unwrap so this can't accidentally leak permissiveness into the *named* load case, which is deliberately restricted to a Capitalized/UPPERCASE left-hand name.
@@ -148,7 +157,7 @@ module Lost
 				keep_running = true
 
 				trap_fn = Proc.new do
-					puts Lost::Ascii.dim "Shutting down..."
+					puts Tape::Ascii.dim "Shutting down..."
 					keep_running = false
 					puts "\n\s\s(V) (;,,;) (V)"
 					Thread.main.exit
@@ -158,7 +167,7 @@ module Lost
 
 				while keep_running
 					@servers.each do |server|
-						puts "Lost Server `#{server.name}` started at http://localhost:#{server.port}"
+						puts "Tape Server `#{server.name}` started at http://localhost:#{server.port}"
 						server.server_thread&.join
 					end
 				end
@@ -176,12 +185,12 @@ module Lost
 
 		# Preserves its @input, interprets given file, then restores its @input.
 		# @param [::String] filepath of the code to load
-		# @param [Lost::Scope] scope to load code into
+		# @param [Tape::Scope] scope to load code into
 		# @return The output of the interpreted file
 		def load_file_into_scope filepath, into_scope
 			filepath.insert(-1, '.tape') unless filepath.end_with? '.tape' # note; I feel like this isn't the smartestest way to achieve this.
 
-			resolved_path = if filepath.start_with? 'lost/'
+			resolved_path = if filepath.start_with? 'tapes/'
 				File.join ROOT_PATH, filepath
 			else
 				File.expand_path filepath
@@ -215,7 +224,7 @@ module Lost
 			@declarations                                    = saved_declarations
 
 			into_scope.loaded_filepaths[resolved_path] = result
-			Lost.assert pop_scope.equal? into_scope
+			Tape.assert pop_scope.equal? into_scope
 
 			result
 		end
@@ -264,11 +273,11 @@ module Lost
 		# same component rendered against the same tree shape yields the same tokens every time -- so a
 		# re-render (or a fresh request for the same page) overwrites the handler/input map entries in
 		# place instead of minting new random ones and growing the maps without bound. It also
-		# means a handler defined in render() keeps a stable data-lost-onclick across DOM swaps, which
+		# means a handler defined in render() keeps a stable data-tape-onclick across DOM swaps, which
 		# is what let handlers move out of new() and into render(). `render_scope` is `{ anchor:, slot: }`
 		# seeded in #render_dom_to_html; the slot counter advances in depth-first render order.
 		#
-		# An `element_key` (the element's own `key := '...'`, see lost/html.tape) pins the token by
+		# An `element_key` (the element's own `key := '...'`, see tapes/html.tape) pins the token by
 		# name instead of position and does not touch the slot counter -- so a conditional element
 		# appearing or vanishing between renders can't shift its siblings' tokens.
 		def next_render_token render_scope, element_key = nil
@@ -280,7 +289,7 @@ module Lost
 		end
 
 		def scope_for_identifier expr
-			unless expr.is_a? Lost::Identifier_Expr
+			unless expr.is_a? Tape::Identifier_Expr
 				return stack.last
 			end
 
@@ -289,7 +298,7 @@ module Lost
 				stack.first
 			when '../' # underlying type within context, aka accessing a static declaration
 				stack.reverse_each.find do |scope|
-					scope.instance_of? Lost::Type
+					scope.instance_of? Tape::Type
 				end
 			when './' # instance within context, aka self, this, etc
 				current_instance
@@ -300,7 +309,7 @@ module Lost
 					if scope.has?(expr.value) || scope.respond_to?("proxy_#{expr.value}")
 						found_scope = scope
 						break
-					elsif scope.is_a?(Lost::Instance) && scope.enclosing_scope&.has?(expr.value)
+					elsif scope.is_a?(Tape::Instance) && scope.enclosing_scope&.has?(expr.value)
 						# Method exists on the Type - return the instance as the scope so lookups happen in instance context
 						found_scope = scope
 						break
@@ -311,27 +320,31 @@ module Lost
 		end
 
 		def maybe_instance expr
-			# todo, when String and so on, because everything needs to be some type of scope to live inside the runtime. Every object in Lost::Scope.declarations{} is either a primitive like String, Integer, Float, or they're an instanced version like Lost::Number.
+			# todo, when String and so on, because everything needs to be some type of scope to live inside the runtime. Every object in Tape::Scope.declarations{} is either a primitive like String, Integer, Float, or they're an instanced version like Tape::Number.
 			case expr
-			when Integer, Float
-				# Lost::Number_Expr is already handled in #interpret but this is short-circuiting that for cases like 1.something where we have to make sure the 1 is no longer a numeric literal, but instead a runtime object version of the number 1.
-				number = Lost::Number.new expr, 1, Lost.type_of_number_expr(expr)
+			when ::Integer, ::Float, ::BigDecimal
+				# Tape::Number_Expr is already handled in #interpret but this is short-circuiting that for cases like 1.something where we have to make sure the 1 is no longer a numeric literal, but instead a runtime object version of the number 1. The Ruby class of the already-evaluated value picks the matching Tape numeric type (Ruby's own Integer/Float/Rational tower, minus Rational for now). `Integer`/`Float` are bare here (not `::`) on purpose -- they mean `Tape::Integer`/`Tape::Float`.
+				tape_class, type_name = case expr
+					when ::Integer    then [Tape::Integer, 'Integer']
+					when ::Float      then [Tape::Float,   'Float']
+					when ::BigDecimal then [Tape::Decimal, 'Decimal']
+					end
 
-				finish_intrinsic_instance number, 'Number'
+				finish_intrinsic_instance tape_class.new(expr), type_name
 			when ::String
-				finish_intrinsic_instance Lost::String.new(expr), 'String'
+				finish_intrinsic_instance Tape::String.new(expr), 'String'
 			when ::Array
-				finish_intrinsic_instance Lost::Array.new(expr), 'Array'
+				finish_intrinsic_instance Tape::Array.new(expr), 'Array'
 			when ::Hash
-				finish_intrinsic_instance Lost::Dictionary.new(expr), 'Dictionary'
+				finish_intrinsic_instance Tape::Dictionary.new(expr), 'Dictionary'
 			when nil
-				nil_instance = Lost::Nil.new
+				nil_instance = Tape::Nil.new
 				link_instance_to_type nil_instance, 'Nil'
 				nil_instance
 			when true
-				finish_intrinsic_instance Lost::Bool.truthy, 'Bool'
+				finish_intrinsic_instance Tape::Bool.truthy, 'Bool'
 			when false
-				finish_intrinsic_instance Lost::Bool.falsy, 'Bool'
+				finish_intrinsic_instance Tape::Bool.falsy, 'Bool'
 			else
 				expr
 			end
@@ -352,45 +365,49 @@ module Lost
 		end
 
 		def track_static_declaration scope, ident_expr
-			return unless ident_expr.is_a?(Lost::Identifier_Expr) && ident_expr.scope_operator&.value == '../'
+			return unless ident_expr.is_a?(Tape::Identifier_Expr) && ident_expr.scope_operator&.value == '../'
 			scope.static_declarations ||= Set.new
 			scope.static_declarations.add ident_expr.value.to_s
 		end
 
-		# The Instance the currently executing method body belongs to, if any -- searched by role (nearest Lost::Instance in the stack), not position. #interp_func_body always pushes a fresh per-call Func frame on top of the instance for every call, so `stack.last` is never the instance itself while a method runs -- shared by `self`/`./` resolution (#interp_identifier, #scope_for_identifier) and privacy enforcement (#check_dot_access_permissions!) below, all three needing "the instance I'm currently running as".
+		# The Instance the currently executing method body belongs to, if any -- searched by role (nearest Tape::Instance in the stack), not position. #interp_func_body always pushes a fresh per-call Func frame on top of the instance for every call, so `stack.last` is never the instance itself while a method runs -- shared by `self`/`./` resolution (#interp_identifier, #scope_for_identifier) and privacy enforcement (#check_dot_access_permissions!) below, all three needing "the instance I'm currently running as".
 		def current_instance
-			stack.reverse_each.find { |scope| scope.is_a? Lost::Instance }
+			stack.reverse_each.find { |scope| scope.is_a? Tape::Instance }
 		end
 
 		def check_dot_access_permissions! scope, ident, expr
-			binding = Lost.binding_of_ident scope, ident
-			privacy = Lost.privacy_of_ident ident
+			binding = Tape.binding_of_ident scope, ident
+			privacy = Tape.privacy_of_ident ident
 
 			case scope
-			when Lost::Instance
+			when Tape::Instance
 				if privacy == :private && !current_instance.equal?(scope)
-					raise Lost::Cannot_Call_Private_Instance_Member.new(expr)
+					raise Tape::Cannot_Call_Private_Instance_Member.new(expr)
 				end
-			when Lost::Type
+			when Tape::Type
 				if binding == :instance
 					# todo: This does not print the correct code location, here is a paste of the output:
 					#       Cannot_Call_Instance_Member_On_Type
 					#       :1:1
-					raise Lost::Cannot_Call_Instance_Member_On_Type.new(expr)
+					raise Tape::Cannot_Call_Instance_Member_On_Type.new(expr)
 				elsif privacy == :private
-					raise Lost::Cannot_Call_Private_Static_Member_On_Type.new(expr)
+					raise Tape::Cannot_Call_Private_Static_Member_On_Type.new(expr)
 				end
 			end
 		end
 
 		def find_ruby_class_for_type type
-			type.types.to_a.reverse.each do |type_name|
-				lost_name = "Lost::#{type_name}"
-				next unless Object.const_defined? lost_name
-				k = Object.const_get lost_name
-				return k if k.is_a?(Class) && k < Lost::Instance && k != Lost::Instance
+			candidates = type.types.filter_map do |type_name|
+				tape_name = "Tape::#{type_name}"
+				next unless Object.const_defined? tape_name
+				k = Object.const_get tape_name
+				k if k.is_a?(Class) && k < Tape::Instance && k != Tape::Instance
 			end
-			nil
+
+			# Most-derived wins: `Integer | Number {}` matches both Tape::Integer and Tape::Number, and
+			# we want Tape::Integer (its `value=` coerces via `to_i`). Longest ancestor chain = deepest
+			# subclass. Unrelated candidates (no shared lineage) just pick one deterministically.
+			candidates.max_by { |k| k.ancestors.size }
 		end
 
 		def truthy? value
@@ -408,14 +425,19 @@ module Lost
 
 		def type_name_to_string value
 			case value
-			when Lost::Number then 'Number'
-			when Integer, Float then 'Number'
-			when Lost::String then 'String'
-			when Lost::Array then 'Array'
-			when Lost::Dictionary then 'Dictionary'
-			when Lost::Bool then 'Bool'
-			when Lost::Instance then value.types.first
-			when Lost::Type then value.name
+			when Tape::Integer then 'Integer'
+			when Tape::Float then 'Float'
+			when Tape::Decimal then 'Decimal'
+			when Tape::Number then 'Number'
+			when ::Integer then 'Integer'
+			when ::Float then 'Float'
+			when ::BigDecimal then 'Decimal'
+			when Tape::String then 'String'
+			when Tape::Array then 'Array'
+			when Tape::Dictionary then 'Dictionary'
+			when Tape::Bool then 'Bool'
+			when Tape::Instance then value.types.first
+			when Tape::Type then value.name
 			# todo: Why are these here? Excluding the else clause
 			when true, false then 'Bool'
 			when ::String then 'String'
@@ -425,9 +447,28 @@ module Lost
 			end
 		end
 
+		NUMERIC_TYPE_NAMES = %w[Number Integer Float Decimal].freeze
+
+		# The type name to *record* for an identifier on `:=` (and self-declaring `.member :=`). Numeric
+		# values collapse to the family name `Number` rather than the leaf (`Integer`/`Float`/...), so an
+		# inferred lock stays lenient the way it always has -- `sum := 0` then `sum = 1.5` still works.
+		# An explicit `: Integer` annotation is recorded verbatim elsewhere and stays strict.
+		def inferred_type_name value
+			name = type_name_to_string value
+			NUMERIC_TYPE_NAMES.include?(name) ? 'Number' : name
+		end
+
+		# Does `value` satisfy a `: Type` contract named `expected`? Compositional (`=>=`-style): an
+		# `Integer` satisfies `: Number`, a `Fence` satisfies `: String`. `Any` matches anything.
+		def type_contract_satisfied? value, expected
+			return true if expected.nil? || expected == 'Any'
+			return true if type_name_to_string(value) == expected
+			composed_types_for(value).include? expected
+		end
+
 		def composed_types_for value
 			case value
-			when Lost::Type
+			when Tape::Type
 				value.types
 			else
 				# Covers intrinsics (Number/String/Array/Dictionary/Bool) and anything else -- neither needs special handling, both resolve by name.
@@ -448,18 +489,18 @@ module Lost
 			types_superset && members_superset
 		end
 
-		# If `name` is already an Lost::Func_Signature, return it as-is (an inline signature has no name to look up). Otherwise, if it's bound to one anywhere on the stack, return that. Otherwise nil — meaning `name` is an ordinary nominal type name (e.g. 'Number').
+		# If `name` is already an Tape::Func_Signature, return it as-is (an inline signature has no name to look up). Otherwise, if it's bound to one anywhere on the stack, return that. Otherwise nil — meaning `name` is an ordinary nominal type name (e.g. 'Number').
 		def resolve_func_signature name
-			return name if name.is_a? Lost::Func_Signature
+			return name if name.is_a? Tape::Func_Signature
 			return nil unless name
 			value = find_in_stack name
-			value.is_a?(Lost::Func_Signature) ? value : nil
+			value.is_a?(Tape::Func_Signature) ? value : nil
 		end
 
-		# @param expr [Lost::Func_Signature_Expr]
+		# @param expr [Tape::Func_Signature_Expr]
 		def build_func_signature expr
 			param_types = expr.params.map { |param| param.type&.value }
-			Lost::Func_Signature.new param_types, expr.type&.value
+			Tape::Func_Signature.new param_types, expr.type&.value
 		end
 
 		# Readable description of a value's shape for Type_Contract_Violation messages — a func-like value's param/return types if it has them, otherwise its plain type name.
@@ -480,8 +521,38 @@ module Lost
 			                                  StartCallback: -> { ready << true }
 
 			webrick.mount_proc '/onclick/' do |req, res|
-				puts Lost::Ascii.dim "#{'DOM'.rjust(7, ' ')} #{req.path}"
+				puts Tape::Ascii.dim "#{'DOM'.rjust(7, ' ')} #{req.path}"
 				handle_request server, req, res
+			end
+
+			# Live reload event stream (see src/runtime/live_reload.js). Mounted only under Hot_Reloader,
+			# and separately from the Tape routing path -- a Tape route handler resolves to a finished
+			# String body, but this needs to hold the connection open and stream, which means raw WEBrick
+			# response access.
+			if live_reload
+				webrick.mount_proc '/_tape/live-reload' do |_req, res|
+					res.status              = 200
+					res['Content-Type']     = 'text/event-stream'
+					res['Cache-Control']    = 'no-cache'
+					res.chunked             = true # no Content-Length possible; emit one chunk per write
+					token                   = live_reload_token
+
+					res.body = proc do |out|
+						out.write "retry: 300\n\n"        # how long EventSource waits before reconnecting
+						out.write "data: #{token}\n\n"    # the only line the client actually keys on
+
+						# Heartbeat. Its real jobs: (1) a write eventually raises once the browser tab
+						# closes, freeing this thread; (2) the status check ends the thread promptly when
+						# Hot_Reloader shuts this server down -- WEBrick doesn't track or join per-request
+						# worker threads, so without this poll the thread would leak on every reload.
+						while webrick.status == :Running
+							sleep 0.5
+							out.write ": ping\n\n"        # SSE comment line -- ignored by the client
+						end
+					rescue Errno::EPIPE, IOError
+						# browser tab went away mid-stream -- expected, nothing to clean up
+					end
+				end
 			end
 
 			webrick.mount_proc '' do |req, res|
@@ -519,7 +590,7 @@ module Lost
 			# CGI.parse only understands application/x-www-form-urlencoded bodies (key1=value1&key2=...).
 			# A JSON body has no top-level `=` for it to split on, so it used to fall back to treating the
 			# *entire* raw JSON string as one keyless entry with zero values -- `{ "<the whole json>" => nil
-			# }`, both in this debug log line and in `request.body` as seen by every Lost route/onclick
+			# }`, both in this debug log line and in `request.body` as seen by every Tape route/onclick
 			# handler. Real JSON bodies now get real JSON parsing instead.
 			body_hash = if request.content_type&.start_with?('application/json')
 				JSON.parse(request.body || '{}') rescue {}
@@ -558,12 +629,12 @@ module Lost
 							end
 						end
 
-						route             = Lost::Route.new
+						route             = Tape::Route.new
 						route.handler     = entry[:handler]
 						route.param_names = []
 
-						req = build_lost_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
-						res = build_lost_response response
+						req = build_tape_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
+						res = build_tape_response response
 
 						interp_route_body route, req, res
 
@@ -572,18 +643,18 @@ module Lost
 						# handler defined in a `.map` callback or a plain helper works the same as one in a
 						# method.
 						component = entry[:component]
-						if component.is_a?(Lost::Instance) && component.declarations['render']
+						if component.is_a?(Tape::Instance) && component.declarations['render']
 							new_html = render_dom_to_html component
 							html_id  = component.declarations['html_id']
 
 							response.status              = 200
 							response['Content-Type']     = 'text/html'
-							response['X-Lost-Target-Id'] = html_id if html_id
+							response['X-Tape-Target-Id'] = html_id if html_id
 							response.body                = new_html
 							return
 						end
 					rescue => e
-						warn "\n[Lost Onclick Error] #{e.class}: #{e.message}"
+						warn "\n[Tape Onclick Error] #{e.class}: #{e.message}"
 						warn e.backtrace.first(10).map { |line| "  #{line}" }.join("\n")
 						warn ""
 
@@ -607,10 +678,10 @@ module Lost
 				url_params   = extract_url_params path_parts, route_function
 				query_params = parse_query_string query_string
 
-				req = build_lost_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+				req = build_tape_request path_string, http_method, body_hash, query_params, url_params, headers_hash
 
 				begin
-					res    = build_lost_response response
+					res    = build_tape_response response
 					result = interp_route_body route_function, req, res, url_params, server_instance: server
 
 					response.status = res.declarations['status']
@@ -624,14 +695,24 @@ module Lost
 						script_tag          = "<script>#{dom_js}</script>"
 						view_transition_css = self.class.cached_asset_source_by_path['src/runtime/view_transition.css'] ||= File.read('src/runtime/view_transition.css')
 						view_transition_tag = "<style>#{view_transition_css}</style>"
-						body_str            = response.body.to_s
+
+						# Only present under Hot_Reloader -- pairs with the /_tape/live-reload endpoint.
+						live_reload_tag = if live_reload
+							lr_js = self.class.cached_asset_source_by_path['src/runtime/live_reload.js'] ||= File.read('src/runtime/live_reload.js')
+							"<script>#{lr_js}</script>"
+						else
+							''
+						end
+
+						injected  = script_tag + view_transition_tag + live_reload_tag
+						body_str  = response.body.to_s
 
 						if body_str.include?('<head>')
-							response.body = body_str.sub('<head>', '<head>' + script_tag + view_transition_tag)
+							response.body = body_str.sub('<head>', '<head>' + injected)
 						elsif body_str.include?('<body>')
-							response.body = body_str.sub('<body>', '<body>' + script_tag + view_transition_tag)
+							response.body = body_str.sub('<body>', '<body>' + injected)
 						else
-							response.body = script_tag + view_transition_tag + body_str
+							response.body = injected + body_str
 						end
 					end
 
@@ -641,7 +722,7 @@ module Lost
 					raise e
 
 				rescue => e
-					warn "\n[Lost Server Error] #{e.class}: #{e.message}"
+					warn "\n[Tape Server Error] #{e.class}: #{e.message}"
 					warn e.backtrace.first(10).map { |line| "  #{line}" }.join("\n")
 					warn ""
 
@@ -713,12 +794,12 @@ module Lost
 			query_params
 		end
 
-		def build_lost_request path_string, http_method, body_hash, query_params, url_params, headers_hash
-			req          = Lost::Request.new
-			body_dict    = Lost::Dictionary.new body_hash
-			query_dict   = Lost::Dictionary.new query_params
-			params_dict  = Lost::Dictionary.new url_params
-			headers_dict = Lost::Dictionary.new headers_hash
+		def build_tape_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+			req          = Tape::Request.new
+			body_dict    = Tape::Dictionary.new body_hash
+			query_dict   = Tape::Dictionary.new query_params
+			params_dict  = Tape::Dictionary.new url_params
+			headers_dict = Tape::Dictionary.new headers_hash
 			link_instance_to_type req, 'Request'
 			link_instance_to_type body_dict, 'Dictionary'
 			link_instance_to_type query_dict, 'Dictionary'
@@ -734,8 +815,8 @@ module Lost
 			req
 		end
 
-		def build_lost_response webrick_response
-			res                                  = Lost::Response.new
+		def build_tape_response webrick_response
+			res                                  = Tape::Response.new
 			res.webrick_response                 = webrick_response
 			res.declarations['webrick_response'] = webrick_response
 			res.declarations['status']           = 200
@@ -777,7 +858,7 @@ module Lost
 			render = dom_instance.declarations['render']
 
 			inner_html = if render
-				call_expr           = Lost::Call_Expr.new
+				call_expr           = Tape::Call_Expr.new
 				call_expr.receiver  = render
 				call_expr.arguments = []
 
@@ -787,7 +868,7 @@ module Lost
 				html
 			end
 
-			renderer = Lost::Dom_Renderer.new dom_instance, inner_html
+			renderer = Tape::Dom_Renderer.new dom_instance, inner_html
 
 			# Registration (here) and rendering (renderer.to_html_string) must print the *same* token --
 			# add_onclick_handler/add_input_element return the real key they stored, so hand it to the
@@ -805,7 +886,7 @@ module Lost
 			renderer.to_html_string
 		end
 
-		# A render() result can be a String, a single Dom-composing Instance, or an Lost::Array of
+		# A render() result can be a String, a single Dom-composing Instance, or an Tape::Array of
 		# either (or of further-nested Arrays -- e.g. `things.map((it; A(...)))` embedded inline among
 		# other children, same as `Form([input, button, list])` in learn/*.tape's Dom examples).
 		# Recurses into a nested Array rather than requiring exactly one flat level, so a mapped
@@ -818,10 +899,10 @@ module Lost
 			case value
 			when ::String
 				html << value
-			when Lost::Array
+			when Tape::Array
 				value.values.each { |child| append_dom_child_html child, html, render_scope }
 			else
-				html << render_dom_to_html(value, render_scope: render_scope) if value.is_a?(Lost::Instance) && value.types.include?('Dom')
+				html << render_dom_to_html(value, render_scope: render_scope) if value.is_a?(Tape::Instance) && value.types.include?('Dom')
 			end
 		end
 
@@ -829,11 +910,11 @@ module Lost
 		def raise_missing_scope_operator_target! expr, scope_operator_value
 			case scope_operator_value
 			when './'
-				raise Lost::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
+				raise Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
 			when '../'
-				raise Lost::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
+				raise Tape::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
 			else
-				raise Lost::Invalid_Scope_Syntax.new(expr)
+				raise Tape::Invalid_Scope_Syntax.new(expr)
 			end
 		end
 
@@ -842,11 +923,11 @@ module Lost
 		# whatever type it was declared on. A method is identified by its `enclosing_scope` being a
 		# Type/Instance. A function that already carries a real lexical scope -- a `( ...; ... )` literal
 		# passed around as a closure, or a top-level function -- keeps it untouched; rebinding it would
-		# silently drop its closure the moment it's passed to a Lost-implemented HOF (map/filter/find,
+		# silently drop its closure the moment it's passed to a Tape-implemented HOF (map/filter/find,
 		# which look their `func` param up and would otherwise rebind it to the HOF's own call frame).
 		# Non-Func values pass through unchanged.
 		def rebind_func_to_scope value, scope
-			return value unless value.is_a?(Lost::Func) && value.enclosing_scope.is_a?(Lost::Type)
+			return value unless value.is_a?(Tape::Func) && value.enclosing_scope.is_a?(Tape::Type)
 			func                 = value.dup
 			func.enclosing_scope = scope
 			func
@@ -855,7 +936,7 @@ module Lost
 		def interp_identifier expr
 			if expr.directive
 				# todo: Why is this not handled by Parser#complete_expression?
-				dir_expr      = Lost::Directive_Expr.new
+				dir_expr      = Tape::Directive_Expr.new
 				dir_expr.name = expr
 				return interp_directive dir_expr
 			end
@@ -864,18 +945,18 @@ module Lost
 			when 'nil'
 				return nil
 			when 'true'
-				# todo; return Lost::Bool.truthy
+				# todo; return Tape::Bool.truthy
 				return true
 			when 'false'
-				# todo; return Lost::Bool.falsy
+				# todo; return Tape::Bool.falsy
 				return false
 			when 'Self'
-				found = stack.reverse_each.find { |scope| scope.instance_of? Lost::Type }
+				found = stack.reverse_each.find { |scope| scope.instance_of? Tape::Type }
 				return found if found
-				raise Lost::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
+				raise Tape::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
 			when 'self'
 				return current_instance if current_instance
-				raise Lost::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
+				raise Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
 			else
 				scope_for_identifier expr
 			end
@@ -888,7 +969,7 @@ module Lost
 				if found && found.has?(expr.value)
 					found[expr.value]
 				else
-					raise Lost::Undeclared_Identifier.new(expr)
+					raise Tape::Undeclared_Identifier.new(expr)
 				end
 			elsif scope
 				# note: Delegate ruby calls automatically
@@ -896,11 +977,11 @@ module Lost
 				if scope.has?(expr.value) && !scope.respond_to?(proxy_method)
 					result = scope.get expr.value
 					# If the result is a function, duplicate it and set its enclosing_scope to the current scope. This ensures composed types (like `Thing | Record`) have functions that reference the correct type
-					return rebind_func_to_scope(result, scope) if result.is_a? Lost::Func
+					return rebind_func_to_scope(result, scope) if result.is_a? Tape::Func
 					result
 				elsif scope.respond_to? proxy_method
 					# Prefer the instance's own owning Type first -- for a tagged variant (e.g. `Array\Web_Server`) this is a distinct Type from the plain global one, and holds the actual override. Only fall back to a blind by-name search of the stack (which only ever finds the plain global type, e.g. plain "Array") when the instance isn't linked to a Type that declares this method itself.
-					type_def       = if scope.enclosing_scope.is_a?(Lost::Type) && scope.enclosing_scope.has?(expr.value)
+					type_def       = if scope.enclosing_scope.is_a?(Tape::Type) && scope.enclosing_scope.has?(expr.value)
 						scope.enclosing_scope
 					else
 						type_name  = scope.class.name.split('::').last
@@ -909,14 +990,14 @@ module Lost
 					end
 					declared_value = type_def[expr.value] if type_def
 
-					if declared_value.is_a? Lost::Func
+					if declared_value.is_a? Tape::Func
 						# Use the actual function from the Type, not an empty wrapper
 						return rebind_func_to_scope(declared_value, scope)
 					else
 						# It's a variable/property
 						return scope.send(proxy_method)
 					end
-				elsif scope.is_a?(Lost::Instance) && scope.enclosing_scope&.is_a?(Lost::Type) && scope.enclosing_scope&.has?(expr.value)
+				elsif scope.is_a?(Tape::Instance) && scope.enclosing_scope&.is_a?(Tape::Type) && scope.enclosing_scope&.has?(expr.value)
 					if expr.type || expr.tag
 						# A bare annotated identifier (`x: Number`) must self-declare its own per-instance copy, exactly like the nil-init idiom (`x,`) already does (see #interp_nil_init's identical shadowing fix) -- reading straight through to the enclosing Type's own nil placeholder instead would mean the instance never gets its own key, so a later `./x = value` would wrongly raise Cannot_Assign_Undeclared_Identifier.
 						self_declare_annotated_identifier expr
@@ -928,7 +1009,7 @@ module Lost
 				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				else
-					raise Lost::Undeclared_Identifier.new(expr)
+					raise Tape::Undeclared_Identifier.new(expr)
 				end
 			else
 				# When scope is nil, errors must be raised
@@ -937,17 +1018,17 @@ module Lost
 				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				elsif stack.any? { |s| s.equal? global } && resolve_forward_declaration(expr.value) && global.has?(expr.value)
-					# not reached yet in file order, but declared somewhere later on -- forced early. Identity check (not #include?, which is `==` and can hit an Lost type's own overload -- e.g. Lost::Array#== assumes its operand also has .values). Global being absent from the stack means we're deliberately excluding it (a plain `x.y` dot access, #interp_dot_scope's exclude_global_scope: true) -- a member missing on x should stay missing, not quietly resolve to an unrelated global
+					# not reached yet in file order, but declared somewhere later on -- forced early. Identity check (not #include?, which is `==` and can hit an Tape type's own overload -- e.g. Tape::Array#== assumes its operand also has .values). Global being absent from the stack means we're deliberately excluding it (a plain `x.y` dot access, #interp_dot_scope's exclude_global_scope: true) -- a member missing on x should stay missing, not quietly resolve to an unrelated global
 					global[expr.value]
 				elsif (variants = tagged_variants_for(expr.value)).length == 1
 					# A tagged declaration (`Task\Schema {}`) never binds its bare name like a plain `Type {}` does -- unambiguous with one variant, so allow it (mirrors Bare Named Structs). 2+ variants stay unreachable except via `Name\Tag`.
 					variants.first
 				else
-					raise Lost::Undeclared_Identifier.new(expr)
+					raise Tape::Undeclared_Identifier.new(expr)
 				end
 			end
 
-			if value.is_a?(Lost::Type)
+			if value.is_a?(Tape::Type)
 				if expr.respond_to?(:add_to_readable) && expr.add_to_readable
 					stack.last.add_readable_scope value
 				elsif expr.respond_to?(:add_to_writable) && expr.add_to_writable
@@ -984,7 +1065,7 @@ module Lost
 				sub_exprs = result.scan(/(?<!\\)`(.*?)(?<!\\)`/).flatten
 
 				sub_exprs.each do |sub|
-					# Reuses the interpreter's own @parser (not a fresh Lost.parse) so it still knows about @operator declarations registered elsewhere in the program -- #input= resets the cursor but not @custom_infix/etc.
+					# Reuses the interpreter's own @parser (not a fresh Tape.parse) so it still knows about @operator declarations registered elsewhere in the program -- #input= resets the cursor but not @custom_infix/etc.
 					parser.input = Lexer.new(sub).output
 					value        = interpret parser.output.first
 					result       = result.gsub "`#{sub}`", "#{stringify_for_display(value)}"
@@ -1007,38 +1088,38 @@ module Lost
 				!interpret(expr.expression)
 			when 'return'
 				returned = expr.expression ? interpret(expr.expression) : nil
-				Lost::Return.new returned
+				Tape::Return.new returned
 			else
 				overload_func = find_in_stack expr.operator.value
-				if overload_func.is_a? Lost::Func
-					call           = Lost::Call_Expr.new
+				if overload_func.is_a? Tape::Func
+					call           = Tape::Call_Expr.new
 					call.arguments = [expr.expression]
 					interp_func_body overload_func, call
 				else
-					raise Lost::Unhandled_Prefix.new(expr)
+					raise Tape::Unhandled_Prefix.new(expr)
 				end
 			end
 		end
 
-		# @param expr [Lost::Infix_Expr]
+		# @param expr [Tape::Infix_Expr]
 		def interp_infix_assignment expr
 			assignment_scope = scope_for_identifier expr.left # Reminder; this returns a scope whether or not the identifier exists
 
 			# A type annotation (`x: Number = value`) is itself a declaration, so it's allowed to introduce a brand-new identifier just like `:=`, even though plain `=` otherwise requires the identifier to already exist. An inline signature (`x: Type(Param;) = value`) is the same idea — expr.left is a Func_Signature_Expr instead of a plain annotated Identifier_Expr, but it's just as self-declaring. A bare struct annotation (`thing: <String, Number> = value`) is self-declaring the same way, even with no `expr.left.type`.
-			has_type_annotation = (expr.left.is_a?(Lost::Identifier_Expr) && (expr.left.type || expr.left.tag)) ||
-			                      expr.left.is_a?(Lost::Func_Signature_Expr)
+			has_type_annotation = (expr.left.is_a?(Tape::Identifier_Expr) && (expr.left.type || expr.left.tag)) ||
+			                      expr.left.is_a?(Tape::Func_Signature_Expr)
 			assignment_scope    ||= stack.last if has_type_annotation
 
 			# If using a scope operator but the scope doesn't exist, raise an error
-			if expr.left.is_a?(Lost::Identifier_Expr) && expr.left.scope_operator && assignment_scope.nil?
+			if expr.left.is_a?(Tape::Identifier_Expr) && expr.left.scope_operator && assignment_scope.nil?
 				raise_missing_scope_operator_target! expr, expr.left.scope_operator.value
 			end
 
 			# For plain identifiers (no scope operator) inside an Instance/Type body, new declarations should go to that Instance/Type, not to an enclosing scope that happens to have the same identifier. This fixes a bug that prevented HTML Layout's `title` from capturing Title's `title` declaration in examples/basic_html_page.tape.
-			if expr.left.is_a?(Lost::Identifier_Expr) && !expr.left.scope_operator
+			if expr.left.is_a?(Tape::Identifier_Expr) && !expr.left.scope_operator
 				current_scope = stack.last
 
-				if (current_scope.is_a?(Lost::Instance) || current_scope.is_a?(Lost::Type)) &&
+				if (current_scope.is_a?(Tape::Instance) || current_scope.is_a?(Tape::Type)) &&
 				   assignment_scope != current_scope && !current_scope.has?(expr.left.value)
 					# The identifier exists in some enclosing scope but not in the current Instance/Type. Treat this as a new declaration on the current scope.
 					assignment_scope = current_scope
@@ -1049,16 +1130,16 @@ module Lost
 			# Special handling for load directive assignment, subscript, and maybe more later.
 			#
 
-			if expr.left.is_a? Lost::Subscript_Expr
+			if expr.left.is_a? Tape::Subscript_Expr
 				if expr.left.expression.expressions.count > 1
-					raise Lost::Too_Many_Subscript_Expressions.new(expr.left)
+					raise Tape::Too_Many_Subscript_Expressions.new(expr.left)
 				end
 				# note: I'm interpreting only the first expression of left.expression.expressions as the key because the brackets are a Circumfix_Expr which uses an array to store the values.
 				receiver = interpret expr.left.receiver
 				key      = interpret expr.left.expression.expressions.first
 				value    = interpret expr.right
 
-				if receiver.is_a? Lost::Dictionary
+				if receiver.is_a? Tape::Dictionary
 					receiver.proxy_set key, value
 					return receiver.proxy_get key
 				else
@@ -1068,13 +1149,13 @@ module Lost
 			end
 
 			# Handle dot assignment
-			if expr.left.is_a?(Lost::Infix_Expr) && expr.left.operator.value == '.'
+			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator.value == '.'
 				return assign_dot_member expr, expr.left, interpret(expr.right)
 			end
 
-			if expr.right.is_a?(Lost::Directive_Expr) && expr.right.name.value == 'load'
+			if expr.right.is_a?(Tape::Directive_Expr) && expr.right.name.value == 'load'
 				filepath  = interpret expr.right.expression
-				new_scope = Lost::Scope.new expr.left.value
+				new_scope = Tape::Scope.new expr.left.value
 				load_file_into_scope filepath, new_scope
 				right_value = new_scope
 			else
@@ -1082,44 +1163,43 @@ module Lost
 			end
 
 			# A Class-styled identifier (`My_Type = Other {}`) assigning a Scope value is itself a declaration, same reasoning as has_type_annotation above: `=` onto a fresh Class-styled name is how types get named/aliased, so it's allowed to introduce the identifier rather than requiring `:=` first.
-			is_class_declaration = Lost.type_of_identifier(expr.left.value) == :Identifier && right_value.is_a?(Lost::Scope)
+			is_class_declaration = Tape.type_of_identifier(expr.left.value) == :Identifier && right_value.is_a?(Tape::Scope)
 			assignment_scope     ||= stack.last if is_class_declaration
 
 			# Before the actual assignment, the identifier is checked for specific behavior errors based on its expression type (class, constant, variable/function)
-			case Lost.type_of_identifier expr.left.value
+			case Tape.type_of_identifier expr.left.value
 			when :IDENTIFIER
 				# It can only be assigned once, so if the declaration exists, fail. An undeclared constant falls through to the Cannot_Reassign_Undeclared_Identifier check below.
 				if assignment_scope&.has? expr.left.value
-					raise Lost::Cannot_Reassign_Constant.new(expr.left)
+					raise Tape::Cannot_Reassign_Constant.new(expr.left)
 				end
 			when :Identifier
-				# It can only be assigned `value` of Lost::Scope, which includes Lost::Type
-				if !right_value.is_a?(Lost::Scope)
-					raise Lost::Cannot_Assign_Incompatible_Type.new(expr)
+				# It can only be assigned `value` of Tape::Scope, which includes Tape::Type
+				if !right_value.is_a?(Tape::Scope)
+					raise Tape::Cannot_Assign_Incompatible_Type.new(expr)
 				end
 			when :identifier
 				if assignment_scope
 					# If the left side of the expression was declared with a type annotation, the type of `right_value` is enforced here.
 					# `expr.left.type` covers the first, self-declaring assignment (the annotation is right here on this expression); the recorded type_by_identifier value covers every reassignment after that, once the annotation itself is gone. An inline signature (Func_Signature_Expr) supplies its own type directly, since it has no name to look up.
-					type      = if expr.left.is_a? Lost::Func_Signature_Expr
+					type      = if expr.left.is_a? Tape::Func_Signature_Expr
 						build_func_signature expr.left
-					elsif expr.left.type.is_a? Lost::Struct_Expr
+					elsif expr.left.type.is_a? Tape::Struct_Expr
 						# A bare struct annotation (`x: <String, Number>`) is structural, not nominal -- not enforced here.
 						assignment_scope.type_by_identifier[expr.left.value]
 					else
 						expr.left.type&.value || assignment_scope.type_by_identifier[expr.left.value]
 					end
-					type      = type.name if type.is_a?(Lost::Type)
+					type      = type.name if type.is_a?(Tape::Type)
 					signature = resolve_func_signature type
 
 					if signature
 						unless signature.matches? right_value
-							raise Lost::Type_Contract_Violation.new(expr, signature.to_s, describe_value_shape(right_value))
+							raise Tape::Type_Contract_Violation.new(expr, signature.to_s, describe_value_shape(right_value))
 						end
 					else
-						name = type_name_to_string(right_value)
-						if type && name != type
-							raise Lost::Type_Contract_Violation.new(expr, type, name)
+						if type && !type_contract_satisfied?(right_value, type)
+							raise Tape::Type_Contract_Violation.new(expr, type, inferred_type_name(right_value))
 						end
 					end
 				end
@@ -1127,12 +1207,12 @@ module Lost
 
 			unless assignment_scope && (assignment_scope.has?(expr.left.value) || has_type_annotation || is_class_declaration)
 				# it may not be declared using =
-				raise Lost::Cannot_Assign_Undeclared_Identifier.new(expr)
+				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
 			end
 
-			if expr.left.is_a?(Lost::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Lost::Struct_Expr)
+			if expr.left.is_a?(Tape::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Tape::Struct_Expr)
 				assignment_scope.type_by_identifier[expr.left.value] = expr.left.type.value
-			elsif expr.left.is_a? Lost::Func_Signature_Expr
+			elsif expr.left.is_a? Tape::Func_Signature_Expr
 				# Recorded so future reassignments (which are plain Identifier_Exprs with no annotation of their own) still resolve back to this signature to check against.
 				assignment_scope.type_by_identifier[expr.left.value] = build_func_signature expr.left
 			end
@@ -1144,19 +1224,19 @@ module Lost
 		end
 
 		# todo; Types may be composed of multiple types, what happens in that case?
-		# @param expr [Lost::Infix_Expr]
+		# @param expr [Tape::Infix_Expr]
 		def interp_infix_declaration expr
 			# `(a, b) := <tuple-or-struct-valued expr>` -- destructuring, handled entirely separately from the single-identifier case below (no scope operators, no type-by-identifier locking against a bare `.value`, none of it applies to a target list).
-			if expr.left.is_a?(Lost::Circumfix_Expr) && expr.left.grouping == '()'
+			if expr.left.is_a?(Tape::Circumfix_Expr) && expr.left.grouping == '()'
 				return interp_destructuring_declaration expr
 			end
 
-			if expr.left.is_a?(Lost::Infix_Expr) && expr.left.operator&.value == '.'
+			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator&.value == '.'
 				return assign_dot_member expr, expr.left, interpret(expr.right), declare: true
 			end
 
 			# Only scope-operator forms (`../x`, `./x`, `.x`) target a specific scope. A plain `:=` always declares on the current scope, shadowing any identically-named identifier in an enclosing scope rather than re-declaring on it.
-			has_scope_operator = expr.left.is_a?(Lost::Identifier_Expr) && expr.left.scope_operator
+			has_scope_operator = expr.left.is_a?(Tape::Identifier_Expr) && expr.left.scope_operator
 			assignment_scope   = scope_for_identifier expr.left if has_scope_operator
 
 			# If using a scope operator but the scope doesn't exist, raise an error (mirrors interp_infix_assignment).
@@ -1167,13 +1247,13 @@ module Lost
 			assignment_scope ||= stack.last
 
 			# note; `./`, `../` self-declaring a member that doesn't exist yet is valid but only while the type/instance is still under construction (see #still_under_construction?) -- calling a static method later and self-declaring a brand-new static from inside it isn't allowed.
-			if has_scope_operator && assignment_scope.is_a?(Lost::Type) && !assignment_scope.has?(expr.left.value)
-				raise Lost::Cannot_Assign_Undeclared_Identifier.new(expr) unless still_under_construction? assignment_scope
+			if has_scope_operator && assignment_scope.is_a?(Tape::Type) && !assignment_scope.has?(expr.left.value)
+				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr) unless still_under_construction? assignment_scope
 			end
 
-			right_value = if expr.right.is_a?(Lost::Directive_Expr) && expr.right.name.value == 'load'
+			right_value = if expr.right.is_a?(Tape::Directive_Expr) && expr.right.name.value == 'load'
 				filepath  = interpret expr.right.expression
-				new_scope = Lost::Scope.new expr.left.value
+				new_scope = Tape::Scope.new expr.left.value
 				load_file_into_scope filepath, new_scope
 				new_scope
 			else
@@ -1182,7 +1262,7 @@ module Lost
 
 			assignment_scope.declare expr.left.value, right_value
 
-			assignment_scope.type_by_identifier[expr.left.value] = type_name_to_string right_value
+			assignment_scope.type_by_identifier[expr.left.value] = inferred_type_name right_value
 			track_static_declaration assignment_scope, expr.left
 			right_value
 		end
@@ -1201,24 +1281,24 @@ module Lost
 			targets = expr.left.expressions
 
 			unless targets.all? { |target| destructuring_target? target }
-				raise Lost::Invalid_Destructuring_Target.new(expr)
+				raise Tape::Invalid_Destructuring_Target.new(expr)
 			end
 
 			right_value = interpret expr.right
 			values      = destructurable_values right_value
 
 			unless values
-				raise Lost::Invalid_Destructuring_Source.new(expr)
+				raise Tape::Invalid_Destructuring_Source.new(expr)
 			end
 
 			if targets.length > values.length
-				raise Lost::Destructuring_Arity_Mismatch.new(expr, targets.length, values.length)
+				raise Tape::Destructuring_Arity_Mismatch.new(expr, targets.length, values.length)
 			end
 
 			targets.each_with_index do |target, i|
 				value = values[i]
 
-				if target.is_a? Lost::Identifier_Expr
+				if target.is_a? Tape::Identifier_Expr
 					declare_destructuring_local expr, target, value
 				else
 					assign_dot_member expr, target, value
@@ -1229,38 +1309,37 @@ module Lost
 		end
 
 		def destructuring_target? target
-			target.is_a?(Lost::Identifier_Expr) ||
-				(target.is_a?(Lost::Infix_Expr) && target.operator&.value == '.' && target.right.is_a?(Lost::Identifier_Expr))
+			target.is_a?(Tape::Identifier_Expr) ||
+				(target.is_a?(Tape::Infix_Expr) && target.operator&.value == '.' && target.right.is_a?(Tape::Identifier_Expr))
 		end
 
 		def declare_destructuring_local expr, target, value
-			if target.type && !target.type.is_a?(Lost::Struct_Expr)
+			if target.type && !target.type.is_a?(Tape::Struct_Expr)
 				expected = target.type.value
-				actual   = type_name_to_string value
-				if actual != expected
-					raise Lost::Type_Contract_Violation.new(expr, expected, actual)
+				unless type_contract_satisfied? value, expected
+					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
 				end
 			end
 
 			assignment_scope = stack.last
-			assignment_scope.declare target.value, value, type_name_to_string(value)
+			assignment_scope.declare target.value, value, inferred_type_name(value)
 			track_static_declaration assignment_scope, target
 		end
 
 		# True for a top-level `../x := value` or `Self.x := value` static declaration -- both run once during the type's own body walk and must not be re-run for every constructed instance (see #run_type_body_on_instance). `Self.x := value` has a different AST shape than `../x := value` (a `.` dot-target on the left of `:=`, not a scope-operator-prefixed Identifier_Expr), so it needs its own check here rather than falling out of the same one.
 		def static_var_declaration_expr? expr
-			return false unless expr.is_a?(Lost::Infix_Expr) && expr.operator&.value == ':='
+			return false unless expr.is_a?(Tape::Infix_Expr) && expr.operator&.value == ':='
 
 			left = expr.left
-			return true if left.is_a?(Lost::Identifier_Expr) && left.scope_operator&.value == '../'
+			return true if left.is_a?(Tape::Identifier_Expr) && left.scope_operator&.value == '../'
 
-			left.is_a?(Lost::Infix_Expr) && left.operator&.value == '.' &&
-				left.left.is_a?(Lost::Identifier_Expr) && !left.left.scope_operator && left.left.value == 'Self'
+			left.is_a?(Tape::Infix_Expr) && left.operator&.value == '.' &&
+				left.left.is_a?(Tape::Identifier_Expr) && !left.left.scope_operator && left.left.value == 'Self'
 		end
 
 		# A scope that is "under construction" is still allowed to self-declare a brand-new member via `./`, `../`, `self`, or `Self`
 		def still_under_construction? scope
-			if scope.is_a? Lost::Instance
+			if scope.is_a? Tape::Instance
 				scope.has? 'new'
 			else
 				scope.declaration_in_progress
@@ -1273,21 +1352,21 @@ module Lost
 			property = target.right.value
 
 			# `interpret` here isn't run through #maybe_instance, so a nil receiver is still Ruby nil; a
-			# self-declared-but-unset member (`x,`) comes back as Lost::Nil. Either way `x.foo = 1` has no
+			# self-declared-but-unset member (`x,`) comes back as Tape::Nil. Either way `x.foo = 1` has no
 			# receiver to write to -- name that directly instead of a generic "undeclared identifier". A
 			# member `nil` itself declares is left alone, matching the read path in #interp_dot_scope.
-			if receiver.nil? || (receiver.is_a?(Lost::Nil) && !receiver.has?(property))
-				raise Lost::Receiver_Is_Nil.new(target)
+			if receiver.nil? || (receiver.is_a?(Tape::Nil) && !receiver.has?(property))
+				raise Tape::Receiver_Is_Nil.new(target)
 			end
 
 			# `.tag =` re-tags a value declared with a tag. The new tag must keep the declared
 			# signature: compose at least everything the current tag does, at every chain link
 			# (`=>=`). A value with no tag has no `.tag` to write -- Member Creation Is Strict
 			# handles that below.
-			if property == 'tag' && receiver.is_a?(Lost::Scope) && receiver.has?('tag')
+			if property == 'tag' && receiver.is_a?(Tape::Scope) && receiver.has?('tag')
 				new_tag = tag_struct_for_reassignment value, target
 				unless tag_chains_satisfy? receiver.tag_instance, new_tag
-					raise Lost::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
+					raise Tape::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
 				end
 				receiver.tag_instance = new_tag
 				declare_tag receiver
@@ -1295,44 +1374,44 @@ module Lost
 			end
 
 			# `self`/`Self` are keyword sugar for `./`/`../` (see #interp_identifier) but arrive here as an ordinary `.` dot-target. `./x`/`../x` writes (#interp_infix_declaration's scope-operator branch, #interp_infix_assignment's general flow) never run Cannot_Reassign_Constant or check_dot_access_permissions! at all -- only the external-`.`-write rules below do (see "Member Creation Is Strict") -- so self/Self route around both entirely here too, for both `=` and `:=`, matching `./`/`../` exactly rather than just the not-yet-declared case.
-			self_keyword = target.left.is_a?(Lost::Identifier_Expr) && !target.left.scope_operator &&
-			               Lost::SELF_KEYWORDS.include?(target.left.value)
+			self_keyword = target.left.is_a?(Tape::Identifier_Expr) && !target.left.scope_operator &&
+			               Tape::SELF_KEYWORDS.include?(target.left.value)
 
-			if self_keyword && receiver.is_a?(Lost::Scope)
+			if self_keyword && receiver.is_a?(Tape::Scope)
 				unless receiver.has?(property) || still_under_construction?(receiver)
-					raise Lost::Cannot_Assign_Undeclared_Identifier.new(expr)
+					raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
 				end
 
 				if declare
 					receiver.static_declarations.add property if target.left.value == 'Self'
-					return receiver.declare property, value, type_name_to_string(value)
+					return receiver.declare property, value, inferred_type_name(value)
 				end
 
 				expected = receiver.type_by_identifier[property]
-				actual   = type_name_to_string value
-				raise Lost::Type_Contract_Violation.new(expr, expected, actual) if expected && actual != expected
+				if expected && !type_contract_satisfied?(value, expected)
+					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
+				end
 
 				receiver[property] = value
 				return value
 			end
 
-			unless receiver.is_a?(Lost::Scope) && receiver.has?(property)
-				raise Lost::Cannot_Assign_Undeclared_Identifier.new(expr)
+			unless receiver.is_a?(Tape::Scope) && receiver.has?(property)
+				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
 			end
 
-			if Lost.type_of_identifier(property) == :IDENTIFIER
-				raise Lost::Cannot_Reassign_Constant.new(expr)
+			if Tape.type_of_identifier(property) == :IDENTIFIER
+				raise Tape::Cannot_Reassign_Constant.new(expr)
 			end
 
 			check_dot_access_permissions! receiver, property, expr
 
-			actual = type_name_to_string value
 			if declare
-				receiver.type_by_identifier[property] = actual
+				receiver.type_by_identifier[property] = inferred_type_name value
 			else
 				expected = receiver.type_by_identifier[property]
-				if expected && actual != expected
-					raise Lost::Type_Contract_Violation.new(expr, expected, actual)
+				if expected && !type_contract_satisfied?(value, expected)
+					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
 				end
 			end
 
@@ -1340,40 +1419,40 @@ module Lost
 			value
 		end
 
-		# Lost::Tuple/Lost::Struct both carry a plain Ruby-level `.values` reader holding the raw backing array (distinct from their Lost-level `.values` dot-access, which wraps the same data in an Lost::Array for Lost code to read).
+		# Tape::Tuple/Tape::Struct both carry a plain Ruby-level `.values` reader holding the raw backing array (distinct from their Tape-level `.values` dot-access, which wraps the same data in an Tape::Array for Tape code to read).
 		def destructurable_values value
 			case value
-			when Lost::Tuple, Lost::Struct
+			when Tape::Tuple, Tape::Struct
 				value.values
 			end
 		end
 
-		# @param expr [Lost::Infix_Expr]
+		# @param expr [Tape::Infix_Expr]
 		def interp_dot_infix expr
 			return interp_dot_new expr if expr.right.is 'new'
 
 			receiver = maybe_instance interpret expr.left
 
-			unless receiver.kind_of?(Lost::Scope) || receiver.kind_of?(Lost::Range)
-				raise Lost::Invalid_Dot_Infix_Left_Operand.new(expr)
+			unless receiver.kind_of?(Tape::Scope) || receiver.kind_of?(Tape::Range)
+				raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr)
 			end
 
 			case receiver
-			when Lost::Array, Lost::Tuple
+			when Tape::Array, Tape::Tuple
 				interp_dot_array_or_tuple receiver, expr
-			when Lost::Range
+			when Tape::Range
 				interp_dot_range receiver, expr
-			when Lost::Dictionary
+			when Tape::Dictionary
 				interp_dot_dictionary receiver, expr
 			else
 				# A tagged type reference on the right (`ns.Abc\<Number>`) isn't an Identifier_Expr, so it bypasses #interp_dot_scope's right-operand validation.
-				if expr.right.instance_of? Lost::Type_Expr
+				if expr.right.instance_of? Tape::Type_Expr
 					return interp_member_access receiver, expr.right
 				end
 
 				interp_dot_scope receiver, expr
 			end
-		rescue Lost::Undeclared_Identifier, Lost::Cannot_Call_Instance_Member_On_Type, Lost::Receiver_Is_Nil
+		rescue Tape::Undeclared_Identifier, Tape::Cannot_Call_Instance_Member_On_Type, Tape::Receiver_Is_Nil
 			raise unless expr.operator.value == '.?'
 			nil
 		end
@@ -1381,19 +1460,19 @@ module Lost
 		def stringify_for_display value, show_quotes: false
 			value = maybe_instance value
 			# A bare Type's `to_s` (copied from its own body) assumes real instance context and crashes if called directly on the Type itself, so only attempt it on a genuine Instance.
-			return value unless value.is_a? Lost::Instance
+			return value unless value.is_a? Tape::Instance
 
-			method_name       = show_quotes && value.is_a?(Lost::String) ? 'pretty_print' : 'to_s'
-			to_s_ident        = Lost::Identifier_Expr.new
-			to_s_ident.lexeme = Lost::Lexeme.new(:identifier, method_name)
+			method_name       = show_quotes && value.is_a?(Tape::String) ? 'pretty_print' : 'to_s'
+			to_s_ident        = Tape::Identifier_Expr.new
+			to_s_ident.lexeme = Tape::Lexeme.new(:identifier, method_name)
 			func              = begin
 				interp_member_access value, to_s_ident
-			rescue Lost::Undeclared_Identifier
+			rescue Tape::Undeclared_Identifier
 				nil
 			end
-			return value unless func.is_a? Lost::Func
+			return value unless func.is_a? Tape::Func
 
-			call           = Lost::Call_Expr.new
+			call           = Tape::Call_Expr.new
 			call.arguments = []
 			interp_func_body func, call
 		end
@@ -1415,15 +1494,15 @@ module Lost
 		end
 
 		# Bare `X.new` (no parens) is equivalent to `X()`: full construction including `new(;)`, so a constructor with required params raises Missing_Argument. `X.new(...)` with parens never lands here; #interp_call intercepts it and routes to #interp_type_call directly.
-		# @param expr [Lost::Infix_Expr]
+		# @param expr [Tape::Infix_Expr]
 		def interp_dot_new expr
 			receiver = interpret expr.left
 
-			unless receiver.is_a? Lost::Type
-				raise Lost::Cannot_Initialize_Non_Type_Identifier.new expr.left
+			unless receiver.is_a? Tape::Type
+				raise Tape::Cannot_Initialize_Non_Type_Identifier.new expr.left
 			end
 
-			call           = Lost::Call_Expr.new
+			call           = Tape::Call_Expr.new
 			call.receiver  = expr.left
 			call.arguments = []
 			interp_type_call receiver, call
@@ -1433,23 +1512,23 @@ module Lost
 		# Bounds/type-checked element access for `.N`/`.N.M...` dot-index syntax on an Array/Tuple -- plain `values[index]` (Ruby's own Array#[]) silently returns nil past the end, and silently truncates a non-integer index (e.g. `.0.1` lexes as the single float 0.1, which Ruby's [] truncates to index 0) -- both looked like a legitimate result instead of a mistake.
 		def array_index_value collection, index, expr
 			unless index.is_a?(::Integer) && index.between?(-collection.values.length, collection.values.length - 1)
-				raise Lost::Invalid_Array_Index.new(expr)
+				raise Tape::Invalid_Array_Index.new(expr)
 			end
 			collection.values[index]
 		end
 
 		def interp_dot_array_or_tuple scope, expr
 			case
-			when expr.right.is(Lost::Func_Expr) && expr.right.name.value == 'each'
+			when expr.right.is(Tape::Func_Expr) && expr.right.name.value == 'each'
 				interp_each_loop scope, expr.right
 				scope
 
-			when expr.right.is(Lost::Number_Expr)
+			when expr.right.is(Tape::Number_Expr)
 				array_index_value scope, expr.right.value, expr
 
-			when expr.right.is(Lost::Array_Index_Expr)
+			when expr.right.is(Tape::Array_Index_Expr)
 				expr.right.indices_in_order.reduce(scope) do |current, index|
-					raise Lost::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Lost::Array)
+					raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Tape::Array)
 					array_index_value current, index, expr
 				end
 
@@ -1459,12 +1538,12 @@ module Lost
 		end
 
 		def interp_dot_range range, expr
-			return interp_each_loop range, expr.right if expr.right.is(Lost::Func_Expr) && expr.right.name.value == 'each'
+			return interp_each_loop range, expr.right if expr.right.is(Tape::Func_Expr) && expr.right.name.value == 'each'
 			interp_dot_scope range, expr
 		end
 
 		def interp_dot_dictionary dict, expr
-			if expr.right.is_a? Lost::Identifier_Expr
+			if expr.right.is_a? Tape::Identifier_Expr
 				key_sym = expr.right.value.to_sym
 				if dict.hash.has_key?(key_sym)
 					return dict.hash[key_sym]
@@ -1475,23 +1554,23 @@ module Lost
 		end
 
 		def interp_dot_scope scope, expr
-			raise Lost::Invalid_Dot_Infix_Left_Operand.new(expr) if scope.nil?
-			raise Lost::Invalid_Dot_Infix_Right_Operand.new(expr.right) unless expr.right.instance_of? Lost::Identifier_Expr
+			raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) if scope.nil?
+			raise Tape::Invalid_Dot_Infix_Right_Operand.new(expr.right) unless expr.right.instance_of? Tape::Identifier_Expr
 
 			check_dot_access_permissions! scope, expr.right.value, expr
 
 			interp_member_access scope, expr.right, exclude_global_scope: true
-		rescue Lost::Undeclared_Identifier
+		rescue Tape::Undeclared_Identifier
 			# `nil` is a real scope with its own declared members (`to_s`, ...), so a lookup that actually
 			# reaches one still works. Only a genuinely missing member on a nil receiver becomes this --
 			# far clearer than "<member> has not been declared", which reads as a missing type.
-			raise Lost::Receiver_Is_Nil.new(expr) if scope.is_a?(Lost::Nil)
+			raise Tape::Receiver_Is_Nil.new(expr) if scope.is_a?(Tape::Nil)
 			raise
 		end
 
 		def interp_each_loop collection, func_expr
 			collection.each do |it|
-				each_scope                 = Lost::Scope.new 'each(;)'
+				each_scope                 = Tape::Scope.new 'each(;)'
 				each_scope.enclosing_scope = stack.last
 				push_scope each_scope
 				each_scope.declare 'it', it
@@ -1502,13 +1581,13 @@ module Lost
 		end
 
 		# The values for expr.operator, expr.left, and expr.right should all exist by this point
-		# @param expr [Lost::Nil_Init_Expr]
+		# @param expr [Tape::Nil_Init_Expr]
 		def interp_nil_init expr
 			# attr_accessor :operator, :left, :right
 			current_scope = stack.last
 
 			# Same shadowing fix as interp_infix_assignment: inside an Instance/Type body, a plain identifier's nil-init must declare on the current Instance/Type even if an enclosing scope (e.g. the Type, whose body already ran once at definition time) already has an identically-named identifier. Otherwise re-running `thing,` per-instance in interp_type_call finds the Type's stale copy and never declares it on the instance.
-			if (current_scope.is_a?(Lost::Instance) || current_scope.is_a?(Lost::Type)) && !current_scope.has?(expr.left.value)
+			if (current_scope.is_a?(Tape::Instance) || current_scope.is_a?(Tape::Type)) && !current_scope.has?(expr.left.value)
 				current_scope.declare expr.left.value, interpret(expr.right)
 				track_static_declaration current_scope, expr.left
 				return current_scope.get expr.left.value
@@ -1516,7 +1595,7 @@ module Lost
 
 			begin
 				return interpret expr.left
-			rescue # Lost::Undeclared_Identifier and ArgumentError # todo: Why `ArgumentError: empty string`. Once this is resolved, then the rescue here should explicitly catch Undeclared_Identifier, probably.
+			rescue # Tape::Undeclared_Identifier and ArgumentError # todo: Why `ArgumentError: empty string`. Once this is resolved, then the rescue here should explicitly catch Undeclared_Identifier, probably.
 				scope = scope_for_identifier(expr.left) || stack.last
 				scope.declare expr.left.value, interpret(expr.right)
 
@@ -1535,19 +1614,19 @@ module Lost
 		# A type's own @operator overload takes precedence over a same-named global one. Checks the operand's own declarations first, then its enclosing Type (for shorthand-constructed instances that never got the type's declarations copied onto themselves, see #interp_type_call), and only falls back to a global operator (excluding Type/Instance scopes, see the comment at the call site in #interp_infix) if neither applies.
 
 		def find_operator_overload operator, operand = nil
-			if operand.is_a?(Lost::Instance) && operand.has?(operator)
+			if operand.is_a?(Tape::Instance) && operand.has?(operator)
 				return operand.get operator
 			end
 
-			if operand.is_a?(Lost::Scope) && operand.enclosing_scope.is_a?(Lost::Type) && operand.enclosing_scope.has?(operator)
+			if operand.is_a?(Tape::Scope) && operand.enclosing_scope.is_a?(Tape::Type) && operand.enclosing_scope.has?(operator)
 				return operand.enclosing_scope.get operator
 			end
 
-			find_in_stack operator, excluding: Lost::Type
+			find_in_stack operator, excluding: Tape::Type
 		end
 
 		# Second-level dispatcher for infix operators, mirroring #interpret's own shape: each branch hands off to one interp_*_infix handler. The first group dispatches before operand evaluation — the assignment family treats the left side as a target rather than a value, `@` (the unpack marker) isn't a value at all, and logical operators must stay lazy to short-circuit. Every remaining operator evaluates each operand exactly once, here, and passes the values down so no handler re-interprets an operand (side effects run once).
-		# @param expr [Lost::Infix_Expr]
+		# @param expr [Tape::Infix_Expr]
 		def interp_infix expr
 			operator = expr.operator.value
 
@@ -1575,7 +1654,7 @@ module Lost
 
 		# Calls an @operator overload as a regular two-argument function. `values` carries the operands when the caller already evaluated them; nil lets #interp_func_body evaluate the raw expressions once itself (only the lazy logical path needs that).
 		def call_operator_overload overload, expr, values
-			call           = Lost::Call_Expr.new
+			call           = Tape::Call_Expr.new
 			call.arguments = [expr.left, expr.right]
 			interp_func_body overload, call, arg_values: values
 		end
@@ -1583,7 +1662,7 @@ module Lost
 		# Interprets its own operands (the one infix handler that does) because `&&`/`||` must short-circuit. A scope-level @operator overload still wins first, called with the raw expressions so the operands evaluate once, eagerly, inside the call.
 		def interp_logical_infix expr
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, nil) if overload.is_a? Lost::Func
+			return call_operator_overload(overload, expr, nil) if overload.is_a? Tape::Func
 
 			case expr.operator.value
 			when '&&', 'and'
@@ -1601,7 +1680,7 @@ module Lost
 		def interp_arithmetic_infix expr, left, right
 			overload = find_operator_overload expr.operator.value, maybe_instance(left)
 
-			if overload.is_a? Lost::Func
+			if overload.is_a? Tape::Func
 				call_operator_overload overload, expr, [left, right]
 			else
 				maybe_instance(left).send expr.operator.value, maybe_instance(right)
@@ -1609,9 +1688,9 @@ module Lost
 		end
 
 		# note; I'm special casing these because they don't behave like the traditional == and != in Ruby.
-		# The literal `Any` type (lost/preload.tape), a universal wildcard -- see #interp_comparison_infix.
+		# The literal `Any` type (tapes/preload.tape), a universal wildcard -- see #interp_comparison_infix.
 		def any_type? value
-			value.is_a?(Lost::Type) && value.name == 'Any'
+			value.is_a?(Tape::Type) && value.name == 'Any'
 		end
 
 		def interp_comparison_infix expr, left, right
@@ -1624,14 +1703,14 @@ module Lost
 
 			case expr.operator.value
 			when '===', '=!=', '=>=', '=<=', '=/='
-				# `.type_objects`, not `.types` -- `Lost::Struct < Instance < Type` inherits Type's own
+				# `.type_objects`, not `.types` -- `Tape::Struct < Instance < Type` inherits Type's own
 				# `.types` (the composed-type-name Set, e.g. `Set['Struct']` for every struct alike),
 				# which shadows/collides with what's actually wanted here: the struct's own per-member
 				# type objects (`.type_objects`, backed by its `@declarations['types']`).
-				left_tag  = left.is_a?(Lost::Type) ? left.tag_instance&.type_objects : nil
-				right_tag = right.is_a?(Lost::Type) ? right.tag_instance&.type_objects : nil
+				left_tag  = left.is_a?(Tape::Type) ? left.tag_instance&.type_objects : nil
+				right_tag = right.is_a?(Tape::Type) ? right.tag_instance&.type_objects : nil
 
-				# note; `left`/`right` are whatever #interpret returned (a raw Ruby Integer/String/etc for literals, not necessarily an Lost::Type/Instance), so `.types` can't be called on them directly. Using #composed_types_for here which resolves the correct composed-type set.
+				# note; `left`/`right` are whatever #interpret returned (a raw Ruby Integer/String/etc for literals, not necessarily an Tape::Type/Instance), so `.types` can't be called on them directly. Using #composed_types_for here which resolves the correct composed-type set.
 				left_types  = composed_types_for left
 				right_types = composed_types_for right
 
@@ -1670,20 +1749,20 @@ module Lost
 				# note; ==, !=, <, >, <=, >=, <=> aren't given fixed set-comparison semantics above, so — same as arithmetic — check for a user-declared @operator overload (on left itself, or falling back to left.enclosing_scope for shorthand-constructed instances, or a same-named global operator) before falling back to Ruby's own #==/#<=>/etc.
 				overload = find_operator_overload expr.operator.value, left
 
-				# note; A type declaring `@operator ==` but no `@operator !=` of its own (the common case lost/struct.tape's Member/Struct are exactly this) used to fall straight through to Ruby's own #!= for `!=`, which is identity-based and ignores the custom == entirely, two structurally-equal Members compared unequal with `!=` even though `==` correctly said they were equal. `!=` now derives from a declared `==` overload (negated) when it has no overload of its own, matching how most languages auto-derive != from ==.
-				if !overload.is_a?(Lost::Func) && expr.operator.value == '!='
+				# note; A type declaring `@operator ==` but no `@operator !=` of its own (the common case tapes/struct.tape's Member/Struct are exactly this) used to fall straight through to Ruby's own #!= for `!=`, which is identity-based and ignores the custom == entirely, two structurally-equal Members compared unequal with `!=` even though `==` correctly said they were equal. `!=` now derives from a declared `==` overload (negated) when it has no overload of its own, matching how most languages auto-derive != from ==.
+				if !overload.is_a?(Tape::Func) && expr.operator.value == '!='
 					overload      = find_operator_overload '==', left
 					negate_result = true
 				end
 
-				if overload.is_a? Lost::Func
+				if overload.is_a? Tape::Func
 					result = call_operator_overload overload, expr, [left, right]
 					negate_result ? !truthy?(result) : result
 				elsif left.respond_to?(expr.operator.value) && !(expr.operator.value == '<=>' && left.method(:<=>).owner == ::Kernel)
 					left.send expr.operator.value, right
 				else
-					# note; Numbers/Strings reach here fine (they decay to plain Ruby values with a native <=>/</>/etc.), but a plain Lost::Instance has none of these implemented -- except <=>, which Ruby's own Kernel/Object gives every object a trivial, identity-based default for. `respond_to?` alone can't tell that apart from a real one, so the method's actual owner is checked too. There's no sensible fallback to invent here, equality doesn't imply order.
-					raise Lost::Undeclared_Infix_Operator.new expr
+					# note; Numbers/Strings reach here fine (they decay to plain Ruby values with a native <=>/</>/etc.), but a plain Tape::Instance has none of these implemented -- except <=>, which Ruby's own Kernel/Object gives every object a trivial, identity-based default for. `respond_to?` alone can't tell that apart from a real one, so the method's actual owner is checked too. There's no sensible fallback to invent here, equality doesn't imply order.
+					raise Tape::Undeclared_Infix_Operator.new expr
 				end
 			end
 		end
@@ -1691,7 +1770,7 @@ module Lost
 		# (a += b)  ==>  (a = (a + b)). Compound operators only ever consult a scope-level @operator overload (never the operand's own), since their built-in meaning is assignment, not a property of the operand's type.
 		def interp_compound_infix expr, left, right
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, [left, right]) if overload.is_a? Lost::Func
+			return call_operator_overload(overload, expr, [left, right]) if overload.is_a? Tape::Func
 
 			base_op = expr.operator.value[..-2] # Trim the = from +=, -=, etc.
 			result  = maybe_instance(left).send base_op, maybe_instance(right)
@@ -1700,7 +1779,7 @@ module Lost
 			# #assign_dot_member path plain `.`-assignment uses; #scope_for_identifier only understands
 			# plain Identifier_Exprs, so a dot-target used to silently fall through to `stack.last` and
 			# declare a bogus `nil`-named identifier there instead of touching the actual member.
-			if expr.left.is_a?(Lost::Infix_Expr) && expr.left.operator&.value == '.'
+			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator&.value == '.'
 				assign_dot_member expr, expr.left, result
 			else
 				assignment_scope = scope_for_identifier expr.left
@@ -1710,31 +1789,31 @@ module Lost
 
 		def interp_range_infix expr, start, finish
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, [start, finish]) if overload.is_a? Lost::Func
+			return call_operator_overload(overload, expr, [start, finish]) if overload.is_a? Tape::Func
 
 			case expr.operator.value
 			when '...'
-				Lost::Range.new start, finish
+				Tape::Range.new start, finish
 			when '..<'
-				Lost::Range.new start, finish, exclude_end: true
+				Tape::Range.new start, finish, exclude_end: true
 			when '>..'
-				Lost::Range.new start + 1, finish
+				Tape::Range.new start + 1, finish
 			when '>.<'
-				Lost::Range.new start + 1, finish, exclude_end: true
+				Tape::Range.new start + 1, finish, exclude_end: true
 			end
 		end
 
 		# A user-declared @operator with no built-in category of its own. The operand's own overload wins over a global one (#find_operator_overload). Reachable with no overload in scope when the operator is declared inside some other scope (the parser's pre-scan registers it file-wide) — that used to silently evaluate to nil; now it raises.
 		def interp_custom_infix expr, left, right
 			overload = find_operator_overload expr.operator.value, maybe_instance(left)
-			unless overload.is_a? Lost::Func
-				raise Lost::Undeclared_Infix_Operator.new(expr)
+			unless overload.is_a? Tape::Func
+				raise Tape::Undeclared_Infix_Operator.new(expr)
 			end
 
 			call_operator_overload overload, expr, [left, right]
 		end
 
-		# @param expr [Lost::Postfix_Expr]
+		# @param expr [Tape::Postfix_Expr]
 		def interp_postfix expr
 			# note: See constants.rb POSTFIX for exhaustive list of language-defined postfixes. Currently there are no built-in postfix operators.
 			# 1) look up the opreator (expr.operator.value) as it should be a normal func in the scope.
@@ -1745,16 +1824,16 @@ module Lost
 				raise "Could not find #{expr.operator.value} declared anywhere man!"
 			end
 
-			call           = Lost::Call_Expr.new
+			call           = Tape::Call_Expr.new
 			call.arguments = [expr.expression]
 			interp_func_body postfix_overloaded_func, call
 		end
 
-		# @param expr [Lost::Percent_Literal_Expr < Lost::Circumfix_Expr]
+		# @param expr [Tape::Percent_Literal_Expr < Tape::Circumfix_Expr]
 		def interp_percent_literal expr
 			literal_expr_class = case expr.kind
-			when 'string', 'str', 'Str', 'STR' then Lost::String_Expr
-			when 'symbol', 'sym', 'Sym', 'SYM' then Lost::Symbol_Expr
+			when 'string', 'str', 'Str', 'STR' then Tape::String_Expr
+			when 'symbol', 'sym', 'Sym', 'SYM' then Tape::Symbol_Expr
 			end
 
 			# %string/%symbol preserve the identifier's own casing; the rest force one.
@@ -1765,11 +1844,11 @@ module Lost
 			when 'STR', 'SYM' then :upcase
 			end
 
-			array_expr             = Lost::Circumfix_Expr.new
+			array_expr             = Tape::Circumfix_Expr.new
 			array_expr.grouping    = '[]'
 			array_expr.expressions = expr.expressions.map do |it|
-				# A backtick item is evaluated immediately, like string interpolation, then folded through the same to_s + casing treatment as every other item. No Lost::Statement gets built here (unlike #invoke_statement's callers), so use_caller_scope/memoize never come into play -- it's always immediate, in whatever scope this literal is written in.
-				if it.is_a? Lost::Statement_Expr
+				# A backtick item is evaluated immediately, like string interpolation, then folded through the same to_s + casing treatment as every other item. No Tape::Statement gets built here (unlike #invoke_statement's callers), so use_caller_scope/memoize never come into play -- it's always immediate, in whatever scope this literal is written in.
+				if it.is_a? Tape::Statement_Expr
 					value = interpret(it.expression).to_s.send casing
 					literal_expr_class.new value
 				else
@@ -1785,18 +1864,18 @@ module Lost
 		def interp_circumfix expr
 			case expr.grouping
 			when '[]'
-				array             = Lost::Array.new
+				array             = Tape::Array.new
 				array.expressions = expr.expressions
 
 				values = []
 				expr.expressions.each do |e|
-					# Same as #interp_percent_literal above: `` `expr` `` inside an array literal evaluates immediately, no Lost::Statement built.
-					e = e.expression if e.is_a? Lost::Statement_Expr
+					# Same as #interp_percent_literal above: `` `expr` `` inside an array literal evaluates immediately, no Tape::Statement built.
+					e = e.expression if e.is_a? Tape::Statement_Expr
 					values << interpret(e)
 				end
 				link_instance_to_type array, 'Array'
 
-				# Make values accessible as an Lost identifier (`for values`, `arr.values`), sharing the same list object as the real backing store so mutations (push/pop/etc) stay in sync.
+				# Make values accessible as an Tape identifier (`for values`, `arr.values`), sharing the same list object as the real backing store so mutations (push/pop/etc) stay in sync.
 				array.values                 = values
 				array.declarations['values'] = values
 
@@ -1807,27 +1886,27 @@ module Lost
 					interpret expr.expressions.first
 				else
 					values = expr.expressions.map { |e| interpret(e) }
-					tuple  = Lost::Tuple.new values
+					tuple  = Tape::Tuple.new values
 					link_instance_to_type tuple, 'Tuple'
 					tuple.declarations['values'] = tuple.values
 					tuple
 				end
 			when '{}'
-				dict = expr.expressions.reduce(Lost::Dictionary.new) do |dict, it|
-					if it.is_a? Lost::Identifier_Expr
+				dict = expr.expressions.reduce(Tape::Dictionary.new) do |dict, it|
+					if it.is_a? Tape::Identifier_Expr
 						dict.proxy_set it.value.to_sym, nil
-					elsif it.is_a? Lost::Infix_Expr
+					elsif it.is_a? Tape::Infix_Expr
 						case it.operator.value
 						when ':', '='
-							if it.left.is_a?(Lost::Identifier_Expr) || it.left.is_a?(Lost::Symbol_Expr) || it.left.is_a?(Lost::String_Expr)
-								# note; Deliberately NOT wrap_string_literal_value here, unlike Array/Tuple literals -- Dictionary#hash is handed straight to Ruby-level consumers as a raw Hash (Sequel queries in table.rb chief among them), so wrapping a value into Lost::String here broke every DB call passing string attributes. #to_s below just always double-quotes String values instead of matching the original literal's quote char.
+							if it.left.is_a?(Tape::Identifier_Expr) || it.left.is_a?(Tape::Symbol_Expr) || it.left.is_a?(Tape::String_Expr)
+								# note; Deliberately NOT wrap_string_literal_value here, unlike Array/Tuple literals -- Dictionary#hash is handed straight to Ruby-level consumers as a raw Hash (Sequel queries in table.rb chief among them), so wrapping a value into Tape::String here broke every DB call passing string attributes. #to_s below just always double-quotes String values instead of matching the original literal's quote char.
 								dict.proxy_set it.left.value.to_sym, interpret(it.right)
 							else
 								# The left operand should be allowed to be any hashable object. It's too early in the project to consider hashing but this'll be a good reminder.
-								raise Lost::Invalid_Dictionary_Key.new(it)
+								raise Tape::Invalid_Dictionary_Key.new(it)
 							end
 						else
-							raise Lost::Invalid_Dictionary_Infix_Operator.new(it)
+							raise Tape::Invalid_Dictionary_Infix_Operator.new(it)
 						end
 					end
 					# In case I forget, #reduce requires that the injected value be returned to be passed to the next iteration.
@@ -1836,66 +1915,66 @@ module Lost
 				link_instance_to_type dict, 'Dictionary'
 				dict
 			else
-				raise Lost::Unknown_Circumfix_Grouping.new(expr)
+				raise Tape::Unknown_Circumfix_Grouping.new(expr)
 			end
 		end
 
-		# @param expr [Lost::Call_Expr]
+		# @param expr [Tape::Call_Expr]
 		def interp_call expr
 			# `X.new(...)` parses as Call_Expr(receiver: Infix_Expr(X, '.', new), arguments: [...]). Intercept it here, before evaluating the receiver, so we don't route through interp_dot_new (which eagerly builds a whole Instance for bare `X.new`) and then build a second Instance via interp_type_call below. Bare `X.new` with no call still goes through interp_dot_new untouched, since it never reaches interp_call.
-			if expr.receiver.is_a?(Lost::Infix_Expr) && expr.receiver.operator&.value == '.' && expr.receiver.right.is('new')
+			if expr.receiver.is_a?(Tape::Infix_Expr) && expr.receiver.operator&.value == '.' && expr.receiver.right.is('new')
 				type = interpret expr.receiver.left
 
-				# Lost::Struct < Instance < Type (Ruby class hierarchy), so a bare struct schema value (`thing := <a: Number>`, or a persisted named struct -- see #interp_type) passes the `is_a? Lost::Type` check below too, but it has no `.expressions` for #interp_type_call's construction path to run -- route it through the same Lost::Struct call path #interp_call's own receiver-dispatch further down already uses for `thing(...)`.
-				if type.is_a? Lost::Struct
+				# Tape::Struct < Instance < Type (Ruby class hierarchy), so a bare struct schema value (`thing := <a: Number>`, or a persisted named struct -- see #interp_type) passes the `is_a? Tape::Type` check below too, but it has no `.expressions` for #interp_type_call's construction path to run -- route it through the same Tape::Struct call path #interp_call's own receiver-dispatch further down already uses for `thing(...)`.
+				if type.is_a? Tape::Struct
 					return interp_struct_call type, expr
 				end
 
-				unless type.is_a? Lost::Type
-					raise Lost::Cannot_Initialize_Non_Type_Identifier.new(expr.receiver.left)
+				unless type.is_a? Tape::Type
+					raise Tape::Cannot_Initialize_Non_Type_Identifier.new(expr.receiver.left)
 				end
 
 				return interp_type_call type, expr
 			end
 
-			# A bare `` `expr`() `` written and called in the same place -- always immediate, in whatever scope it's written in. No Lost::Statement is ever built here, so #invoke_statement (used below, once one *has* been built and stored) doesn't apply.
-			if expr.receiver.is_a? Lost::Statement_Expr
+			# A bare `` `expr`() `` written and called in the same place -- always immediate, in whatever scope it's written in. No Tape::Statement is ever built here, so #invoke_statement (used below, once one *has* been built and stored) doesn't apply.
+			if expr.receiver.is_a? Tape::Statement_Expr
 				return interpret expr.receiver.expression
 			end
 
 			receiver = interpret expr.receiver
 
 			# A nil-safe dot chain (`x.?method`) that found nothing evaluates to nil deliberately -- a trailing call (`x.?method()`) should short-circuit to nil too, not try to invoke nil.
-			if receiver.nil? && expr.receiver.is_a?(Lost::Infix_Expr) && expr.receiver.operator&.value == '.?'
+			if receiver.nil? && expr.receiver.is_a?(Tape::Infix_Expr) && expr.receiver.operator&.value == '.?'
 				return nil
 			end
 
 			case receiver
-			when Lost::Route
+			when Tape::Route
 				interp_func_body receiver.handler, expr
 
-			when Lost::Func
+			when Tape::Func
 				interp_func_body receiver, expr
 
-			when Lost::Struct
+			when Tape::Struct
 				interp_struct_call receiver, expr
 
-			when Lost::Statement
-				# Reached once a Statement has been stored in a variable (or field, etc.) and is being called from somewhere else -- Lost::Statement < Instance, so this has to come before the generic Instance branch below or it'd be mistaken for "construct a new Statement".
+			when Tape::Statement
+				# Reached once a Statement has been stored in a variable (or field, etc.) and is being called from somewhere else -- Tape::Statement < Instance, so this has to come before the generic Instance branch below or it'd be mistaken for "construct a new Statement".
 				invoke_statement receiver
 
-			when Lost::Instance, Lost::Type
+			when Tape::Instance, Tape::Type
 				interp_type_call receiver, expr
 
-			when Lost::Func_Signature
-				raise Lost::Cannot_Call_Func_Signature.new expr
+			when Tape::Func_Signature
+				raise Tape::Cannot_Call_Func_Signature.new expr
 
 			else
-				raise Lost::Cannot_Call_Value.new expr.receiver
+				raise Tape::Cannot_Call_Value.new expr.receiver
 			end
 		end
 
-		# @param expr [Lost::Type_Expr]
+		# @param expr [Tape::Type_Expr]
 		def interp_type expr
 			return interp_anonymous_composition expr if expr.anonymous_composition
 
@@ -1906,22 +1985,22 @@ module Lost
 
 					# note; `expr.name` is normally a real type name ("String"), but if it's instead a local alias bound to an earlier tagged reference (`X := String\<Flying>`), re-tag against *that value's own* family name rather than treating "X" itself as a type name. So `X\<duck>` should behave exactly like `String\<duck>`, since `.name` on any Type object (dup'd or not) always reflects its true declared family.
 					aliased     = find_in_stack expr.name
-					lookup_name = aliased.is_a?(Lost::Type) ? aliased.name : expr.name
+					lookup_name = aliased.is_a?(Tape::Type) ? aliased.name : expr.name
 
 					existing = find_tagged_type_variant lookup_name, supplied
 
 					# Declaring spreads a lone unnamed Struct-valued member (#interp_struct); unify by retrying a failed unspread match with spreading applied, rather than statically committing to one or the other.
-					if !existing.is_a?(Lost::Type) && expr.tag.is_a?(Lost::Struct_Expr) && expr.tag.types.length == 1 && expr.tag.names[0].nil?
+					if !existing.is_a?(Tape::Type) && expr.tag.is_a?(Tape::Struct_Expr) && expr.tag.types.length == 1 && expr.tag.names[0].nil?
 						spread_supplied = interp_struct expr.tag, allow_spread: true
 						spread_existing = find_tagged_type_variant lookup_name, spread_supplied
-						if spread_existing.is_a? Lost::Type
+						if spread_existing.is_a? Tape::Type
 							supplied = spread_supplied
 							existing = spread_existing
 						end
 					end
-					unless existing.is_a? Lost::Type
+					unless existing.is_a? Tape::Type
 						# Nothing declared under this name -> bare named struct (see Bare Named Structs, CLAUDE.md). Also allows re-declaring the same struct with an identical shape as a no-op.
-						redeclaring_same_struct = aliased.is_a?(Lost::Struct) && aliased.get('name') == expr.name && aliased.structure_declaration_equal?(supplied)
+						redeclaring_same_struct = aliased.is_a?(Tape::Struct) && aliased.get('name') == expr.name && aliased.structure_declaration_equal?(supplied)
 						if (aliased.nil? || redeclaring_same_struct) && tagged_variants_for(lookup_name).empty?
 							supplied.declare 'name', expr.name
 							supplied.types = Set[expr.name] + supplied.types # `.types` inherited `Set['Struct']` alone from Struct#initialize's `super 'Struct'`; put the struct's own declared name first (own-name-before-composed, same order an ordinary `Ident | Struct {}` composition would produce) so type-identity checks (===, a `-> Ident` return-type contract, `type_name_to_string`'s `.types.first`, ...) see it as `Ident`-shaped, not just generically Struct-shaped.
@@ -1930,15 +2009,15 @@ module Lost
 						end
 
 						# Base name is a real Type but nothing matches this shape yet -- a bare reference auto-declares it (empty body), same as writing `Array\String {}` explicitly first.
-						unless aliased.is_a? Lost::Type
-							raise Lost::Undeclared_Tagged_Type.new(expr)
+						unless aliased.is_a? Tape::Type
+							raise Tape::Undeclared_Tagged_Type.new(expr)
 						end
 						existing                = declare_tagged_type_variant lookup_name, supplied, []
 					end
 				else
 					existing = find_in_stack expr.name
-					unless existing.is_a? Lost::Type
-						raise Lost::Undeclared_Identifier.new(expr)
+					unless existing.is_a? Tape::Type
+						raise Tape::Undeclared_Identifier.new(expr)
 					end
 				end
 
@@ -1949,10 +2028,10 @@ module Lost
 				if expr.tag
 					# Call-site member values are usually positional (`Woof<'hello', 4815>`), but a member can be named at the reference site too (`Woof<key := 'hello'>`) to disambiguate an otherwise-ambiguous match. Either way, re-associate them with the names — and pick up any defaults — from the matched variant's own struct declaration (`Woof<String, key: Dictionary> {}`) so `.tag.key` still works on the resulting instance.
 					declaration            = existing.tag_declaration
-					declaration_names      = declaration.is_a?(Lost::Struct) ? declaration.names : []
-					declaration_types      = declaration.is_a?(Lost::Struct) ? declaration.type_objects : [] # declared type objects, used below only to detect an unfilled default via identity
-					declaration_type_names = declaration.is_a?(Lost::Struct) ? declaration.type_names : []
-					declaration_values     = declaration.is_a?(Lost::Struct) ? declaration.values : []
+					declaration_names      = declaration.is_a?(Tape::Struct) ? declaration.names : []
+					declaration_types      = declaration.is_a?(Tape::Struct) ? declaration.type_objects : [] # declared type objects, used below only to detect an unfilled default via identity
+					declaration_type_names = declaration.is_a?(Tape::Struct) ? declaration.type_names : []
+					declaration_values     = declaration.is_a?(Tape::Struct) ? declaration.values : []
 
 					# A default only fills in for a member that just re-asserts the declaration's own declared type for that member (`Abc<Dictionary>()`, re-stating `dict`'s own type rather than giving it a value) — never when a real value was actually supplied there (`Abc<{x=1}>()` must keep {x=1}, not fall back to the default). That check has to run against `supplied.type_objects` (identity against the declared type), since that's what "just restated the type" even means -- but the *result*, when it's a real value, has to be `supplied.values`, not `type_objects`. A bare `name := value` reference member (see #interp_struct) resolves its own `type_objects` entry down to the value's *inferred type*, not the value itself, so using `type_objects` here for both the check and the result silently substituted the wrong thing for exactly that case.
 					resolved_values = supplied.values.each_with_index.map do |real_value, i|
@@ -1988,13 +2067,13 @@ module Lost
 
 		# A composition chain with no `{}` body (`Abc|Def`, `A & B`, ...) is a value, not a declaration, built by applying the chain to a fresh, unnamed Type exactly as if `X | Abc | Def { }` had been written for some unnamed X.
 		def interp_anonymous_composition expr
-			anonymous             = Lost::Type.new nil
-			anonymous.types       = Set.new # Type#initialize seeds `@types = Set[name]` -- Set[nil] here, which would leave a stray nil in .types (breaking #find_ruby_class_for_type's `"Lost::#{type_name}"` lookup) since the union step below only ever adds, never resets.
+			anonymous             = Tape::Type.new nil
+			anonymous.types       = Set.new # Type#initialize seeds `@types = Set[name]` -- Set[nil] here, which would leave a stray nil in .types (breaking #find_ruby_class_for_type's `"Tape::#{type_name}"` lookup) since the union step below only ever adds, never resets.
 			anonymous.expressions = [] # A real declaration always ends up with this set (even to []) via #interp_bare_type_declaration's own body-merge -- there's no body here, but #run_type_body_on_instance still expects an Array to iterate when constructing an instance.
 
-			seed            = Lost::Composition_Expr.new
-			seed.operator   = Lost::Lexeme.new(:operator, '|')
-			seed.identifier = Lost::Identifier_Expr.new.tap { |it| it.lexeme = Lost::Lexeme.new(:Identifier, expr.name) }
+			seed            = Tape::Composition_Expr.new
+			seed.operator   = Tape::Lexeme.new(:operator, '|')
+			seed.identifier = Tape::Identifier_Expr.new.tap { |it| it.lexeme = Tape::Lexeme.new(:Identifier, expr.name) }
 
 			push_then_pop anonymous do
 				interp_composition seed
@@ -2004,12 +2083,12 @@ module Lost
 			anonymous
 		end
 
-		# Shared tail of both declaration paths below: parent the type to the declaring scope, link it to its Lost:: Ruby class when one exists, record its own name in @types, and run `body_expressions` in the type's scope.
+		# Shared tail of both declaration paths below: parent the type to the declaring scope, link it to its Tape:: Ruby class when one exists, record its own name in @types, and run `body_expressions` in the type's scope.
 		def finish_type_declaration type, body_expressions
 			type.enclosing_scope = stack.last
 
-			lost_name = "Lost::#{type.name}"
-			defined   = type.name[0] != '_' && Object.const_defined?(lost_name) # note; #const_defined? does not allow underscore as the first character, hence the underscore check.
+			tape_name = "Tape::#{type.name}"
+			defined   = type.name[0] != '_' && Object.const_defined?(tape_name) # note; #const_defined? does not allow underscore as the first character, hence the underscore check.
 			link_instance_to_type type, type.name if defined
 
 			type.types ||= []
@@ -2033,11 +2112,11 @@ module Lost
 		# A plain, untagged declaration (`String { ... }`) -- reopens/extends the same shared Type object across multiple declarations of the same bare name, e.g. how preload.tape's files each contribute to the same base String/Array/etc.
 		def interp_bare_type_declaration expr
 			existing = stack.last.has?(expr.name) && stack.last[expr.name]
-			# Lost::Struct < Instance < Type, so a plain `existing.is_a?(Lost::Type)` check also matches a Bare
+			# Tape::Struct < Instance < Type, so a plain `existing.is_a?(Tape::Type)` check also matches a Bare
 			# Named Struct value sharing this name (`User <...>` then later `User | Table {}`) -- that's a value,
 			# not a reopenable declared Type, so it must be excluded here or the struct itself gets mistakenly
 			# reused/mutated as the new composed Type's own scope.
-			type = (existing.is_a?(Lost::Type) && !existing.is_a?(Lost::Instance)) ? existing : Lost::Type.new(expr.name)
+			type = (existing.is_a?(Tape::Type) && !existing.is_a?(Tape::Instance)) ? existing : Tape::Type.new(expr.name)
 
 			type.expressions = (type.expressions || []) + expr.expressions
 			finish_type_declaration type, expr.expressions
@@ -2046,23 +2125,23 @@ module Lost
 			type
 		end
 
-		# Resolves one `\` RHS node to a real Lost::Struct. An inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering. A nested `.tag` on the node (`Ab\Cd\Ef`) is resolved recursively and hung off this struct's own `.tag`, so `x.tag.tag` walks the chain; `\<...>` is always terminal.
+		# Resolves one `\` RHS node to a real Tape::Struct. An inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering. A nested `.tag` on the node (`Ab\Cd\Ef`) is resolved recursively and hung off this struct's own `.tag`, so `x.tag.tag` walks the chain; `\<...>` is always terminal.
 		def resolve_tag_node tag_node, allow_spread: true
-			struct = if tag_node.is_a? Lost::Struct_Expr
+			struct = if tag_node.is_a? Tape::Struct_Expr
 				interp_struct tag_node, allow_spread: allow_spread
 			else
 				value = interpret tag_node
 				case value
-				when Lost::Struct
+				when Tape::Struct
 					value.bare_reference_name ||= tag_node.value
 					value
-				when Lost::Type
+				when Tape::Type
 					# The single member's own value stays nil, same as any other schema-only member (see #interp_struct) -- `value` here is always a bare Type, not real data.
 					wrapped                     = build_struct [nil], [type_name_to_string(value)], [value], [nil]
 					wrapped.bare_reference_name = tag_node.value
 					wrapped
 				else
-					raise Lost::Tag_Reference_Must_Be_Type_Or_Struct.new(tag_node)
+					raise Tape::Tag_Reference_Must_Be_Type_Or_Struct.new(tag_node)
 				end
 			end
 
@@ -2080,10 +2159,10 @@ module Lost
 
 		# Normalizes the RHS of a `.tag =` to its tag Struct: a Struct is itself; a Type/Instance contributes its own `.tag_instance`, or is wrapped as a single-member struct when it has none (mirrors #resolve_tag_node's bare-Type case).
 		def tag_struct_for_reassignment value, node
-			return value if value.is_a? Lost::Struct
+			return value if value.is_a? Tape::Struct
 			return value.tag_instance if value.respond_to?(:tag_instance) && value.tag_instance
-			return build_struct [nil], [type_name_to_string(value)], [value], [nil] if value.is_a? Lost::Type
-			raise Lost::Tag_Reference_Must_Be_Type_Or_Struct.new(node)
+			return build_struct [nil], [type_name_to_string(value)], [value], [nil] if value.is_a? Tape::Type
+			raise Tape::Tag_Reference_Must_Be_Type_Or_Struct.new(node)
 		end
 
 		# A tagged declaration (`String\<dict: Dictionary> { ... }`) is its own type, separate from the bare `String` and every other tag under the same name -- this stops one variant's `new`/methods from clobbering another's (a real bug this fixed).
@@ -2102,9 +2181,9 @@ module Lost
 			if existing
 				variant = existing
 			else
-				variant             = Lost::Type.new(name)
+				variant             = Tape::Type.new(name)
 				blueprint           = stack.last.has?(name) && stack.last[name]
-				variant.expressions = blueprint.is_a?(Lost::Type) ? (blueprint.expressions || []).dup : []
+				variant.expressions = blueprint.is_a?(Tape::Type) ? (blueprint.expressions || []).dup : []
 			end
 
 			variant.expressions     = (variant.expressions || []) + body_expressions
@@ -2128,14 +2207,14 @@ module Lost
 				declared_type = struct.type_names[i]
 				next if declared_type == 'Any'
 
-				unless value.is_a?(Lost::Scope) && value.has?(name)
-					raise Lost::Type_Contract_Violation.new(expr, "<#{struct.names.compact.join(', ')}>", describe_value_shape(value))
+				unless value.is_a?(Tape::Scope) && value.has?(name)
+					raise Tape::Type_Contract_Violation.new(expr, "<#{struct.names.compact.join(', ')}>", describe_value_shape(value))
 				end
 
 				member_value = value.get name
 				candidates   = member_value.nil? ? [] : member_candidate_type_names(member_value)
 				unless candidates.include? declared_type
-					raise Lost::Type_Contract_Violation.new(expr, declared_type, type_name_to_string(member_value))
+					raise Tape::Type_Contract_Violation.new(expr, declared_type, inferred_type_name(member_value))
 				end
 			end
 		end
@@ -2143,8 +2222,9 @@ module Lost
 		# All type names a supplied member value could match a declared struct's member under -- its own primary name first, then everything it composes, so e.g. a `Div` satisfies a member declared `Dom` without being named Dom itself. See #find_tagged_type_variant.
 		def member_candidate_type_names value
 			case value
-			when ::Integer, ::Float
-				['Number']
+			when ::Integer    then ['Integer', 'Number']
+			when ::Float      then ['Float', 'Number']
+			when ::BigDecimal then ['Decimal', 'Number']
 			when ::String
 				['String']
 			when ::Symbol
@@ -2152,7 +2232,7 @@ module Lost
 			when ::TrueClass, ::FalseClass
 				['Bool']
 			else
-				if value.is_a?(Lost::Type) && value.types && !value.types.empty?
+				if value.is_a?(Tape::Type) && value.types && !value.types.empty?
 					value.types.to_a
 				else
 					[value.name]
@@ -2208,7 +2288,7 @@ module Lost
 		def tagged_variants_for base_name, current_scope_only: false
 			scopes = current_scope_only ? [stack.last] : stack.reverse_each
 			scopes.each do |scope|
-				# `stack` can briefly hold non-Scope receivers during dot-access (e.g. Lost::Range).
+				# `stack` can briefly hold non-Scope receivers during dot-access (e.g. Tape::Range).
 				next unless scope.respond_to? :tagged_type_variants
 				list = scope.tagged_type_variants.fetch(base_name, [])
 				return list unless list.empty?
@@ -2221,14 +2301,14 @@ module Lost
 			global.tagged_type_variants.values.flatten
 		end
 
-		# For Lost::Database#proxy_create_table: finds the Table-composed type declared with this exact schema, if any, so the created table can be tagged with the model's real identity. Nil if none matches.
+		# For Tape::Database#proxy_create_table: finds the Table-composed type declared with this exact schema, if any, so the created table can be tagged with the model's real identity. Nil if none matches.
 		def find_table_type_for_schema schema
 			all_tagged_type_variants.find do |variant|
 				variant.types.include?('Table') && variant.tag_declaration&.structure_declaration_equal?(schema)
 			end
 		end
 
-		# Searches the full scope stack (innermost to outermost) for `key`, the same way a bare identifier resolves via #scope_for_identifier -- checking only `stack.last` would miss a type declared in an outer/global scope while evaluating from inside a nested context (e.g. a type's own declaration body during composition). This returns an Lost type. `excluding:` skips scopes of that class -- used by #find_operator_overload to keep looking past a currently-executing Type/Instance body, since merely being on the stack doesn't mean the *current* operands belong to it (Instance < Type, so excluding: Lost::Type skips both).
+		# Searches the full scope stack (innermost to outermost) for `key`, the same way a bare identifier resolves via #scope_for_identifier -- checking only `stack.last` would miss a type declared in an outer/global scope while evaluating from inside a nested context (e.g. a type's own declaration body during composition). This returns an Tape type. `excluding:` skips scopes of that class -- used by #find_operator_overload to keep looking past a currently-executing Type/Instance body, since merely being on the stack doesn't mean the *current* operands belong to it (Instance < Type, so excluding: Tape::Type skips both).
 		def find_in_stack key, excluding: nil
 			stack.reverse_each do |scope|
 				next if excluding && scope.is_a?(excluding)
@@ -2241,10 +2321,10 @@ module Lost
 		def tag_display_name scope
 			tag       = scope.tag_instance
 			qualifier = tag.bare_reference_name || stringify_for_display(tag)
-			"#{scope.name}#{Lost::TAG_OPERATOR}#{qualifier}"
+			"#{scope.name}#{Tape::TAG_OPERATOR}#{qualifier}"
 		end
 
-		# Makes `.tag` readable via Lost dot-access on a Type, Instance, or type reference, and marks it static so it's also readable straight off a bare Type (not just an instance). Only adds the declaration when this particular one actually has a tag, so plain untagged types don't pick up a stray `tag` member. Also refreshes `.display_name` (see Type#initialize) to fold the tag into the type's own displayable name, so a consumer like lost/member.tape's `to_s` never needs to know `.tag` exists at all.
+		# Makes `.tag` readable via Tape dot-access on a Type, Instance, or type reference, and marks it static so it's also readable straight off a bare Type (not just an instance). Only adds the declaration when this particular one actually has a tag, so plain untagged types don't pick up a stray `tag` member. Also refreshes `.display_name` (see Type#initialize) to fold the tag into the type's own displayable name, so a consumer like tapes/member.tape's `to_s` never needs to know `.tag` exists at all.
 		def declare_tag scope
 			return unless scope.tag_instance
 
@@ -2254,16 +2334,16 @@ module Lost
 		end
 
 		#
-		# Lost::Type_Expr is converted to Lost::Type in #interp_type.
-		# Lost::Instance inherits Lost::Type's @name and @types.
+		# Tape::Type_Expr is converted to Tape::Type in #interp_type.
+		# Tape::Instance inherits Tape::Type's @name and @types.
 		#
-		#     (See types.rb for Lost::Type and Lost::Instance declarations)
-		#     (See expressions.rb for Lost::Type_Expr declaration)
+		#     (See types.rb for Tape::Type and Tape::Instance declarations)
+		#     (See expressions.rb for Tape::Type_Expr declaration)
 		#
 		# - Push instance onto stack
 		# - Interpret type.expressions so the declarations are made on the instance
 		# - Keep instance on the stack
-		# - For each Lost::Func declared on instance, set `func.enclosing_scope = instance`
+		# - For each Tape::Func declared on instance, set `func.enclosing_scope = instance`
 		# - Interpret type[:new], the initializer
 		# - Delete :new from instance, inheritd from type, not needed on the instance
 		#
@@ -2277,7 +2357,7 @@ module Lost
 							# Skip static declarations - they were already executed during type definition and shouldn't be re-executed for each instance
 							next if static_var_declaration_expr? expr
 
-							if expr.is_a?(Lost::Func_Expr) && expr.name.is_a?(Lost::Identifier_Expr) &&
+							if expr.is_a?(Tape::Func_Expr) && expr.name.is_a?(Tape::Identifier_Expr) &&
 							   expr.name.scope_operator&.value == '../'
 								next
 							end
@@ -2297,7 +2377,7 @@ module Lost
 			end
 
 			instance.declarations.each do |key, decl|
-				next unless decl.is_a? Lost::Func
+				next unless decl.is_a? Tape::Func
 
 				cloned                     = decl.dup
 				cloned.enclosing_scope     = instance
@@ -2305,16 +2385,16 @@ module Lost
 			end
 		end
 
-		# Builds the raw instance for #interp_type_call: backed by its Lost:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `new(;)` is invoked afterward by #interp_type_call itself.
+		# Builds the raw instance for #interp_type_call: backed by its Tape:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `new(;)` is invoked afterward by #interp_type_call itself.
 		def build_instance_of_type type, expr
 			ruby_class = find_ruby_class_for_type type
-			instance   = ruby_class ? ruby_class.new : Lost::Instance.new(type.name)
+			instance   = ruby_class ? ruby_class.new : Tape::Instance.new(type.name)
 
-			# `.name =`/`.types =` are Ruby attr writes only -- for a composed type sharing a built-in's Ruby class (e.g. `Tasks | Table {}` -> Lost::Table), the `declarations[...]` writes below are also needed or an Lost-level `.name`/`.types` dot-read stays stuck on the backing class's own values.
+			# `.name =`/`.types =` are Ruby attr writes only -- for a composed type sharing a built-in's Ruby class (e.g. `Tasks | Table {}` -> Tape::Table), the `declarations[...]` writes below are also needed or an Tape-level `.name`/`.types` dot-read stays stuck on the backing class's own values.
 			instance.name                  = type.name
 			instance.declarations['name']  = type.name
 			instance.types                 = type.types
-			instance.declarations['types'] = wrap_lost_array type.types.to_a
+			instance.declarations['types'] = wrap_tape_array type.types.to_a
 			instance.enclosing_scope       = type
 			instance.expressions           = type.expressions
 
@@ -2346,7 +2426,7 @@ module Lost
 				interp_func_body func_new, call_expr
 			elsif call_expr.arguments.count > 0
 				# No initializer was declared so we have nowhere to pass the arguments
-				raise Lost::Arguments_Given_But_Not_Expected.new(expr)
+				raise Tape::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
 			instance.delete :new
@@ -2357,15 +2437,15 @@ module Lost
 		end
 
 		def dom_type? type
-			type.is_a?(Lost::Type) && type.types.include?('Dom')
+			type.is_a?(Tape::Type) && type.types.include?('Dom')
 		end
 
 		def dom_constructor_prop_name? name
-			Lost::DOM_CONSTRUCTOR_PROP_NAMES.include?(name) ||
-				Lost::DOM_CONSTRUCTOR_PROP_PREFIXES.any? { |prefix| name.start_with? prefix }
+			Tape::DOM_CONSTRUCTOR_PROP_NAMES.include?(name) ||
+				Tape::DOM_CONSTRUCTOR_PROP_PREFIXES.any? { |prefix| name.start_with? prefix }
 		end
 
-		# @return [Hash{::String => Lost::Expression}] whitelisted `name := value` arguments keyed by
+		# @return [Hash{::String => Tape::Expression}] whitelisted `name := value` arguments keyed by
 		#   name, mapped to their original argument node. A name that IS one of `new`'s declared params
 		#   is left alone (bound normally), so an explicit param always wins over the prop shortcut.
 		def split_dom_prop_arguments call_expr, func_new
@@ -2395,7 +2475,7 @@ module Lost
 		end
 
 		def interp_func expr
-			func                 = Lost::Func.new expr.lexeme
+			func                 = Tape::Func.new expr.lexeme
 			func.name            = expr.lexeme
 			func.enclosing_scope = stack.last
 			func.expressions     = expr.expressions
@@ -2403,7 +2483,7 @@ module Lost
 			param_types          = expr.parameters.map do |p|
 				p.type&.value
 			end
-			func.func_signature  = Lost::Func_Signature.new(param_types, expr.type&.value)
+			func.func_signature  = Tape::Func_Signature.new(param_types, expr.type&.value)
 
 			if func.name&.value
 				stack.last.declare func.name.value, func
@@ -2417,7 +2497,7 @@ module Lost
 		def interp_func_body func, expr, arg_values: nil
 			# A bare Capitalized/UPPERCASE param (`f ( ABC; ABC )`) parses as a signature-literal-style bare type (`param.type` set, `param.name` left nil, see #parse_func) rather than a named param -- real function params always start lowercase. Every other param-binding path below assumes `.name` is always present, so this is checked once, up front, with a real error instead of a raw NoMethodError the first time something reads `param.name.value`.
 			nameless_param = func.parameters.find { |param| param.name.nil? }
-			raise Lost::Invalid_Parameter_Name.new(expr, nameless_param.type.value) if nameless_param
+			raise Tape::Invalid_Parameter_Name.new(expr, nameless_param.type.value) if nameless_param
 
 			# note; Evaluate arguments in caller's scope (before pushing function scopes). A labeled argument (`to: someone`) parses as a plain `:` Infix_Expr, and a named argument (`to := someone`) as a plain `:=` Infix_Expr (same production named struct members use) -- #classify_argument unwraps either rather than letting #interpret try to resolve `to` as an identifier and raise Undeclared_Identifier.
 			# A caller that already evaluated the operands (operator-overload dispatch in #interp_infix) passes them via arg_values so their side effects don't run a second time; labels/named args only exist in real call syntax, so neither applies there.
@@ -2432,12 +2512,12 @@ module Lost
 
 					# Named arguments must come last -- once you switch to naming arguments, every argument after that has to be named too. A positional argument (bare or labeled) can never follow one.
 					if seen_named && kind != :named
-						raise Lost::Positional_Argument_After_Named.new(expr)
+						raise Tape::Positional_Argument_After_Named.new(expr)
 					end
 
 					if kind == :named
 						seen_named = true
-						raise Lost::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
+						raise Tape::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
 						named_args[name_or_label] = interpret value_expr
 					else
 						arg_labels << (kind == :labeled ? name_or_label : nil)
@@ -2449,7 +2529,7 @@ module Lost
 			end
 
 			# note: `func` is the single, shared Func object registered when the function was declared. Pushing it directly as the call frame (as this used to do) meant every invocation declared its params onto that same shared object, so recursive/repeated calls stomped on each other's param values. Each call gets its own fresh scope instead.
-			call_scope                 = Lost::Func.new func.name
+			call_scope                 = Tape::Func.new func.name
 			call_scope.expressions     = func.expressions
 			call_scope.parameters      = func.parameters
 			call_scope.enclosing_scope = func.enclosing_scope
@@ -2457,7 +2537,7 @@ module Lost
 
 			# Push type scope if calling an instance method (instance methods need access to type-level declarations)
 			# Also push the type's enclosing_scope so sibling types can be found
-			if func.enclosing_scope.is_a?(Lost::Instance) && func.enclosing_scope.enclosing_scope
+			if func.enclosing_scope.is_a?(Tape::Instance) && func.enclosing_scope.enclosing_scope
 				type = func.enclosing_scope.enclosing_scope
 				push_scope type.enclosing_scope if type.enclosing_scope # Push the Type's enclosing scope
 				push_scope type # Push the Type
@@ -2469,11 +2549,11 @@ module Lost
 			unless named_args.empty?
 				declared_names = func.parameters.map { |param| param.name.value }
 				unknown_name   = named_args.keys.find { |name| !declared_names.include? name }
-				raise Lost::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
+				raise Tape::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
 			end
 
 			if func.parameters.empty? && arg_values.any?
-				raise Lost::Arguments_Given_But_Not_Expected.new(expr)
+				raise Tape::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
 			func.parameters.each_with_index do |param, i|
@@ -2482,7 +2562,7 @@ module Lost
 				has_named      = named_args.key? name_key
 
 				if has_positional && has_named
-					raise Lost::Argument_Given_By_Name_And_Position.new(expr, name_key)
+					raise Tape::Argument_Given_By_Name_And_Position.new(expr, name_key)
 				end
 
 				value = if has_named
@@ -2492,20 +2572,20 @@ module Lost
 				elsif param.default
 					interpret param.default
 				else
-					raise Lost::Missing_Argument.new(expr)
+					raise Tape::Missing_Argument.new(expr)
 				end
 
 				# Labels are positional, not a lookup key -- a labeled argument at position `i` must match that position's declared label (Swift/ObjC-style), never used to reorder arguments. A bare, unlabeled argument is always accepted regardless of whether the param declares a label -- labels are opt-in at the call site, not mandatory. Named arguments bypass label-checking entirely -- they're matched by declared name, not position, so there's no positional label to compare against.
 				supplied_label = arg_labels[i]
 				if !has_named && supplied_label && supplied_label != param.label&.value
-					raise Lost::Argument_Label_Mismatch.new(expr, param.label&.value, supplied_label)
+					raise Tape::Argument_Label_Mismatch.new(expr, param.label&.value, supplied_label)
 				end
 
-				check_struct_type_contract param, value, expr if param.type.is_a?(Lost::Struct_Expr)
+				check_struct_type_contract param, value, expr if param.type.is_a?(Tape::Struct_Expr)
 
 				stack.last.declare param.name.value, value
 
-				if value.is_a? Lost::Type
+				if value.is_a? Tape::Type
 					if param.respond_to?(:add_to_readable) && param.add_to_readable
 						call_scope.add_readable_scope value
 					elsif param.respond_to?(:add_to_readable) && param.add_to_writable
@@ -2517,31 +2597,31 @@ module Lost
 
 			body = call_scope.expressions
 			if call_scope.name == 'assert'
-				raise Lost::Assert_Triggered.new(expr) unless interpret(body.first) == true # Just to be explicit.
+				raise Tape::Assert_Triggered.new(expr) unless interpret(body.first) == true # Just to be explicit.
 			end
 
 			result = nil
 			body.compact.each do |e|
 				result = interpret e
-				break if result.is_a? Lost::Return
+				break if result.is_a? Tape::Return
 			end
 
-			Lost.assert pop_scope == call_scope
-			Lost.assert pop_scope == func.enclosing_scope
+			Tape.assert pop_scope == call_scope
+			Tape.assert pop_scope == func.enclosing_scope
 
-			if func.enclosing_scope.is_a?(Lost::Instance) && func.enclosing_scope.enclosing_scope
+			if func.enclosing_scope.is_a?(Tape::Instance) && func.enclosing_scope.enclosing_scope
 				type = func.enclosing_scope.enclosing_scope
-				Lost.assert pop_scope == type
+				Tape.assert pop_scope == type
 				pop_scope if type.enclosing_scope # Pop the Type's enclosing scope
 			end
 
-			return_value = result.is_a?(Lost::Return) ? result.value : result
+			return_value = result.is_a?(Tape::Return) ? result.value : result
 
 			if func.func_signature.return_type
 				# Compositional, not exact-name -- a `-> Table` returning a `Task`-composed value is a safe covariant return.
 				actual_type = type_name_to_string return_value
 				unless composed_types_for(return_value).include? func.func_signature.return_type
-					raise Lost::Type_Contract_Violation.new(expr, func.func_signature.return_type, actual_type)
+					raise Tape::Type_Contract_Violation.new(expr, func.func_signature.return_type, actual_type)
 				end
 			end
 
@@ -2556,9 +2636,9 @@ module Lost
 		#   - anything else (positional)
 		# Returns [kind, name_or_label, value_expr] -- name_or_label is nil for :positional. Never interprets `arg`/the name-or-label side itself; that's the caller's job once it knows which expression actually holds the real value.
 		def classify_argument arg
-			if arg.is_a?(Lost::Infix_Expr) && arg.operator&.value == ':=' && arg.left.is_a?(Lost::Identifier_Expr)
+			if arg.is_a?(Tape::Infix_Expr) && arg.operator&.value == ':=' && arg.left.is_a?(Tape::Identifier_Expr)
 				[:named, arg.left.value, arg.right]
-			elsif arg.is_a?(Lost::Infix_Expr) && arg.operator&.value == ':' && arg.left.is_a?(Lost::Identifier_Expr)
+			elsif arg.is_a?(Tape::Infix_Expr) && arg.operator&.value == ':' && arg.left.is_a?(Tape::Identifier_Expr)
 				[:labeled, arg.left.value, arg.right]
 			else
 				[:positional, nil, arg]
@@ -2575,8 +2655,8 @@ module Lost
 		# as it always has been -- structs don't raise Missing_Argument the way functions do; Struct.new's
 		# own values[i].nil? ? types[i] fallback (struct.rb) is what shows it as type-only.
 		#
-		# @param struct [Lost::Struct]
-		# @param expr [Lost::Call_Expr]
+		# @param struct [Tape::Struct]
+		# @param expr [Tape::Call_Expr]
 		def interp_struct_call struct, expr
 			named_args = {}
 			positional = []
@@ -2586,14 +2666,14 @@ module Lost
 				kind, name_or_label, value_expr = classify_argument arg
 
 				if seen_named && kind != :named
-					raise Lost::Positional_Argument_After_Named.new(expr)
+					raise Tape::Positional_Argument_After_Named.new(expr)
 				end
 
 				value = wrap_string_literal_value(value_expr, interpret(value_expr))
 
 				if kind == :named
 					seen_named = true
-					raise Lost::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
+					raise Tape::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
 					named_args[name_or_label] = value
 				else
 					positional << value
@@ -2602,7 +2682,7 @@ module Lost
 
 			unless named_args.empty?
 				unknown_name = named_args.keys.find { |name| !struct.names.include? name }
-				raise Lost::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
+				raise Tape::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
 			end
 
 			values = struct.names.each_index.map do |i|
@@ -2611,7 +2691,7 @@ module Lost
 				has_named      = name_key && named_args.key?(name_key)
 
 				if has_positional && has_named
-					raise Lost::Argument_Given_By_Name_And_Position.new(expr, name_key)
+					raise Tape::Argument_Given_By_Name_And_Position.new(expr, name_key)
 				end
 
 				has_named ? named_args.delete(name_key) : positional[i]
@@ -2629,12 +2709,12 @@ module Lost
 			instance
 		end
 
-		# @param expr [Lost::Route_Expr]
-		# @return Lost::Route
+		# @param expr [Tape::Route_Expr]
+		# @return Tape::Route
 		def interp_route expr
 			func = interpret expr.expression
 
-			route                 = Lost::Route.new
+			route                 = Tape::Route.new
 			route.name            = func.name
 			route.enclosing_scope = stack.last
 			route.handler         = func
@@ -2655,7 +2735,7 @@ module Lost
 
 			# Store route in the enclosing Type's @routes if it has one (e.g., Server)
 			enclosing_type = stack.reverse.find do |scope|
-				scope.is_a? Lost::Type # note: You could have an instance on the stack, or an empty scope, whatever.
+				scope.is_a? Tape::Type # note: You could have an instance on the stack, or an empty scope, whatever.
 			end
 			if enclosing_type
 				enclosing_type.routes            ||= {}
@@ -2668,11 +2748,11 @@ module Lost
 			route
 		end
 
-		# @param route [Lost::Route] The route (or onclick handler wrapper) to execute
-		# @param req [Lost::Request] Request object to inject
-		# @param res [Lost::Response] Response object to inject
+		# @param route [Tape::Route] The route (or onclick handler wrapper) to execute
+		# @param req [Tape::Request] Request object to inject
+		# @param res [Tape::Response] Response object to inject
 		# @param url_params [Hash] Extracted URL parameters (e.g., {"id" => "123"})
-		# @param server_instance [Lost::Instance] The server instance (for accessing instance variables)
+		# @param server_instance [Tape::Instance] The server instance (for accessing instance variables)
 		# @return The result of handler execution
 		def interp_route_body route, req, res, url_params = {}, server_instance: nil
 			handler = route.handler
@@ -2695,7 +2775,7 @@ module Lost
 			end
 			outer_chain.reverse_each { |s| push_scope s }
 
-			call_scope = Lost::Scope.new "#{handler.name || 'anonymous'}_route"
+			call_scope = Tape::Scope.new "#{handler.name || 'anonymous'}_route"
 			push_scope handler.enclosing_scope
 			push_scope server_instance if server_instance
 			push_scope call_scope
@@ -2711,7 +2791,7 @@ module Lost
 				if value.nil?
 					if route.param_names.include? param.name.value
 						# todo: I haven't triggered this yet to ensure this works.
-						raise Lost::Route_Param_Expected_But_Not_Found.new(route)
+						raise Tape::Route_Param_Expected_But_Not_Found.new(route)
 					end
 
 					# Use default value or raise
@@ -2719,7 +2799,7 @@ module Lost
 						value = interpret param.default
 					else
 						# todo: Is this reachable?
-						raise Lost::Missing_Argument.new(expr)
+						raise Tape::Missing_Argument.new(expr)
 					end
 				end
 
@@ -2732,22 +2812,22 @@ module Lost
 			body.compact.each do |expr|
 				# bug todo: Sometimes body contains `nil` when that should never be the case
 				result = interpret expr
-				break if result.is_a? Lost::Return
+				break if result.is_a? Tape::Return
 			end
 
 			if result.is_a? ::String
 				res.declarations['body'] = result
-			elsif result.is_a? Lost::Array
+			elsif result.is_a? Tape::Array
 				html = ''
 				result.values.each do |it|
 					if it.is_a? ::String
 						html += it
-					elsif it.is_a?(Lost::Instance) && it.types.include?('Dom')
+					elsif it.is_a?(Tape::Instance) && it.types.include?('Dom')
 						html += render_dom_to_html it
 					end
 				end
 				res.declarations['body'] = html
-			elsif result.is_a? Lost::Instance
+			elsif result.is_a? Tape::Instance
 				# todo: Maybe find a better class name than Dom, and add a constant for it.
 				if result.types.include? 'Dom'
 					html                     = render_dom_to_html result
@@ -2759,15 +2839,15 @@ module Lost
 
 			# Clean up scopes in reverse order
 			popped_call = pop_scope
-			Lost.assert popped_call == call_scope
+			Tape.assert popped_call == call_scope
 
 			if server_instance
 				popped_instance = pop_scope
-				Lost.assert popped_instance == server_instance
+				Tape.assert popped_instance == server_instance
 			end
 
 			popped_enclosing = pop_scope
-			Lost.assert popped_enclosing == handler.enclosing_scope
+			Tape.assert popped_enclosing == handler.enclosing_scope
 
 			outer_chain.each { pop_scope }
 
@@ -2775,8 +2855,8 @@ module Lost
 		end
 
 		def interp_statement expr
-			instance = Lost::Statement.new expr.expression
-			# Capture the scope this literal was built in -- see Lost::Statement's class comment.
+			instance = Tape::Statement.new expr.expression
+			# Capture the scope this literal was built in -- see Tape::Statement's class comment.
 			instance.captured_scope = stack.last
 			link_instance_to_type instance, 'Statement'
 
@@ -2790,7 +2870,7 @@ module Lost
 			instance
 		end
 
-		# Enforces use_caller_scope/memoize for an already-built Lost::Statement (#interp_call's `Lost::Statement` branch). Immediate `` `expr`() `` and backtick items in percent/array literals never build a real Statement, so they skip this entirely.
+		# Enforces use_caller_scope/memoize for an already-built Tape::Statement (#interp_call's `Tape::Statement` branch). Immediate `` `expr`() `` and backtick items in percent/array literals never build a real Statement, so they skip this entirely.
 		def invoke_statement statement
 			return statement['_memoized_value'] if statement['memoize'] && statement['_memoized']
 
@@ -2811,23 +2891,23 @@ module Lost
 			result
 		end
 
-		# @param expr [Lost::Fence_Expr]
+		# @param expr [Tape::Fence_Expr]
 		def interp_fence expr
 			# `expr.value` is the fence's body wrapped in a String_Expr, not yet interpreted -- passing
-			# it straight to Lost::Fence.new (as this used to) stored the raw AST node as the fence's
+			# it straight to Tape::Fence.new (as this used to) stored the raw AST node as the fence's
 			# own value, so `@puts`ing a fence printed an object dump instead of its text. Interpret it
 			# first, same as any other String_Expr, to get the real Ruby string.
 			#
-			# `Fence | String {}` (lost/fence.tape, loaded by lost/preload.tape) is the real declared
-			# Lost-level type for this -- link to it, not 'String' directly, mirroring Lost::Fence <
-			# Lost::String on the Ruby side. Without linking to *some* declared type here, #stringify_
+			# `Fence | String {}` (tapes/fence.tape, loaded by tapes/preload.tape) is the real declared
+			# Tape-level type for this -- link to it, not 'String' directly, mirroring Tape::Fence <
+			# Tape::String on the Ruby side. Without linking to *some* declared type here, #stringify_
 			# for_display's `to_s`/`pretty_print` lookup finds nothing and falls back to returning the
 			# raw Ruby instance, which is what was actually causing the object dump -- not just the
 			# un-interpreted value fixed above.
-			finish_intrinsic_instance Lost::Fence.new(interpret(expr.value)), 'Fence' # note: Lost::Fence extends Lost::String
+			finish_intrinsic_instance Tape::Fence.new(interpret(expr.value)), 'Fence' # note: Tape::Fence extends Tape::String
 		end
 
-		# @param expr [Lost::Html_Fence_Expr]
+		# @param expr [Tape::Html_Fence_Expr]
 		def interp_html_fence expr
 			interp_string expr.body
 		end
@@ -2836,14 +2916,14 @@ module Lost
 			# These are interpreted sequentially, so there are no precedence rules. I think that'll be better in the long term because there's no magic behind their evaluation. You can ensure the correct outcome by using these operators to form the types you need.
 
 			right      = maybe_instance interpret expr.identifier
-			unless right.is_a? Lost::Scope
-				raise Lost::Invalid_Composition_With_A_Non_Scope_type.new(right)
+			unless right.is_a? Tape::Scope
+				raise Tape::Invalid_Composition_With_A_Non_Scope_type.new(right)
 			end
 			curr_scope = stack.last
 
 			case expr.operator.value
 			when '|'
-				# Union with Lost::Type
+				# Union with Tape::Type
 
 				right.declarations.each do |key, value|
 					curr_scope[key] = value unless curr_scope.has?(key)
@@ -2856,7 +2936,7 @@ module Lost
 				curr_scope.types += right.types
 				curr_scope.types = curr_scope.types.uniq
 			when '~'
-				# Removal of Lost::Type
+				# Removal of Tape::Type
 
 				operand_keys_to_remove = right.declarations.keys
 
@@ -2909,34 +2989,34 @@ module Lost
 					curr_scope[key] = right[key]
 				end
 			else
-				raise Lost::Invalid_Composition_Operator.new(expr)
+				raise Tape::Invalid_Composition_Operator.new(expr)
 			end
 		end
 
-		# @param for_loop_expr [Lost::For_Loop_Expr]
+		# @param for_loop_expr [Tape::For_Loop_Expr]
 		def interp_for_loop for_loop_expr
 			collection = interpret for_loop_expr.collection
 			stride     = interpret(for_loop_expr.stride) if for_loop_expr.stride
 
-			Lost.assert stride.nil? || stride.is_a?(Integer), "Stride must be an integer" if stride
+			Tape.assert stride.nil? || stride.is_a?(::Integer), "Stride must be an integer" if stride
 
-			loop_type = for_loop_expr.type&.value || 'each' # one of Lost::FOR_VERBS
+			loop_type = for_loop_expr.type&.value || 'each' # one of Tape::FOR_VERBS
 			result    = nil
 
 			values = case collection
 
-			when Lost::Dictionary
+			when Tape::Dictionary
 				collection.hash
-			when Lost::Array
+			when Tape::Array
 				collection.values
 
-			when Lost::Range
+			when Tape::Range
 				collection
-			when Lost::String
+			when Tape::String
 				collection.value.chars
 
-			when Lost::Struct
-				# `.members` (an `Lost::Array` of `Lost::Member`) is only populated when the opt-in `lost/struct.tape` layer is loaded (see #build_struct) -- a bare Struct with no matching declared `Struct` type has nothing to iterate.
+			when Tape::Struct
+				# `.members` (an `Tape::Array` of `Tape::Member`) is only populated when the opt-in `tapes/struct.tape` layer is loaded (see #build_struct) -- a bare Struct with no matching declared `Struct` type has nothing to iterate.
 				collection.declarations['members']&.values || []
 
 			else
@@ -2965,14 +3045,14 @@ module Lost
 				begin
 					scope.declare 'it', element
 					scope.declare 'at', index
-					if collection.is_a? Lost::Dictionary
+					if collection.is_a? Tape::Dictionary
 						scope.declare 'value', element
 						scope.declare 'key', index
 					end
 					catch :skip do
 						for_loop_expr.body.each do |e|
 							body_result = interpret e
-							throw(:stop, body_result) if body_result.is_a? Lost::Return
+							throw(:stop, body_result) if body_result.is_a? Tape::Return
 						end
 					end
 				ensure
@@ -2984,16 +3064,16 @@ module Lost
 			# Initialize collection variables outside catch block so they persist after stop
 			collected = []
 			count_val = 0
-			elements  = if stride && !collection.is_a?(Lost::Dictionary)
-				# `each_slice` yields raw Ruby Arrays -- wrap each chunk as a real Lost::Array so `it` behaves like any other Lost value (`==`, `.push`, etc.), not just dot-index access (`it.0`), which already worked because #interp_dot_infix calls #maybe_instance on its receiver regardless.
-				values.each_slice(stride).map { |chunk| Lost::Array.new(chunk) }.each_with_index
+			elements  = if stride && !collection.is_a?(Tape::Dictionary)
+				# `each_slice` yields raw Ruby Arrays -- wrap each chunk as a real Tape::Array so `it` behaves like any other Tape value (`==`, `.push`, etc.), not just dot-index access (`it.0`), which already worked because #interp_dot_infix calls #maybe_instance on its receiver regardless.
+				values.each_slice(stride).map { |chunk| Tape::Array.new(chunk) }.each_with_index
 			else
 				values.each_with_index
 			end
 
 			stop_value = catch :stop do
 				elements.each do |element, index|
-					if collection.is_a? Lost::Dictionary
+					if collection.is_a? Tape::Dictionary
 						new_it  = element[1]
 						new_at  = element[0]
 						element = new_it
@@ -3019,12 +3099,12 @@ module Lost
 			# Assign results after catch block so partial results are preserved on stop
 			case loop_type
 			when 'map', 'select', 'reject'
-				result = Lost::Array.new(collected)
+				result = Tape::Array.new(collected)
 			when 'count'
 				result = count_val
 			end
 
-			result     = stop_value if stop_value.is_a? Lost::Return
+			result     = stop_value if stop_value.is_a? Tape::Return
 
 			result
 		end
@@ -3065,7 +3145,7 @@ module Lost
 					end
 				end
 
-				if expr.when_false.is_a? Lost::Conditional_Expr
+				if expr.when_false.is_a? Tape::Conditional_Expr
 					result = interp_conditional expr.when_false
 				elsif expr.when_false.is_a? ::Array
 					expr.when_false.each do |expr|
@@ -3082,7 +3162,7 @@ module Lost
 				falsy_body  = expr.type.value == 'unless' ? expr.when_true : expr.when_false
 				body        = truthy?(condition) ? truthy_body : falsy_body
 
-				if body.is_a? Lost::Conditional_Expr
+				if body.is_a? Tape::Conditional_Expr
 					interp_conditional body
 				else
 					body.each.inject(nil) do |result, expr|
@@ -3096,7 +3176,7 @@ module Lost
 			case expr.name.value
 			when 'declare' # ident: String, value, type
 				interpreted_expr = interpret expr.expression
-				if interpreted_expr.is_a? Lost::Struct
+				if interpreted_expr.is_a? Tape::Struct
 					interpreted_expr.members.values.each do |member|
 						next unless member.name
 						stack.last.declare member.name, member.value, member.type
@@ -3117,7 +3197,7 @@ module Lost
 					# name, value, type
 					stack.last.declare data[0], data[1], data[2]
 				else
-					raise Lost::Invalid_Directive_Usage.new(expr)
+					raise Tape::Invalid_Directive_Usage.new(expr)
 				end
 			when 'puts'
 				value = expr.expression ? interpret(expr.expression) : nil
@@ -3129,7 +3209,7 @@ module Lost
 				condition = interpret expr.expression
 				unless truthy? condition
 					message = interpret expr.message if expr.message
-					raise Lost::Assert_Triggered.new(expr, message)
+					raise Tape::Assert_Triggered.new(expr, message)
 				end
 				condition
 
@@ -3137,15 +3217,15 @@ module Lost
 				condition = interpret expr.expression
 				if truthy? condition
 					message = interpret expr.message if expr.message
-					raise Lost::Refute_Triggered.new(expr, message)
+					raise Tape::Refute_Triggered.new(expr, message)
 				end
 				condition
 
 			when 'ruby'
 				# The @ruby directive evaluates to the result of calling the ruby Ruby method
 				func_scope = stack.last
-				unless func_scope.is_a? Lost::Func
-					raise Lost::Invalid_Ruby_Proxy_Directive_Usage.new func_scope
+				unless func_scope.is_a? Tape::Func
+					raise Tape::Invalid_Ruby_Proxy_Directive_Usage.new func_scope
 				end
 
 				func_name        = func_scope.name
@@ -3153,7 +3233,7 @@ module Lost
 				instance_or_type = func_scope.enclosing_scope # An instance or type that should have the ruby method declared
 
 				# note: For static proxies on Types (like Record.find), create a temporary instance of the Ruby class. This allows the proxy method to access the Type's declarations.
-				target = if instance_or_type.instance_of?(Lost::Type) && instance_or_type.name
+				target = if instance_or_type.instance_of?(Tape::Type) && instance_or_type.name
 					ruby_class = find_ruby_class_for_type instance_or_type
 					if ruby_class
 						temp_instance              = ruby_class.new instance_or_type.name
@@ -3168,13 +3248,13 @@ module Lost
 				end
 
 				if proxy_method && !target.respond_to?(proxy_method)
-					raise Lost::Missing_Ruby_Proxy_Declaration.new target, expr.name
+					raise Tape::Missing_Ruby_Proxy_Declaration.new target, expr.name
 				end
 
 				result = target.send proxy_method, *func_scope.arguments
 
-				# Auto-link instances created by proxy methods to their global types, and refresh `.types` off that type -- a Ruby-built instance (`Lost::String.new` in a proxy) seeds `@types` from `self.class.name` (`"Lost::String"`), so without this a proxy return fails every `===`/`=>=`/return-type contract check. Mirrors #finish_intrinsic_instance.
-				if result.is_a?(Lost::Instance) && result.enclosing_scope.nil?
+				# Auto-link instances created by proxy methods to their global types, and refresh `.types` off that type -- a Ruby-built instance (`Tape::String.new` in a proxy) seeds `@types` from `self.class.name` (`"Tape::String"`), so without this a proxy return fails every `===`/`=>=`/return-type contract check. Mirrors #finish_intrinsic_instance.
+				if result.is_a?(Tape::Instance) && result.enclosing_scope.nil?
 					type_name = result.class.name.split('::').last
 					link_instance_to_type result, type_name
 					result.types = result.enclosing_scope.types if result.enclosing_scope
@@ -3184,11 +3264,11 @@ module Lost
 
 			when 'start_server'
 				server = interpret expr.expression
-				unless server.is_a? Lost::Instance
-					raise Lost::Invalid_Start_Directive_Argument.new(expr)
+				unless server.is_a? Tape::Instance
+					raise Tape::Invalid_Start_Directive_Argument.new(expr)
 				end
 
-				server.port   = Integer(server.get(:port) || Lost::Server::DEFAULT_PORT)
+				server.port   = Integer(server.get(:port) || Tape::Server::DEFAULT_PORT)
 				server.routes = collect_routes_from_instance server
 				servers << server
 
@@ -3197,8 +3277,8 @@ module Lost
 
 			when 'stop_server'
 				server = interpret expr.expression
-				unless server.is_a? Lost::Instance
-					raise Lost::Invalid_Start_Directive_Argument.new(expr)
+				unless server.is_a? Tape::Instance
+					raise Tape::Invalid_Start_Directive_Argument.new(expr)
 				end
 
 				stop_server server
@@ -3207,11 +3287,11 @@ module Lost
 			when 'connect'
 				def interp_database expr
 					require 'sequel'
-					database = interpret expr # Lost::Database
+					database = interpret expr # Tape::Database
 					link_instance_to_type database, 'Database'
 					unless database.get 'connection'
 						url = database.get 'url'
-						raise Lost::Url_Not_Set_For_Database_Instance unless url
+						raise Tape::Url_Not_Set_For_Database_Instance unless url
 						database.declare('connection', Sequel.sqlite(adapter: 'sqlite', database: url))
 					end
 					database
@@ -3221,54 +3301,54 @@ module Lost
 
 			when 'push_scope'
 				# Target must be a bare identifier naming something already bound -- a literal or constructor call builds a fresh object every evaluation, so #pop_scope's identity assert could never match it later (Scope#get returns the same object for repeat lookups of an existing Type/Instance).
-				raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless expr.expression.is_a?(Lost::Identifier_Expr)
+				raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless expr.expression.is_a?(Tape::Identifier_Expr)
 
 				if target = maybe_instance(interpret expr.expression)
 					# Only Type/Instance makes sense to reopen -- a Func is duped on every lookup (#interp_identifier's enclosing_scope rebind), so it could never satisfy the identity check either.
-					raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Lost::Type)
+					raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Tape::Type)
 					push_scope target
 				else
-					raise Lost::Invalid_Directive_Usage.new(expr)
+					raise Tape::Invalid_Directive_Usage.new(expr)
 				end
 
 			when 'pop_scope'
-				raise Lost::Invalid_Directive_Usage.new(expr) unless expr.expression
-				raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless expr.expression.is_a?(Lost::Identifier_Expr)
+				raise Tape::Invalid_Directive_Usage.new(expr) unless expr.expression
+				raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless expr.expression.is_a?(Tape::Identifier_Expr)
 
 				scope_to_pop = maybe_instance interpret expr.expression
-				raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless scope_to_pop.is_a?(Lost::Type)
+				raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless scope_to_pop.is_a?(Tape::Type)
 
 				# note; these are by identity, so you cannot interchange an instance of a type and a reference to its type. push 1 cannot pair with pop Number
-				Lost.assert pop_scope == scope_to_pop
+				Tape.assert pop_scope == scope_to_pop
 				scope_to_pop
 
 			when 'add_readable_scope', 'add_readable', 'readable'
 				target = maybe_instance interpret(expr.expression)
 				if target
-					raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Lost::Scope)
+					raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Tape::Scope)
 					stack.last.add_readable_scope target
 				else
-					raise Lost::Invalid_Directive_Usage.new(expr)
+					raise Tape::Invalid_Directive_Usage.new(expr)
 				end
 
 			when 'add_writable_scope', 'add_writable', 'writable'
 				target = maybe_instance interpret(expr.expression)
 				if target
-					raise Lost::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Lost::Scope)
+					raise Tape::Invalid_Scope_Directive_Argument.new(expr.expression) unless target.is_a?(Tape::Scope)
 					stack.last.add_writable_scope target
 				else
-					raise Lost::Invalid_Directive_Usage.new(expr)
+					raise Tape::Invalid_Directive_Usage.new(expr)
 				end
 
 			when 'remove_readable_scope', 'remove_readable'
-				raise Lost::Invalid_Directive_Usage.new(expr) unless expr.expression
+				raise Tape::Invalid_Directive_Usage.new(expr) unless expr.expression
 				scope_to_remove = maybe_instance interpret expr.expression
 
 				stack.last.remove_readable_scope scope_to_remove
 				scope_to_remove
 
 			when 'remove_writable_scope', 'remove_writable'
-				raise Lost::Invalid_Directive_Usage.new(expr) unless expr.expression
+				raise Tape::Invalid_Directive_Usage.new(expr) unless expr.expression
 				scope_to_remove = maybe_instance interpret expr.expression
 
 				stack.last.remove_writable_scope scope_to_remove
@@ -3284,31 +3364,31 @@ module Lost
 				load_file_into_scope filepath, stack.last
 
 			when 'root'
-				Lost::ROOT_PATH
+				Tape::ROOT_PATH
 			else
-				raise Lost::Invalid_Directive_Usage.new(expr)
+				raise Tape::Invalid_Directive_Usage.new(expr)
 			end
 		end
 
 		def interp_subscript expr
 			if expr.expression.expressions.count > 1
-				raise Lost::Too_Many_Subscript_Expressions.new(expr.expression)
+				raise Tape::Too_Many_Subscript_Expressions.new(expr.expression)
 			end
 
 			receiver = maybe_instance interpret expr.receiver
 
 			case receiver
-			when Lost::Dictionary, Lost::Array
+			when Tape::Dictionary, Tape::Array
 				key = interpret expr.expression.expressions.first
 				receiver.proxy_get key
-			when Lost::Nil
+			when Tape::Nil
 				# todo: What should happen when subscripting nil? A warning of some kind maybe?
 				nil
-			when Lost::String
+			when Tape::String
 				index = interpret expr.expression.expressions.first
 				receiver.value[index]
 			else
-				raise Lost::Invalid_Subscript_Receiver.new(expr.receiver)
+				raise Tape::Invalid_Subscript_Receiver.new(expr.receiver)
 			end
 		end
 
@@ -3319,13 +3399,13 @@ module Lost
 			instance
 		end
 
-		# Builds (but doesn't declare) a real Lost::Enum for an Enum_Expr -- shared by #interp_enum and nested enum members (#build_enum_member).
+		# Builds (but doesn't declare) a real Tape::Enum for an Enum_Expr -- shared by #interp_enum and nested enum members (#build_enum_member).
 		def build_enum expr
 			# Named at construction, not via `.name =` after -- a later attr write never touches @declarations.
-			instance = Lost::Enum.new expr.name.value
+			instance = Tape::Enum.new expr.name.value
 			link_instance_to_type instance, 'Enum'
 
-			# Skips normal Type-construction, so Enum's own Lost-level body (keys/values/types/count, @operator ==) is run by hand.
+			# Skips normal Type-construction, so Enum's own Tape-level body (keys/values/types/count, @operator ==) is run by hand.
 			type = instance.enclosing_scope
 			if type
 				instance.expressions = type.expressions
@@ -3342,17 +3422,17 @@ module Lost
 			end
 
 			instance.declarations['type']   = expr.type ? find_in_stack(expr.type.value) : nil
-			instance.declarations['keys']   = wrap_lost_array keys
-			instance.declarations['values'] = wrap_lost_array values
-			instance.declarations['types']  = wrap_lost_array types
+			instance.declarations['keys']   = wrap_tape_array keys
+			instance.declarations['values'] = wrap_tape_array values
+			instance.declarations['types']  = wrap_tape_array types
 			instance.declarations['count']  = keys.length
 
 			instance
 		end
 
-		# Links a raw Lost::Array to the real Array type so its own Lost-level methods (to_s(;), etc.) are reachable. Used by #build_enum and #build_instance_of_type.
-		def wrap_lost_array list
-			array = Lost::Array.new list
+		# Links a raw Tape::Array to the real Array type so its own Tape-level methods (to_s(;), etc.) are reachable. Used by #build_enum and #build_instance_of_type.
+		def wrap_tape_array list
+			array = Tape::Array.new list
 			link_instance_to_type array, 'Array'
 			array
 		end
@@ -3360,16 +3440,16 @@ module Lost
 		# Returns [name, value, type] for one enum member, per #parse_enum_expr's five member forms (see CLAUDE.md). Bare/typed-only members get a Symbol matching their own name; `:=`/`: Type =` members use their real value; nested enums recurse into #build_enum.
 		def build_enum_member member_expr
 			case member_expr
-			when Lost::Enum_Expr
+			when Tape::Enum_Expr
 				[member_expr.name.value, build_enum(member_expr), nil]
-			when Lost::Nil_Init_Expr
+			when Tape::Nil_Init_Expr
 				name = member_expr.left.value
 				[name, name.to_sym, nil]
-			when Lost::Identifier_Expr
+			when Tape::Identifier_Expr
 				name        = member_expr.value
 				member_type = member_expr.type ? find_in_stack(member_expr.type.value) : nil
 				[name, name.to_sym, member_type]
-			when Lost::Infix_Expr
+			when Tape::Infix_Expr
 				name        = member_expr.left.value
 				member_type = member_expr.left.type ? find_in_stack(member_expr.left.type.value) : nil
 				[name, interpret(member_expr.right), member_type]
@@ -3378,10 +3458,10 @@ module Lost
 
 		# Resolves a `: Type` annotation's value. A bare struct annotation (`id: <a: Number>`) interprets straight to a Struct. An Identifier_Expr carrying a trailing `\` tag (`id: Array\String`, `id: Thing\One\Two`) resolves through a synthetic Type_Expr reference so the tag chain is bound; a plain one just interprets. `type_expr` is an Identifier_Expr, not a Type_Expr (see #parse_identifier_expr), hence the synthetic reference -- same trick #interp_func_body etc. use to reuse existing dispatch.
 		def interp_type_annotation type_expr
-			return interp_struct type_expr if type_expr.is_a? Lost::Struct_Expr
+			return interp_struct type_expr if type_expr.is_a? Tape::Struct_Expr
 			return interpret type_expr unless type_expr.tag
 
-			reference      = Lost::Type_Expr.new
+			reference      = Tape::Type_Expr.new
 			reference.name = type_expr.value
 			reference.tag  = type_expr.tag
 			interp_type reference
@@ -3408,32 +3488,32 @@ module Lost
 					else
 						# Bare `name := value` member, no `: Type` annotation -- infer the member's declared type from the default's own runtime type, same as plain `:=` does everywhere else.
 						default_value = interpret(member.member_default)
-						types << find_in_stack(type_name_to_string(default_value))
+						types << find_in_stack(inferred_type_name(default_value)) # numerics collapse to `Number`
 						values << wrap_string_literal_value(member.member_default, default_value)
 					end
 					names << expr.names[i]
 				else
 					value = interpret member
 
-					if single_member && value.is_a?(Lost::Struct)
+					if single_member && value.is_a?(Tape::Struct)
 						types.concat value.type_objects
 						values.concat value.values
 						names.concat value.names
 					else
 						types << value
 						# A bare Type used as the member itself (`<Number>`, schema-only, no real data yet) isn't a value -- push nil, same as a named member's own `: Type` annotation with no default does, rather than the Type object itself (which used to leak into display code expecting a real value or nil).
-						values << (value.is_a?(Lost::Type) && !value.is_a?(Lost::Instance) ? nil : wrap_string_literal_value(member, value))
+						values << (value.is_a?(Tape::Type) && !value.is_a?(Tape::Instance) ? nil : wrap_string_literal_value(member, value))
 						names << nil
 					end
 				end
 			end
 
-			# Each member's "type" here is just its value's own inferred type name
-			type_names = types.map { |value| type_name_to_string value }
+			# Each member's "type" here is just its value's own inferred type name (numerics stay `Number`)
+			type_names = types.map { |value| inferred_type_name value }
 			struct     = build_struct names, type_names, types, values
 
 			# A leading TYPE_IDENTIFIER before `<...>` (`Task <id: Number, done: Bool>`) makes `expr.name` a raw Lexeme -- a Bare Named Struct (see CLAUDE.md), registered globally here. `\<...>`'s inline-literal form sets `.tag.name` to a plain String instead, so it never re-triggers this.
-			return register_bare_named_struct(expr, struct) if expr.name.is_a? Lost::Lexeme
+			return register_bare_named_struct(expr, struct) if expr.name.is_a? Tape::Lexeme
 
 			struct
 		end
@@ -3443,34 +3523,34 @@ module Lost
 			name     = expr.name.value
 			existing = find_in_stack name
 
-			if existing.is_a?(Lost::Struct) && existing.get('name') == name && existing.structure_declaration_equal?(struct)
+			if existing.is_a?(Tape::Struct) && existing.get('name') == name && existing.structure_declaration_equal?(struct)
 				return existing
 			end
 
 			# A tagged Type declaration never registers under the plain identifier namespace (only in `tagged_type_variants`), so `find_in_stack` alone can't see a conflicting one -- check both.
 			if existing.nil? && tagged_variants_for(name).empty?
 				struct.declare 'name', name
-				struct.name  = name # keep the Ruby-level accessor (Scope#name) in sync with @declarations['name'] -- Ruby proxy code (e.g. Database#proxy_create_table) reads .name directly, not through Lost-level dot access
+				struct.name  = name # keep the Ruby-level accessor (Scope#name) in sync with @declarations['name'] -- Ruby proxy code (e.g. Database#proxy_create_table) reads .name directly, not through Tape-level dot access
 				struct.types = Set[name] + struct.types
 				stack.last.declare name, struct if struct.names.all?
 				return struct
 			end
 
-			raise Lost::Undeclared_Tagged_Type.new(expr)
+			raise Tape::Undeclared_Tagged_Type.new(expr)
 		end
 
-		# A value built directly from a string literal gets wrapped into a real Lost::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s(;) (lost/member.tape) and Array/Dictionary/Tuple's to_s(;) (lost/array.tape, lost/dictionary.tape, lost/preload.tape) read `.quotation_style` straight off the value to decide how to quote it for display.
+		# A value built directly from a string literal gets wrapped into a real Tape::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s(;) (tapes/member.tape) and Array/Dictionary/Tuple's to_s(;) (tapes/array.tape, tapes/dictionary.tape, tapes/preload.tape) read `.quotation_style` straight off the value to decide how to quote it for display.
 		def wrap_string_literal_value source_expr, value
-			return value unless source_expr.is_a?(Lost::String_Expr) && value.is_a?(::String)
-			finish_intrinsic_instance Lost::String.new(value, source_expr.quotation_style), 'String'
+			return value unless source_expr.is_a?(Tape::String_Expr) && value.is_a?(::String)
+			finish_intrinsic_instance Tape::String.new(value, source_expr.quotation_style), 'String'
 		end
 
-		# The low-level Lost::Struct object is always built first and exactly the same way regardless of `struct_type` -- it's what #type_objects/etc. read from, and every existing member-matching call site depends on it being real.
+		# The low-level Tape::Struct object is always built first and exactly the same way regardless of `struct_type` -- it's what #type_objects/etc. read from, and every existing member-matching call site depends on it being real.
 		def build_struct names, type_names, types, values
 			struct_type = find_in_stack 'Struct'
-			struct      = Lost::Struct.new names, type_names, types, values
+			struct      = Tape::Struct.new names, type_names, types, values
 
-			unless struct_type.is_a?(Lost::Type)
+			unless struct_type.is_a?(Tape::Type)
 				link_instance_to_type struct, 'Struct'
 				return struct
 			end
@@ -3482,21 +3562,21 @@ module Lost
 
 			zipped = %w(names type_names types values).zip [names, type_names, types, values]
 			zipped.each do |key, list|
-				array = Lost::Array.new list
+				array = Tape::Array.new list
 				link_instance_to_type array, 'Array'
 				struct.declarations[key] = array
 			end
 
 			member_type = find_in_stack 'Member'
-			if member_type.is_a?(Lost::Type) && struct.has?('members')
+			if member_type.is_a?(Tape::Type) && struct.has?('members')
 				members = names.each_index.map do |i|
 					member_display_type = names[i] ? types[i] : find_in_stack(type_names[i])
-					member              = Lost::Member.new names[i], member_display_type, values[i]
+					member              = Tape::Member.new names[i], member_display_type, values[i]
 					link_instance_to_type member, 'Member'
 					member
 				end
 
-				members_array = Lost::Array.new members
+				members_array = Tape::Array.new members
 				link_instance_to_type members_array, 'Array'
 				struct.members                 = members_array
 				struct.declarations['members'] = members_array
@@ -3505,7 +3585,7 @@ module Lost
 			struct
 		end
 
-		# @param expr [Lost::Operator_Overload_Expr]
+		# @param expr [Tape::Operator_Overload_Expr]
 		def interp_operator_overload expr
 			# expr attrs:  func_expr(Func_Expr)  fixity(Lexeme)  precedence(Int)  value(String)
 			# This is setting up operators to be treated as regular functions, whose identifier is its operator symbols without spaces.
@@ -3516,83 +3596,83 @@ module Lost
 		# note: This is the entry point for all expressions. This is called in a loop until all expressions are evaluated, or the program crashes.
 		def interpret expr
 			case expr
-			when Lost::Number_Expr, Lost::Symbol_Expr
+			when Tape::Number_Expr, Tape::Symbol_Expr
 				expr.value
 
-			when Lost::Identifier_Expr
+			when Tape::Identifier_Expr
 				interp_identifier expr
 
-			when Lost::String_Expr
+			when Tape::String_Expr
 				interp_string expr
 
-			when Lost::Type_Expr
+			when Tape::Type_Expr
 				interp_type expr
 
-			when Lost::Route_Expr
+			when Tape::Route_Expr
 				interp_route expr
 
-			when Lost::Func_Expr
+			when Tape::Func_Expr
 				interp_func expr
 
-			when Lost::Func_Signature_Expr
+			when Tape::Func_Signature_Expr
 				interp_func_signature expr
 
-			when Lost::Composition_Expr
+			when Tape::Composition_Expr
 				interp_composition expr
 
-			when Lost::Prefix_Expr
+			when Tape::Prefix_Expr
 				interp_prefix expr
 
-			when Lost::Nil_Init_Expr
+			when Tape::Nil_Init_Expr
 				# This is a special infix expression `<ident>,` that desugars to `ident = ident or nil`. left is assigned nil if it doesn't exist, or is returned if it does
 				interp_nil_init expr
 
-			when Lost::Infix_Expr
+			when Tape::Infix_Expr
 				interp_infix expr
 
-			when Lost::Postfix_Expr
+			when Tape::Postfix_Expr
 				interp_postfix expr
 
-			when Lost::Percent_Literal_Expr
+			when Tape::Percent_Literal_Expr
 				interp_percent_literal expr
 
-			when Lost::Circumfix_Expr
+			when Tape::Circumfix_Expr
 				interp_circumfix expr
 
-			when Lost::Call_Expr
+			when Tape::Call_Expr
 				interp_call expr
 
-			when Lost::For_Loop_Expr
+			when Tape::For_Loop_Expr
 				interp_for_loop expr
 
-			when Lost::Conditional_Expr
+			when Tape::Conditional_Expr
 				interp_conditional expr
 
-			when Lost::Array_Index_Expr
+			when Tape::Array_Index_Expr
 				maybe_instance expr.indices_in_order
 
-			when Lost::Subscript_Expr
+			when Tape::Subscript_Expr
 				interp_subscript expr
 
-			when Lost::Directive_Expr
+			when Tape::Directive_Expr
 				interp_directive expr
 
-			when Lost::Statement_Expr
+			when Tape::Statement_Expr
 				interp_statement expr
 
-			when Lost::Fence_Expr
+			when Tape::Fence_Expr
 				interp_fence expr
 
-			when Lost::Html_Fence_Expr
+			when Tape::Html_Fence_Expr
 				interp_html_fence expr
 
-			when Lost::Comment_Expr
+			when Tape::Comment_Expr
 				expr.value
 
-			when Lost::Operator_Overload_Expr
+			when Tape::Operator_Overload_Expr
 				interp_operator_overload expr
 
-			when Lost::Operator_Expr
+			when Tape::Operator_Expr
 				case expr.value
 				when 'skip'
 					throw :skip
@@ -3600,17 +3680,17 @@ module Lost
 					throw :stop
 				end
 
-			when Lost::Struct_Expr
+			when Tape::Struct_Expr
 				interp_struct expr
 
-			when Lost::Enum_Expr
+			when Tape::Enum_Expr
 				interp_enum expr
 
 			when nil
 				maybe_instance nil
 
 			else
-				raise Lost::Interpret_Expr_Not_Implemented.new(expr)
+				raise Tape::Interpret_Expr_Not_Implemented.new(expr)
 			end
 		end
 	end

@@ -1,6 +1,6 @@
 ### Introduction
 
-Arrays are created with `[]`. Backed by `Lost::Array`, a thin wrapper around a real Ruby array kept in `.values`. Elements are reachable by subscript or by dot notation -- both just index into the same underlying array.
+Arrays are created with `[]`. Backed by `Tape::Array`, a thin wrapper around a real Ruby array kept in `.values`. Elements are reachable by subscript or by dot notation -- both just index into the same underlying array.
 ###
 raft_supplies := ['water', 'rope', 'tarp']
 @assert raft_supplies.0 == 'water', 'dot notation should index like subscript'

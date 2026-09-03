@@ -14,7 +14,7 @@ module Helpers
 	def type_identifier? ident
 		return false unless ident
 
-		Lost.assert ident.is_a?(::String), "#type_identifier? expected a ::String got #{ident.class}"
+		Tape.assert ident.is_a?(::String), "#type_identifier? expected a ::String got #{ident.class}"
 
 		# Capitalized Like_This or This
 		ident[0] && ident[0].upcase == ident[0]
@@ -43,16 +43,6 @@ module Helpers
 		end
 	end
 
-	def type_of_number_expr expr
-		if expr.to_s.count('.') > 1
-			:array_index
-		elsif expr.to_s.include? '.'
-			:float
-		else
-			:integer
-		end
-	end
-
 	def privacy_of_ident ident
 		ident               = ident&.to_s
 		leading_underscores = ident.match(/^_*/)[0].length
@@ -71,7 +61,7 @@ module Helpers
 
 		return nil unless scope.has? ident
 
-		if scope.is_a?(Lost::Type) && scope.static_declarations&.include?(ident)
+		if scope.is_a?(Tape::Type) && scope.static_declarations&.include?(ident)
 			:static
 		else
 			:instance

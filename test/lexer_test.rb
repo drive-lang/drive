@@ -1,62 +1,62 @@
 require 'minitest/autorun'
-require_relative '../src/lost'
+require_relative '../src/tape'
 require_relative 'base_test'
 
 class Lexer_Test < Base_Test
 	def test_single_linecomment
-		out = Lost.lex '# single line comment'
+		out = Tape.lex '# single line comment'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line comment', out.first.value
-		assert_kind_of Lost::Lexeme, out.first
+		assert_kind_of Tape::Lexeme, out.first
 	end
 
 	def test_block_comment
-		out = Lost.lex '###single line block comment###'
+		out = Tape.lex '###single line block comment###'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line block comment', out.first.value
-		assert_kind_of Lost::Lexeme, out.first
+		assert_kind_of Tape::Lexeme, out.first
 
-		out = Lost.lex '###multi
+		out = Tape.lex '###multi
 		line
 		block
 		comment###'
 		assert_equal :comment, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Lost::Lexeme, out.first
+		assert_kind_of Tape::Lexeme, out.first
 
 		# a lone `#` or `##` inside a block comment's body shouldn't close it early -- only a real ### does
-		out = Lost.lex "###\n# not a real comment\n## still not\n###"
+		out = Tape.lex "###\n# not a real comment\n## still not\n###"
 		assert_equal :comment, out.first.type
 		assert_equal 1, out.length
 
 		# nesting: a same-length ### inside closes the outer block early, same as an unnested one would
-		out = Lost.lex "###\nouter\n### inner ###\nouter again\n###"
+		out = Tape.lex "###\nouter\n### inner ###\nouter again\n###"
 		assert_equal :identifier, out[1].type # `inner` leaks out as real code
 		assert_equal 'inner', out[1].value
 
 		# a longer run of #s on the outer marker safely swallows a same-length (or shorter) ### inside, uncommenting nothing early
-		out = Lost.lex "####\nouter\n### inner ###\nouter again\n####"
+		out = Tape.lex "####\nouter\n### inner ###\nouter again\n####"
 		assert_equal :comment, out.first.type
 		assert_equal 1, out.length
 		assert out.first.value.include? '### inner ###'
 	end
 
 	def test_fence_blocks
-		out = Lost.lex '```single line fence block```'
+		out = Tape.lex '```single line fence block```'
 		assert_equal :fence, out.first.type
 		assert_equal 'single line fence block', out.first.value
-		assert_kind_of Lost::Lexeme, out.first
+		assert_kind_of Tape::Lexeme, out.first
 
-		out = Lost.lex '```multi
+		out = Tape.lex '```multi
 		line
 		fence
 		block```'
 		assert_equal :fence, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Lost::Lexeme, out.first
+		assert_kind_of Tape::Lexeme, out.first
 
 		# a longer run of backticks on the outer marker safely nests a same-length (or shorter) ``` inside, mirroring Markdown's own fence-nesting rule
-		out = Lost.lex "`````\nouter\n```\ninner-looking, but shorter than the outer marker\n```\nouter again\n`````"
+		out = Tape.lex "`````\nouter\n```\ninner-looking, but shorter than the outer marker\n```\nouter again\n`````"
 		assert_equal :fence, out.first.type
 		assert_equal 1, out.length
 		assert out.first.value.include? '```'
@@ -65,190 +65,190 @@ class Lexer_Test < Base_Test
 	def test_identifiers
 		tests = %w(lowercase UPPERCASE Capitalized).zip %I(identifier IDENTIFIER Identifier)
 		tests.all? do |code, type|
-			out = Lost.lex code
+			out = Tape.lex code
 			assert_equal type, out.first.type
-			assert_kind_of Lost::Lexeme, out.first
+			assert_kind_of Tape::Lexeme, out.first
 		end
 	end
 
 	def test_numbers
-		assert_equal :number, Lost.lex('4').first.type
-		assert_equal :number, Lost.lex('8.0').first.type
+		assert_equal :number, Tape.lex('4').first.type
+		assert_equal :number, Tape.lex('8.0').first.type
 	end
 
 	def test_prefixed_numbers
-		out = Lost.lex '-15'
+		out = Tape.lex '-15'
 		assert_equal %I(number), out.map(&:type)
 		assert_equal '-15', out.last.value # These are converted to numerical values once they become Number_Exprs
 		assert_equal 1, out.count
 
-		out = Lost.lex '+1.6'
+		out = Tape.lex '+1.6'
 		assert_equal %I(operator number), out.map(&:type)
 		assert_equal '1.6', out.last.value
 		assert_equal 2, out.count
 	end
 
 	def test_unusual_number_situations
-		out = Lost.lex '20three'
+		out = Tape.lex '20three'
 		assert_equal %I(number identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Lost.lex '40__two'
+		out = Tape.lex '40__two'
 		assert_equal %I(number identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Lost.lex '4_15_6_3_4'
+		out = Tape.lex '4_15_6_3_4'
 		assert_equal :number, out.first.type
 		assert_equal 1, out.count
 
-		out = Lost.lex 'abc123'
+		out = Tape.lex 'abc123'
 		assert_equal :identifier, out.first.type
 		assert_equal 1, out.count
 	end
 
 	def test_strings
-		out = Lost.lex '"A string"'
+		out = Tape.lex '"A string"'
 		assert_equal :string, out.first.type
 
-		out = Lost.lex "'Another string'"
+		out = Tape.lex "'Another string'"
 		assert_equal :string, out.first.type
 
 	end
 
 	def test_interpolated_strings
-		out = Lost.lex '"An `interpolated` string"'
+		out = Tape.lex '"An `interpolated` string"'
 		assert_equal :string, out.first.type
 
-		out = Lost.lex "'Another `interpolated` string'"
+		out = Tape.lex "'Another `interpolated` string'"
 		assert_equal :string, out.first.type
 	end
 
 	def test_unterminated_string_literal
-		assert_raises Lost::Unterminated_String_Literal do
-			Lost.lex '"test\\'
+		assert_raises Tape::Unterminated_String_Literal do
+			Tape.lex '"test\\'
 		end
 
-		assert_raises Lost::Unterminated_String_Literal do
-			Lost.lex "'test\\"
+		assert_raises Tape::Unterminated_String_Literal do
+			Tape.lex "'test\\"
 		end
 	end
 
 	def test_operators
 		# todo Should this be such a long test?
-		out = Lost.lex 'numbers += 4815162342'
+		out = Tape.lex 'numbers += 4815162342'
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex 'ENABLED = true'
+		out = Tape.lex 'ENABLED = true'
 		assert_equal %I(IDENTIFIER operator identifier), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex 'Type = {}'
+		out = Tape.lex 'Type = {}'
 		assert_equal %I(Identifier operator delimiter delimiter), out.map(&:type)
 		assert_equal 4, out.count
 
-		out = Lost.lex 'numbers,'
+		out = Tape.lex 'numbers,'
 		assert_equal %I(identifier delimiter), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Lost.lex 'number: Number = 1'
+		out = Tape.lex 'number: Number = 1'
 		assert_equal %I(identifier operator Identifier operator number), out.map(&:type)
 		assert_equal 5, out.count
 
-		out = Lost.lex '1 + 2 * 3 / 4'
+		out = Tape.lex '1 + 2 * 3 / 4'
 		assert_equal %I(number operator number operator number operator number), out.map(&:type)
 		assert_equal 7, out.count
 
-		out = Lost.lex '1 <=> 2'
+		out = Tape.lex '1 <=> 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '1 == 2'
+		out = Tape.lex '1 == 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '1 != 2'
+		out = Tape.lex '1 != 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '1 > 2'
+		out = Tape.lex '1 > 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '1 <= 2'
+		out = Tape.lex '1 <= 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '1...2'
+		out = Tape.lex '1...2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '3.0...4.0'
+		out = Tape.lex '3.0...4.0'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '3..<4'
+		out = Tape.lex '3..<4'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '5>..6'
+		out = Tape.lex '5>..6'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex '7>.<8'
+		out = Tape.lex '7>.<8'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex 'a, B, 5, "cool"'
+		out = Tape.lex 'a, B, 5, "cool"'
 		assert_equal %I(identifier delimiter IDENTIFIER delimiter number delimiter string), out.map(&:type)
 		assert_equal 7, out.count
 
-		out = Lost.lex '1...2, 3..<4, 5>..6, 7>.<8'
+		out = Tape.lex '1...2, 3..<4, 5>..6, 7>.<8'
 		assert_equal %I(number operator number delimiter number operator number delimiter number operator number delimiter number operator number), out.map(&:type)
 		assert_equal 15, out.count
 
-		out = Lost.lex './this_instance'
+		out = Tape.lex './this_instance'
 		assert_equal %I(operator identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Lost.lex '../class_scope'
+		out = Tape.lex '../class_scope'
 		assert_equal %I(operator identifier), out.map(&:type)
 		assert_equal 2, out.count
 	end
 
 	def test_declaration_operators
-		out = Lost.lex 'numbers := 4815162342' # This parses but I'm not using this any longer. Maybe I'll repurpose it.
+		out = Tape.lex 'numbers := 4815162342' # This parses but I'm not using this any longer. Maybe I'll repurpose it.
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Lost.lex 'numbers = 123'
+		out = Tape.lex 'numbers = 123'
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 	end
 
 	def test_functions
-		out = Lost.lex '(;)'
+		out = Tape.lex '(;)'
 		assert_equal [:delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex 'named_function (;)'
+		out = Tape.lex 'named_function (;)'
 		assert_equal [:identifier, :delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '( input; )'
+		out = Tape.lex '( input; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '( labeled input; )'
+		out = Tape.lex '( labeled input; )'
 		assert_equal [:delimiter, :identifier, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '( value := 123; )'
+		out = Tape.lex '( value := 123; )'
 		assert_equal [:delimiter, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '( labeled value := 123; )'
+		out = Tape.lex '( labeled value := 123; )'
 		assert_equal [:delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex '( mixed, labeled value := 456; )'
+		out = Tape.lex '( mixed, labeled value := 456; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex 'square ( input;
+		out = Tape.lex 'square ( input;
 		 		input * input
 		 	 )'
 		assert_equal [
@@ -256,7 +256,7 @@ class Lexer_Test < Base_Test
 			             :identifier, :operator, :identifier, :delimiter, :delimiter
 		             ], out.map(&:type)
 
-		out = Lost.lex 'wrap ( number, limit;
+		out = Tape.lex 'wrap ( number, limit;
 		 		if number > limit
 		 			number = 0
 		 		end
@@ -270,10 +270,10 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_types
-		out = Lost.lex 'String {}'
+		out = Tape.lex 'String {}'
 		assert_equal [:Identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Lost.lex 'Transform {
+		out = Tape.lex 'Transform {
 		 	position,
 		 	rotation,
 		 }'
@@ -284,7 +284,7 @@ class Lexer_Test < Base_Test
 			             :delimiter
 		             ], out.map(&:type)
 
-		out = Lost.lex 'Entity {
+		out = Tape.lex 'Entity {
 		 	|Transform
 		}'
 		assert_equal [
@@ -295,7 +295,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_control_flow
-		out = Lost.lex 'if true
+		out = Tape.lex 'if true
 			celebrate()
 		end'
 		assert_equal [
@@ -304,7 +304,7 @@ class Lexer_Test < Base_Test
 			             :identifier
 		             ], out.map(&:type)
 
-		out = Lost.lex 'if 1 + 2 * 3 == 7
+		out = Tape.lex 'if 1 + 2 * 3 == 7
 			"This one!"
 		elif 1 + 2 * 3 == 9
 			\'No, this one!\'
@@ -321,7 +321,7 @@ class Lexer_Test < Base_Test
 			             :identifier
 		             ], out.map(&:type)
 
-		out = Lost.lex 'for [1, 2, 3, 4, 5]
+		out = Tape.lex 'for [1, 2, 3, 4, 5]
 			remove it if randf() > 0.5
 			skip
 			stop
@@ -336,33 +336,33 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_compound_operators
-		Lost::COMPOUND_OPERATORS.each do |operator|
-			out = Lost.lex operator
+		Tape::COMPOUND_OPERATORS.each do |operator|
+			out = Tape.lex operator
 			assert_equal operator, out.first.value
 		end
 	end
 
 	def test_conditional_keywords
-		out = Lost.lex 'and or'
+		out = Tape.lex 'and or'
 		assert_equal :operator, out.first.type
 		assert_equal :operator, out.last.type
 	end
 
 	def test_return_is_an_operator
-		out = Lost.lex 'return 1 + 2'
+		out = Tape.lex 'return 1 + 2'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_skip_and_stop_are_operators
-		out = Lost.lex 'skip'
+		out = Tape.lex 'skip'
 		assert_equal :operator, out.first.type
 
-		out = Lost.lex 'stop'
+		out = Tape.lex 'stop'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_identifier_dot_integer
-		out = Lost.lex 'array.0'
+		out = Tape.lex 'array.0'
 		assert_equal :identifier, out.first.type
 		assert_equal 'array', out.first.value
 		assert_equal :operator, out[1].type
@@ -373,7 +373,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_identifier_dot_float
-		out = Lost.lex 'array.2.0'
+		out = Tape.lex 'array.2.0'
 		assert_equal :identifier, out.first.type
 		assert_equal 'array', out.first.value
 		assert_equal :operator, out[1].type
@@ -384,52 +384,52 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_number_with_multiple_decimal_points
-		out = Lost.lex '1.2.3'
+		out = Tape.lex '1.2.3'
 		assert_equal 1, out.count
 		assert_equal :number, out.first.type
 	end
 
 	def test_double_less_than_is_operator
-		out = Lost.lex '<<'
+		out = Tape.lex '<<'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_at_at_prefix
-		out = Lost.lex '@count'
+		out = Tape.lex '@count'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_allowed_identifier_special_chars
-		out = Lost.lex 'what?,'
+		out = Tape.lex 'what?,'
 		assert_equal :identifier, out.first.type
 		assert_equal 'what?', out.first.value
 
-		out = Lost.lex 'okay!,'
+		out = Tape.lex 'okay!,'
 		assert_equal :identifier, out.first.type
 		assert_equal 'okay!', out.first.value
 	end
 
 	def test_unpack_prefix
-		out = Lost.lex '@instance_to_unpack'
+		out = Tape.lex '@instance_to_unpack'
 		assert_equal :operator, out.first.type
-		assert_equal Lost::BUILTIN_OPERATOR, out.first.value
+		assert_equal Tape::BUILTIN_OPERATOR, out.first.value
 		assert_equal :identifier, out.last.type
 		assert_equal 'instance_to_unpack', out.last.value
 	end
 
 	def test_for_keyword
-		out = Lost.lex 'for'
+		out = Tape.lex 'for'
 		assert_equal :operator, out.last.type
 	end
 
 	def test_single_line_code_location
-		out = Lost.lex 'abracadabra'
+		out = Tape.lex 'abracadabra'
 		assert_equal 1, out.last.l0
 		assert_equal 1, out.last.c0
 		assert_equal 1, out.last.l1
 		assert_equal 11, out.last.c1
 
-		out = Lost.lex 'abracadabra = whatever'
+		out = Tape.lex 'abracadabra = whatever'
 		assert_equal 1, out.last.l0
 		assert_equal 1, out.last.l1
 		assert_equal 15, out.last.c0
@@ -437,7 +437,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_multiline_code_location
-		out = Lost.lex <<~LEX
+		out = Tape.lex <<~LEX
 		    Thing {
 		    	id,
 		    	name,
@@ -481,6 +481,6 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_debug
-		Lost.lex '{ a=1, b="two", c=three }'
+		Tape.lex '{ a=1, b="two", c=three }'
 	end
 end

@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Dictionary < Instance
 		extend Ruby_Proxies
 		attr_accessor :hash
@@ -18,15 +18,15 @@ module Lost
 		proxy :fetch
 
 		def proxy_keys
-			Lost::Array.new hash.keys
+			Tape::Array.new hash.keys
 		end
 
 		def proxy_values
-			Lost::Array.new hash.values
+			Tape::Array.new hash.values
 		end
 
 		def proxy_merge other_hash
-			Lost::Dictionary.new hash.merge other_hash.hash
+			Tape::Dictionary.new hash.merge other_hash.hash
 		end
 
 		# note; To prevent Scope#[] or Scope#get from missing out on the actual location of the hash. Standard members still call through to [] and get. I'm manually calling these proxy methods in some places. @copypaste from array.rb

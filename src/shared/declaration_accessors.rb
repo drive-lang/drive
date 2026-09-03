@@ -1,6 +1,6 @@
-# Mixin for Lost::Instance subclasses (external/ruby/*.rb). Forwards unknown method
+# Mixin for Tape::Instance subclasses (external/ruby/*.rb). Forwards unknown method
 # calls to @declarations instead of requiring a hand-written getter/setter pair for
-# every Lost-declared member. A real method (hand-written, or from a superclass)
+# every Tape-declared member. A real method (hand-written, or from a superclass)
 # always wins -- method_missing only runs after Ruby fails to find one.
 module Declaration_Accessors
 	def method_missing name, *args

@@ -1,27 +1,27 @@
-# Builtin types I'm experimenting with, very much incomplete. Each of these should have an equivalent Lost::Type in ./src/runtime/scopes.rb
+# Builtin types I'm experimenting with, very much incomplete. Each of these should have an equivalent Tape::Type in ./src/runtime/scopes.rb
 
 Any {
 	to_s (; 'Any' )
 }
 
-# @load 'lost/table.tape' # lost/ is the stdlib found in ./lost/
-# @load './this.tape'    # relative to wherever you ran bin/lost from (cwd)
-# @load 'that.tape'      # relative to wherever you ran bin/lost from (cwd)
+# @load 'tapes/table.tape' # tapes/ is the stdlib found in ./tapes/
+# @load './this.tape'    # relative to wherever you ran bin/tape from (cwd)
+# @load 'that.tape'      # relative to wherever you ran bin/tape from (cwd)
 # @load 'and_this'      # no .tape extension required
 
-@load 'lost/nil'
-@load 'lost/file_system'
-@load 'lost/date'
-@load 'lost/time'
-@load 'lost/date_time'
-@load 'lost/number'
-@load 'lost/array'
-@load 'lost/dictionary'
-@load 'lost/string'
-@load 'lost/fence'
-@load 'lost/struct'
-@load 'lost/statement'
-@load 'lost/enum'
+@load 'tapes/nil'
+@load 'tapes/file_system'
+@load 'tapes/date'
+@load 'tapes/time'
+@load 'tapes/date_time'
+@load 'tapes/number'
+@load 'tapes/array'
+@load 'tapes/dictionary'
+@load 'tapes/string'
+@load 'tapes/fence'
+@load 'tapes/struct'
+@load 'tapes/statement'
+@load 'tapes/enum'
 
 Range {}
 

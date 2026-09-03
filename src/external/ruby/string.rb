@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class String < Instance
 		require 'digest/md5'
 		extend Ruby_Proxies
@@ -38,11 +38,11 @@ module Lost
 		end
 
 		def proxy_split * args
-			Lost::Array.new value.split(*args)
+			Tape::Array.new value.split(*args)
 		end
 
 		def proxy_chars
-			Lost::Array.new value.chars
+			Tape::Array.new value.chars
 		end
 
 		def + other
@@ -50,14 +50,15 @@ module Lost
 		end
 
 		def * other
+			other = other.value if other.is_a? Tape::Number
 			value * other
 		end
 
 		def == other
-			value == (other.is_a?(Lost::String) ? other.value : other)
+			value == (other.is_a?(Tape::String) ? other.value : other)
 		end
 
-		# Closes the direction the `==` fix above couldn't reach on its own: a raw Ruby ::String on the *left* of `==`  invokes Ruby's own native String#==, not this class's, but Ruby's own implementation already special-cases exactly this: if the right-hand object isn't a String but responds to #to_str, it delegates the comparison to `object == self` instead, which lands right back on Lost::String#== above.
+		# Closes the direction the `==` fix above couldn't reach on its own: a raw Ruby ::String on the *left* of `==`  invokes Ruby's own native String#==, not this class's, but Ruby's own implementation already special-cases exactly this: if the right-hand object isn't a String but responds to #to_str, it delegates the comparison to `object == self` instead, which lands right back on Tape::String#== above.
 		def to_str
 			value
 		end

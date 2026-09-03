@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	module Ascii
 		STYLES = {
 			         reset:     "\e[0m",

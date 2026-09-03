@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/lost'
+require_relative '../src/tape'
 require 'net/http'
 require 'uri'
 require 'timeout'
@@ -17,7 +17,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# `#start_server` used to spawn WEBrick in a Thread.new and return immediately, with nothing synchronizing the caller to when WEBrick actually starts listening. Thread.new returns before the new thread has run at all, so `webrick_server.status` was still :Stop right after start_server returned.
-	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and lost almost every time, so `bin/lost run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
+	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and tape almost every time, so `bin/tape run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
 	def test_start_server_blocks_until_webrick_is_actually_running_regression
 		code = <<~TAPE
 		    Server {
@@ -34,11 +34,11 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -56,7 +56,7 @@ class E2E_Server_Test < Minitest::Test
 
 		    Web_App | Server {
 		    	get:// (;
-		    		"Hello from Lost!"
+		    		"Hello from Tape!"
 		    	)
 
 		    	get://hello/:name ( name;
@@ -67,18 +67,18 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
 		# Test GET /
 		response = Net::HTTP.get_response URI("http://localhost:#{@port}/")
 		assert_equal '200', response.code
-		assert_equal 'Hello from Lost!', response.body
+		assert_equal 'Hello from Tape!', response.body
 
 		# Test parameterized route
 		response = Net::HTTP.get_response URI("http://localhost:#{@port}/hello/World")
@@ -92,7 +92,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# A route matching every segment literally wins over one that leaned on a `:param`, regardless of
-	# declaration order. This is what makes `lost/server.tape`'s `get://favicon.ico` route actually
+	# declaration order. This is what makes `tapes/server.tape`'s `get://favicon.ico` route actually
 	# shield an app's own `get://:id` from the browser's automatic icon probes.
 	def test_literal_route_beats_a_param_route_regardless_of_order
 		code = <<~TAPE
@@ -111,11 +111,11 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -147,11 +147,11 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -179,11 +179,11 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -195,7 +195,7 @@ class E2E_Server_Test < Minitest::Test
 
 	def test_dialog_and_popover_render_through_a_real_route
 		code = <<~TAPE
-		    @load 'lost/html'
+		    @load 'tapes/html'
 
 		    Server {
 		    	port,
@@ -219,11 +219,11 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Lost::Interpreter.new
+		@interpreter    = Tape::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -263,7 +263,7 @@ class E2E_Server_Test < Minitest::Test
 		    b := Server_B(#{port_b})
 		TAPE
 
-		interpreter = Lost::Interpreter.new
+		interpreter = Tape::Interpreter.new
 		interpreter.run code
 
 		a_instance = interpreter.stack.first['a']
@@ -273,11 +273,11 @@ class E2E_Server_Test < Minitest::Test
 		routes_b = interpreter.collect_routes_from_instance b_instance
 
 		@server_runner_a        = a_instance
-		@server_runner_a.port   = Integer(a_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner_a.port   = Integer(a_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner_a.routes = routes_a
 
 		@server_runner_b        = b_instance
-		@server_runner_b.port   = Integer(b_instance.get(:port) || Lost::Server::DEFAULT_PORT)
+		@server_runner_b.port   = Integer(b_instance.get(:port) || Tape::Server::DEFAULT_PORT)
 		@server_runner_b.routes = routes_b
 
 		interpreter.start_server @server_runner_a

@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Dom_Renderer
 		HTML_PREFIX  = 'html_'.freeze
 		CSS_PREFIX   = 'css_'.freeze
@@ -19,14 +19,14 @@ module Lost
 		end
 
 		def has_inner_html? # aka void tag
-			!Lost::VOID_HTML_TAGS.include?(element)
+			!Tape::VOID_HTML_TAGS.include?(element)
 		end
 
 		# nil/false attribute values render nothing at all -- an unset `html_selected: Bool` (which
 		# self-declares to nil) or an explicit `= false` drops the attribute instead of emitting
 		# `selected=""`. `""` and `0` are real values and stay.
 		def blank_attr_value? value
-			value.nil? || value == false || (value.is_a?(Lost::Bool) && !value.truthiness)
+			value.nil? || value == false || (value.is_a?(Tape::Bool) && !value.truthiness)
 		end
 
 		def html_attrs
@@ -68,7 +68,7 @@ module Lost
 		end
 
 		def true_value? value
-			value == true || (value.is_a?(Lost::Bool) && value.truthiness)
+			value == true || (value.is_a?(Tape::Bool) && value.truthiness)
 		end
 
 		def css_attrs_string
@@ -91,11 +91,11 @@ module Lost
 				end
 
 				if onclick_expr
-					html << " data-lost-onclick=\"#{onclick_token}\""
+					html << " data-tape-onclick=\"#{onclick_token}\""
 				end
 
 				if is_input_element?
-					html << " data-lost-id=\"#{input_id_token}\""
+					html << " data-tape-id=\"#{input_id_token}\""
 				end
 
 				html << ">"

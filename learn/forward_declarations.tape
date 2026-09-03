@@ -44,15 +44,15 @@ Warning_Sign {
 A top-level `@load` merges its file's own declarations the same declarative way, so code above it can already use whatever it brings in -- handy for keeping your own code up top and imports out of the way at the bottom:
 ###
 sign2 := Div([P('Do not drink the water')])
-@assert sign2.to_s() == '<div><p>Do not drink the water</p></div>', 'Div should already be usable, even though lost/html.tape is loaded below'
+@assert sign2.to_s() == '<div><p>Do not drink the water</p></div>', 'Div should already be usable, even though tapes/html.tape is loaded below'
 
-@load 'lost/html.tape'
+@load 'tapes/html.tape'
 
 
 ### Variables are the one exception
 
-A plain `:=`/`=` variable assignment is a real step in the program's own order, not a declaration -- reading one before its own line has actually run still raises `Lost::Undeclared_Identifier`, same as any language with top-to-bottom execution:
+A plain `:=`/`=` variable assignment is a real step in the program's own order, not a declaration -- reading one before its own line has actually run still raises `Tape::Undeclared_Identifier`, same as any language with top-to-bottom execution:
 ###
-# @puts "`water_level`"     -- raises Lost::Undeclared_Identifier, water_level hasn't run yet
+# @puts "`water_level`"     -- raises Tape::Undeclared_Identifier, water_level hasn't run yet
 water_level := 12
 @assert water_level == 12, "once its own line runs, a plain variable behaves as usual"

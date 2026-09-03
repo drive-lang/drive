@@ -1,6 +1,6 @@
 require 'sequel'
 
-module Lost
+module Tape
 	class Database < Instance
 		extend Ruby_Proxies
 		include Declaration_Accessors
@@ -14,12 +14,12 @@ module Lost
 		end
 
 		def table_name_for struct
-			Lost.assert struct.get('name'), "table_name_for expects a named struct, got an anonymous one"
+			Tape.assert struct.get('name'), "table_name_for expects a named struct, got an anonymous one"
 			pluralize(underscore(struct.get('name'))).to_sym
 		end
 
 		def proxy_find_or_create_table struct
-			Lost.assert struct.get('name')
+			Tape.assert struct.get('name')
 
 			table = if proxy_table_exists? table_name_for(struct)
 				proxy_find_table struct
@@ -32,13 +32,13 @@ module Lost
 		#   Todo<id: Primary_Key, text: String>
 		#
 		# creates a table called `todos` where the name is inferred from the name of the struct, hence the requirement for it to be named.
-		# @param [Lost::Struct] struct with name
-		# @return [Lost::Table] table
+		# @param [Tape::Struct] struct with name
+		# @return [Tape::Table] table
 		def proxy_create_table struct
-			Lost.assert struct.is_a? Lost::Struct
-			Lost.assert struct.get('name')
+			Tape.assert struct.is_a? Tape::Struct
+			Tape.assert struct.get('name')
 
-			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Lost::Table
+			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Tape::Table
 			connection.create_table table_name_for(struct) do
 				# Structs can have unnamed members because it's basically linear storage with indices as well as names. To create a table, I want both name and type present, otherwise see ya.
 				struct.members.values.each do |member|
@@ -64,15 +64,15 @@ module Lost
 					when 'Time'
 						column column_name, ::Time
 						
-						# note; no Lost types yet for these below
-					when 'Flt', 'Float'
+						# note; no Tape types yet for these below
+					when 'Flo', 'Float'
 						column column_name, ::Float
 					when 'Decimal'
 						column column_name, ::BigDecimal
 					when 'Blob', 'Binary'
 						column column_name, ::File
 					else
-						if member.type.is_a? Lost::Enum
+						if member.type.is_a? Tape::Enum
 							# todo; should these be considered strings? Or maybe integers? Can it be more complex?
 							column column_name, ::String
 						end
@@ -86,17 +86,17 @@ module Lost
 		end
 
 		proxy_overload :find_table,
-		               Lost::Struct => :find_table_struct,
+		               Tape::Struct => :find_table_struct,
 		               ::String     => :find_table_named
 
 		# @param [::Symbol] name as symbol
-		# @return [Lost::Table] table
+		# @return [Tape::Table] table
 		def find_table_named name
-			Lost.assert name.is_a? ::String
+			Tape.assert name.is_a? ::String
 
 			# note; `connection[name]` alone is always truthy so you have to explicitly check if the table exists.
 			if connection.table_exists? name.to_sym
-				table            = Lost::Table.new
+				table            = Tape::Table.new
 				table.table_name = name.to_s
 				table.database   = self
 				table
@@ -106,26 +106,26 @@ module Lost
 		end
 
 		def find_table_struct struct
-			Lost.assert struct.get('name'), "#find_table_struct expects the given struct to be declared with a name."
+			Tape.assert struct.get('name'), "#find_table_struct expects the given struct to be declared with a name."
 			table         = find_table_named table_name_for(struct).to_s
 			table.columns = struct
 			table
 		end
 
-		# @param [::Symbol, Lost::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		# @param [::Symbol, Tape::Struct] name_or_struct a table name, or a named schema struct to derive one from
 		def proxy_delete_table! name_or_struct
-			name = name_or_struct.is_a?(Lost::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			name = name_or_struct.is_a?(Tape::Struct) ? table_name_for(name_or_struct) : name_or_struct
 			connection.drop_table name
 		end
 
-		# @param [::Symbol, Lost::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		# @param [::Symbol, Tape::Struct] name_or_struct a table name, or a named schema struct to derive one from
 		def proxy_table_exists? name_or_struct
-			name = name_or_struct.is_a?(Lost::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			name = name_or_struct.is_a?(Tape::Struct) ? table_name_for(name_or_struct) : name_or_struct
 			connection.table_exists? name
 		end
 
 		def proxy_tables
-			Lost::Array.new connection.tables
+			Tape::Array.new connection.tables
 		end
 
 		def proxy_to_s

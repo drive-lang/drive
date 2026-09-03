@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Expression
 		attr_accessor :lexemes # the entire span of lexemes that make up this expression
 
@@ -11,12 +11,12 @@ module Lost
 
 		def lexeme= lexeme
 			case lexeme
-			when Lost::Lexeme
+			when Tape::Lexeme
 				@value  = lexeme.value
 				@lexeme = lexeme
 			when ::String, ::Symbol
 				@value  = lexeme
-				@lexeme = Lost::Lexeme.new Helpers.type_identifier?(lexeme), lexeme
+				@lexeme = Tape::Lexeme.new Helpers.type_identifier?(lexeme), lexeme
 			end
 		end
 
@@ -63,7 +63,7 @@ module Lost
 				default = param.default ? "=#{param.default.value}" : ''
 				"#{label}#{param.name.value}#{default}"
 			end.join(',')
-			sig += Lost::FUNCTION_DELIMITER
+			sig += Tape::FUNCTION_DELIMITER
 			sig += ')'
 			sig
 		end
@@ -234,7 +234,7 @@ module Lost
 		attr_accessor :header
 		# ```header
 		# ```
-		# Examples are md, css, html, lost, etc
+		# Examples are md, css, html, tape, etc
 	end
 
 	class Statement_Expr < Expression

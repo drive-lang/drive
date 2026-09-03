@@ -16,7 +16,7 @@ A call can start with positional arguments (bare or labeled) and switch to named
 ###
 @assert sub(1, b := 2) == -1, 'positional then named should be fine'
 
-# sub(a := 1, 2)  -- raises Lost::Positional_Argument_After_Named: a positional argument can't follow a named one
+# sub(a := 1, 2)  -- raises Tape::Positional_Argument_After_Named: a positional argument can't follow a named one
 
 
 ### Named arguments work through constructors too
@@ -49,13 +49,13 @@ greet ( name := "World";
 )
 
 @assert greet() == 'Hello, World', 'an omitted param should fall back to its default'
-@assert greet(name := 'Lost') == 'Hello, Lost', 'a named argument should override the default'
+@assert greet(name := 'Tape') == 'Hello, Tape', 'a named argument should override the default'
 
 
 ### What goes wrong
 
 The same name twice, a name that isn't a real param, or a param given both positionally and by name -- all three raise, rather than silently picking one:
 ###
-# sub(a := 1, a := 2)  -- raises Lost::Duplicate_Named_Argument: a was given more than once
-# sub(a := 1, c := 2)  -- raises Lost::Unknown_Named_Argument: c is not a declared parameter
-# sub(1, a := 2)       -- raises Lost::Argument_Given_By_Name_And_Position: a was given both positionally and by name
+# sub(a := 1, a := 2)  -- raises Tape::Duplicate_Named_Argument: a was given more than once
+# sub(a := 1, c := 2)  -- raises Tape::Unknown_Named_Argument: c is not a declared parameter
+# sub(1, a := 2)       -- raises Tape::Argument_Given_By_Name_And_Position: a was given both positionally and by name

@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	# name: String
 	# type: Any
 	# value: Any

@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	# Data container representing return statements and their value.
 	# Example:
 	#     `return 1234` code interprets to `Return.new(1234)`

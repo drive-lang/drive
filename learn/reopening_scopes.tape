@@ -34,4 +34,4 @@ d := Button()
 @pop_scope c
 
 @assert c.onclick == 'clicked', 'the reopened instance should have the new member'
-# d.onclick would raise Lost::Undeclared_Identifier -- only c was reopened, not the Button type
+# d.onclick would raise Tape::Undeclared_Identifier -- only c was reopened, not the Button type

@@ -1,7 +1,7 @@
-module Lost
+module Tape
 	# @param [::String] key
-	# @param [Lost::Expression | Lost::Declaration] expr_or_decl
-	# @param [Lost::Expression] expr, the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution, see Interpreter#resolve_forward_declaration)
+	# @param [Tape::Expression | Tape::Declaration] expr_or_decl
+	# @param [Tape::Expression] expr, the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution, see Interpreter#resolve_forward_declaration)
 	Declaration = ::Data.define(:key, :expr_or_decl, :expr) do
 		def == other
 			other.key == key
@@ -25,8 +25,8 @@ module Lost
 		def self.resolve_load_filepath filepath
 			filepath = filepath.dup
 			filepath << '.tape' unless filepath.end_with? '.tape'
-			if filepath.start_with? 'lost/'
-				File.join Lost::ROOT_PATH, filepath
+			if filepath.start_with? 'tapes/'
+				File.join Tape::ROOT_PATH, filepath
 			else
 				File.expand_path filepath
 			end
@@ -36,10 +36,10 @@ module Lost
 		attr_reader :declarations
 
 		# note; I'm not evaluating any of these input expressions, I'm just storing them
-		# @param [Array<Lost::Expression>] input
+		# @param [Array<Tape::Expression>] input
 		def initialize input = []
-			@input        = input # [Lost::Expression]
-			@declarations = Hash.new # {::String : Lost::Declaration}
+			@input        = input # [Tape::Expression]
+			@declarations = Hash.new # {::String : Tape::Declaration}
 		end
 
 		def output
@@ -56,8 +56,8 @@ module Lost
 			Declaration[key, expr, expr]
 		end
 
-		# @param [Array<Lost::Expression>] expressions
-		# @return [Hash{::String => Lost::Declaration}]
+		# @param [Array<Tape::Expression>] expressions
+		# @return [Hash{::String => Tape::Declaration}]
 		def declare_all expressions
 			expressions.each_with_object(Hash.new) do |expr, declarations|
 				decl = declare expr
@@ -68,7 +68,7 @@ module Lost
 					# a construct that doesn't push its own scope (Conditional_Expr, Circumfix_Expr, a bare @load) hands back its own nested declarations already-collected -- flatten them into this level rather than nesting them under a made-up key
 					declarations.merge! decl
 				else
-					Lost.assert(decl.is_a? Declaration)
+					Tape.assert(decl.is_a? Declaration)
 					declarations[decl.key] = decl
 				end
 			end
@@ -84,8 +84,8 @@ module Lost
 			end
 		end
 
-		# @param [Lost::Directive_Expr] expr
-		# @return [Hash{::String => Lost::Declaration}, nil]
+		# @param [Tape::Directive_Expr] expr
+		# @return [Hash{::String => Tape::Declaration}, nil]
 		def declarations_for_load expr
 			return nil unless expr.expression.is_a? String_Expr
 
@@ -103,7 +103,7 @@ module Lost
 		end
 
 		# @param [::String] filepath
-		# @return [Hash{::String => Lost::Declaration}]
+		# @return [Hash{::String => Tape::Declaration}]
 		def cached_declarations_for_load filepath
 			filepath = self.class.resolve_load_filepath filepath
 			return Hash.new if self.class.currently_loading_filepaths.include? filepath
@@ -111,7 +111,7 @@ module Lost
 			cached = self.class.cached_declarations_by_filepath[filepath]
 			return cached if cached
 
-			expressions = Lost::Interpreter.cached_expressions_by_filepath[filepath] ||
+			expressions = Tape::Interpreter.cached_expressions_by_filepath[filepath] ||
 			              Parser.new(Lexer.new(File.read(filepath)).output).output
 
 			self.class.currently_loading_filepaths << filepath
@@ -123,8 +123,8 @@ module Lost
 			Hash.new # missing/unreadable file -- not this pass's job to raise; the real @load will, once actually reached
 		end
 
-		# @param [Lost::Expression] expr to declare
-		# @return [Lost::Declaration, Hash, nil]
+		# @param [Tape::Expression] expr to declare
+		# @return [Tape::Declaration, Hash, nil]
 		def declare expr
 			case expr
 			when Param_Expr

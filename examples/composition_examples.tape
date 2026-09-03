@@ -1,5 +1,5 @@
 ###Composition Operators Example
-This file demonstrates the four class composition operators in Lost:
+This file demonstrates the four class composition operators in Tape:
   | (Union)               - Combine all properties from both classes
   & (Intersection)        - Keep only shared properties
   ~ (Removal)             - Remove properties from one class

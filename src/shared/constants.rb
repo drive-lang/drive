@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	DOM_CONSTRUCTOR_PROP_NAMES    = %w(onclick key)
 	DOM_CONSTRUCTOR_PROP_PREFIXES = %w(html_ css_)
 	HTML_ATTRS                    = %w(id class href)

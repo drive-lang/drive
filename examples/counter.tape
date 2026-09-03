@@ -3,8 +3,8 @@
 # When the button is clicked, the count increments and the UI updates
 # without a full page reload.
 
-@load 'lost/html.tape'
-@load 'lost/server.tape'
+@load 'tapes/html.tape'
+@load 'tapes/server.tape'
 
 # @cd pushes a Type onto the scope stack, allowing you to modify its
 # definition. These changes are appended to Button's expressions, so

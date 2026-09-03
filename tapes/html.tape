@@ -242,3 +242,46 @@ Dialog | Dom {
 Style | Dom {
 	html_element := 'style'
 }
+
+###
+Fieldset + Legend: Native solution for bordered boxes with a title breaking the top border line. Browsers render legend directly inside the top border path of a fieldset without requiring custom border-rebuilding hacks.
+Pre + Code: Essential for exact character-grid alignment, block art (▓▒░), and multi-line ASCII/ANSI-style layouts where whitespace and monospaced font geometry must be preserved.
+Kbd & Samp: Semantic elements ideal for rendering keybindings (e.g., [CTRL+C]) and terminal execution output.
+Link: Needed in Head to pull in custom retro webfonts (like VT323, IBM Plex Mono, or Fixedsys).
+###
+
+Fieldset | Dom {
+	html_element := 'fieldset'
+}
+
+Legend | Dom {
+	html_element := 'legend'
+}
+
+Kbd | Dom {
+	html_element := 'kbd'
+}
+
+Samp | Dom {
+	html_element := 'samp'
+}
+
+Meta | Dom {
+	html_element := 'meta'
+}
+
+Utf8_Meta | Meta {
+    html_charset := 'utf-8'
+}
+
+Link | Dom {
+	html_element := 'link'
+}
+
+Script | Dom {
+	html_element := 'script'
+}
+
+Canvas | Dom {
+	html_element := 'canvas'
+}

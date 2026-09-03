@@ -10,7 +10,7 @@ Member {
 	)
 
 	to_s ( compact := false;
-		# A member can genuinely hold `false` as its value (`done := false`), which is falsy in Lost -- same as `nil` under a plain truthy check (`if value`), even though only `nil` actually means "no value was ever set". Every branch below checks presence via `has_value` instead, so a real `false` value still prints as one rather than looking unset.
+		# A member can genuinely hold `false` as its value (`done := false`), which is falsy in Tape -- same as `nil` under a plain truthy check (`if value`), even though only `nil` actually means "no value was ever set". Every branch below checks presence via `has_value` instead, so a real `false` value still prints as one rather than looking unset.
 		has_value := value != nil
 
 		# `.?pretty_print()` -- for an unnamed schema-only member (`<String, Number>`), `value` is the bare String Type object itself, not an actual instance, so a plain `.pretty_print()` would raise Cannot_Call_Instance_Member_On_Type. Falls back to `value` itself (its own to_s -- the type's name) when that's the case.
@@ -52,7 +52,7 @@ Member {
 	)
 
 	@operator == @infix ( left: Member, right;
-		# `right: Member` isn't runtime-enforced -- `.?name`/`.?type`/`.?value` (rather than bare `.`) keep this from raising when `right` isn't Member-shaped at all (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix), same fix as lost/string.tape's own `==`.
+		# `right: Member` isn't runtime-enforced -- `.?name`/`.?type`/`.?value` (rather than bare `.`) keep this from raising when `right` isn't Member-shaped at all (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix), same fix as tapes/string.tape's own `==`.
 		left.name == right.?name and left.type == right.?type and left.value == right.?value
 	)
 }

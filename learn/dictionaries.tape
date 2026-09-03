@@ -1,6 +1,6 @@
 ### Introduction
 
-Dictionaries are `{}` literals of key-value pairs. Backed by `Lost::Dictionary`, wrapping a real Ruby hash in `.hash`. Keys can be symbols, strings, or identifiers referencing those. Subscript access reads by key. Dot-access also reads by key.
+Dictionaries are `{}` literals of key-value pairs. Backed by `Tape::Dictionary`, wrapping a real Ruby hash in `.hash`. Keys can be symbols, strings, or identifiers referencing those. Subscript access reads by key. Dot-access also reads by key.
 ###
 survivor := {name: 'Jack', number: 23}
 @assert survivor[:name] == 'Jack', 'subscript should read by key'

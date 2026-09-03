@@ -1,13 +1,13 @@
 ### Introduction
 
-`:=` declares a variable and infers a type from its right-hand side, then locks that identifier to the inferred type. Every later plain `=` assignment is checked against the locked type, raising `Lost::Type_Contract_Violation` on a mismatch -- this is a runtime check, separate from the static type checker's own `Type_Mismatch`.
+`:=` declares a variable and infers a type from its right-hand side, then locks that identifier to the inferred type. Every later plain `=` assignment is checked against the locked type, raising `Tape::Type_Contract_Violation` on a mismatch -- this is a runtime check, separate from the static type checker's own `Type_Mismatch`.
 ###
 survivors := 48   # locks survivors to Number
 survivors = 47     # ok -- still a Number
 
 @assert survivors == 47, 'a same-type reassignment should be allowed'
 
-# survivors = 'forty-seven'  -- raises Lost::Type_Contract_Violation
+# survivors = 'forty-seven'  -- raises Tape::Type_Contract_Violation
 
 
 ### Reusing := on the same variable redeclares it, and relocks the type
@@ -22,9 +22,9 @@ status := 'stranded'   # fine -- := re-infers and re-locks
 
 ### = requires a prior declaration
 
-Plain `=` can only assign to an identifier that's already been declared -- by `:=`, by a `: Type` annotation, or by one of the other self-declaring forms. Assigning to a name that's never been declared at all raises `Lost::Cannot_Assign_Undeclared_Identifier`.
+Plain `=` can only assign to an identifier that's already been declared -- by `:=`, by a `: Type` annotation, or by one of the other self-declaring forms. Assigning to a name that's never been declared at all raises `Tape::Cannot_Assign_Undeclared_Identifier`.
 ###
-# raft_ready = true  -- raises Lost::Cannot_Assign_Undeclared_Identifier, raft_ready was never declared
+# raft_ready = true  -- raises Tape::Cannot_Assign_Undeclared_Identifier, raft_ready was never declared
 
 
 ### := always declares fresh on the current scope

@@ -20,9 +20,9 @@ Nothing forces every call to use labels -- a labeled param can still be called p
 
 ### A wrong label raises
 
-Supplying a label that doesn't match what's declared at that position raises `Lost::Argument_Label_Mismatch`, including using a label where none was declared at all.
+Supplying a label that doesn't match what's declared at that position raises `Tape::Argument_Label_Mismatch`, including using a label where none was declared at all.
 ###
-# send_message(from: 'Jack', body: 'oops')  -- raises Lost::Argument_Label_Mismatch: Expected to:, got from:
+# send_message(from: 'Jack', body: 'oops')  -- raises Tape::Argument_Label_Mismatch: Expected to:, got from:
 
 
 ### The same label can repeat

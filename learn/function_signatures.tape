@@ -27,6 +27,6 @@ radio = send_flare   # ok -- same shape: (Number) -> String
 
 ### Assigning checks the shape, not the name
 
-Reassigning a signature-typed identifier checks the actual param/return types of whatever function is assigned -- a mismatched shape raises `Lost::Type_Contract_Violation`, the same runtime contract `:=` itself uses.
+Reassigning a signature-typed identifier checks the actual param/return types of whatever function is assigned -- a mismatched shape raises `Tape::Type_Contract_Violation`, the same runtime contract `:=` itself uses.
 ###
-# radio = (strength; strength)  -- raises Lost::Type_Contract_Violation: wrong shape, no declared types at all
+# radio = (strength; strength)  -- raises Tape::Type_Contract_Violation: wrong shape, no declared types at all

@@ -10,4 +10,4 @@ Greet {
 	)
 }
 
-Greet('Lost').greeting()
+Greet('Tape').greeting()

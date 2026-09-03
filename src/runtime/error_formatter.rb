@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Error_Formatter
 		attr_reader :error, :expression
 
@@ -12,7 +12,7 @@ module Lost
 		end
 
 		def error_name_styled
-			Lost::Ascii.bold(Lost::Ascii.red(error.class.name.split('::').last))
+			Tape::Ascii.bold(Tape::Ascii.red(error.class.name.split('::').last))
 		end
 
 		def format
@@ -27,7 +27,7 @@ module Lost
 
 		def location_line
 			# todo bug: Does not display source code properly
-			if expression.is_a?(Lost::Expression) && expression.l0
+			if expression.is_a?(Tape::Expression) && expression.l0
 				Ascii.underline "#{display_source_file}:#{expression.l0}:#{expression.c0}"
 			else
 				# todo: How do I get the source string here?
@@ -49,7 +49,7 @@ module Lost
 			return nil unless l0
 
 			source_file = get_source_file
-			lines       = Lost::Interpreter.cached_source_by_filename[source_file] || []
+			lines       = Tape::Interpreter.cached_source_by_filename[source_file] || []
 			return nil if lines.empty?
 
 			# Determine snippet boundaries
@@ -65,7 +65,7 @@ module Lost
 
 				# Expand tabs once per line for consistent display
 				visual_content = line_content.gsub("\t", "    ")
-				prefix         = Lost::Ascii.cyan("#{line_num.to_s.rjust(5)} │ ")
+				prefix         = Tape::Ascii.cyan("#{line_num.to_s.rjust(5)} │ ")
 
 				is_error_line = (line_num >= l0 && line_num <= l1)
 
@@ -85,19 +85,19 @@ module Lost
 					after      = visual_content[visual_end_char_count..-1] || ""
 
 					# Apply color/style to the error span
-					styled_span = Lost::Ascii.bold(Lost::Ascii.red(error_span))
+					styled_span = Tape::Ascii.bold(Tape::Ascii.red(error_span))
 
 					# Use Colors.make only for the single-line case where we want a different style
 					if l0 == l1 && line_num == l0
-						styled_span = Lost::Ascii.bold(Lost::Ascii.make(error_span))
+						styled_span = Tape::Ascii.bold(Tape::Ascii.make(error_span))
 					end
 
 					snippet_lines << prefix + before + styled_span + after
 					spaces      = " " * visual_start_char_count
 					error_label = error_name.gsub '_', ' '
 
-					prefix     = Lost::Ascii.cyan("#{' '.rjust(5)} │ ")
-					error_line = spaces + Lost::Ascii.bold(Lost::Ascii.red("╰── " + error_label))
+					prefix     = Tape::Ascii.cyan("#{' '.rjust(5)} │ ")
+					error_line = spaces + Tape::Ascii.bold(Tape::Ascii.red("╰── " + error_label))
 					snippet_lines << prefix + error_line
 				else
 					# Regular surrounding line
@@ -111,7 +111,7 @@ module Lost
 		private
 
 		def get_location_coords
-			if expression.is_a?(Lost::Expression) && expression.l0
+			if expression.is_a?(Tape::Expression) && expression.l0
 				[expression.l0, expression.c0, expression.l1 || expression.l0, expression.c1 || expression.c0]
 			else
 				[nil, nil, nil, nil]

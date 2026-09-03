@@ -21,7 +21,7 @@ Six more variants force every word to a particular casing rather than preserving
 
 ### It's a real Array
 
-Every percent literal is a genuine `Lost::Array`, not just something that prints like one -- `.values` gives the underlying Ruby-side values, and any Array method works on it.
+Every percent literal is a genuine `Tape::Array`, not just something that prints like one -- `.values` gives the underlying Ruby-side values, and any Array method works on it.
 ###
 letters := %string(a b c)
 @assert letters == ['a', 'b', 'c'], 'a percent literal should compare equal to an equivalent Array literal'
@@ -47,6 +47,6 @@ cool := 2342
 
 ### What goes wrong
 
-Anything besides a plain identifier, number, operator, or `` `expr` `` item inside the parens -- a string literal, `[1, 2]`, any other bracketed/quoted expression -- raises `Lost::Invalid_Percent_Literal_Expression`.
+Anything besides a plain identifier, number, operator, or `` `expr` `` item inside the parens -- a string literal, `[1, 2]`, any other bracketed/quoted expression -- raises `Tape::Invalid_Percent_Literal_Expression`.
 ###
-# %str('foo')  -- raises Lost::Invalid_Percent_Literal_Expression: %str(Lost::String_Expr) expects %str(Lost::Identifier_Expr or Lost::Number_Expr or Lost::Operator_Expr)
+# %str('foo')  -- raises Tape::Invalid_Percent_Literal_Expression: %str(Tape::String_Expr) expects %str(Tape::Identifier_Expr or Tape::Number_Expr or Tape::Operator_Expr)

@@ -1,6 +1,6 @@
 require_relative 'error_formatter'
 
-module Lost
+module Tape
 	class Error < StandardError
 		attr_accessor :expression
 
@@ -25,7 +25,7 @@ module Lost
 	end
 
 	class Undeclared_Identifier < Error
-		# `expression` is whatever AST node was being resolved when lookup failed, usually an Lost::Identifier_Expr (a plain identifier reference), but also an Lost::Type_Expr when a bare type reference (`Abc()`) never got declared. Both expose `.value` via the shared Expression base (set from their own lexeme), so one implementation covers either raise site without caring which one it actually got.
+		# `expression` is whatever AST node was being resolved when lookup failed, usually an Tape::Identifier_Expr (a plain identifier reference), but also an Tape::Type_Expr when a bare type reference (`Abc()`) never got declared. Both expose `.value` via the shared Expression base (set from their own lexeme), so one implementation covers either raise site without caring which one it actually got.
 		def detail_message
 			name = expression.respond_to?(:value) ? expression.value : nil
 			return nil unless name
@@ -35,11 +35,11 @@ module Lost
 
 	class Undeclared_Tagged_Type < Error
 		# No declared variant matches this structure -- also raised for a Bare Named Struct redeclared with a different shape. `expression` is a Type_Expr or a bare Struct_Expr (`.name` a raw Lexeme then).
-		# @expression: Lost::Type_Expr | Lost::Struct_Expr
+		# @expression: Tape::Type_Expr | Tape::Struct_Expr
 
 		def detail_message
-			if expression.is_a? Lost::Struct_Expr
-				name      = expression.name.is_a?(Lost::Lexeme) ? expression.name.value : expression.name
+			if expression.is_a? Tape::Struct_Expr
+				name      = expression.name.is_a?(Tape::Lexeme) ? expression.name.value : expression.name
 				structure = expression.to_s
 			else
 				name      = expression.name
@@ -52,11 +52,11 @@ module Lost
 	end
 
 	# A named reference (`Abc\Task_Schema`) resolved to something other than a Struct or Type -- neither form has a valid target.
-	# @expression: Lost::Type_Expr
+	# @expression: Tape::Type_Expr
 	class Tag_Reference_Must_Be_Type_Or_Struct < Error
 		def detail_message
-			label = expression.respond_to?(:name) ? "#{expression.name}#{Lost::TAG_OPERATOR}#{expression.tag&.value}" : expression.value
-			"`#{Ascii.bold label}` -- the right-hand side of `#{Lost::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
+			label = expression.respond_to?(:name) ? "#{expression.name}#{Tape::TAG_OPERATOR}#{expression.tag&.value}" : expression.value
+			"`#{Ascii.bold label}` -- the right-hand side of `#{Tape::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
 		end
 	end
 
@@ -111,7 +111,7 @@ module Lost
 	end
 
 	class Receiver_Is_Nil < Error
-		# `expression` is the `.`/`.?` Lost::Infix_Expr whose left side evaluated to nil, for both reads
+		# `expression` is the `.`/`.?` Tape::Infix_Expr whose left side evaluated to nil, for both reads
 		# (`task.type`) and writes (`task.type = x`). `.right.value` is the member being reached for;
 		# `.left.value`, when the left is a plain identifier, names the nil receiver.
 		def detail_message
@@ -443,7 +443,7 @@ module Lost
 			exprs    = expression.expressions
 			given    = exprs.map(&:class).join(', ')
 			expected = exprs.map do |it|
-				'Lost::Identifier_Expr or Lost::Number_Expr or Lost::Operator_Expr'
+				'Tape::Identifier_Expr or Tape::Number_Expr or Tape::Operator_Expr'
 			end.join(', ')
 			"%#{kind}(#{given}) expects %#{kind}(#{expected})"
 		end

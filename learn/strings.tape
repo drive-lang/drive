@@ -1,6 +1,6 @@
 ### Introduction
 
-Strings use single or double quotes. Backed by `Lost::String`, wrapping a real Ruby string in `.value`. `length` is a plain property, no parens -- everything else below is a method call.
+Strings use single or double quotes. Backed by `Tape::String`, wrapping a real Ruby string in `.value`. `length` is a plain property, no parens -- everything else below is a method call.
 ###
 name := 'Jack Shephard'
 @assert name.length == 13, 'length should count the characters'

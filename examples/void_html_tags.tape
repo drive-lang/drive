@@ -1,5 +1,5 @@
-@load 'lost/html.tape'
-@load 'lost/server.tape'
+@load 'tapes/html.tape'
+@load 'tapes/server.tape'
 
 Inverted_Html | Html {
 	css_filter := 'invert()'

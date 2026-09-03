@@ -1,7 +1,7 @@
-require_relative '../lost'
+require_relative '../tape'
 require 'readline'
 
-module Lost
+module Tape
 	class REPL
 		HELP = <<~TEXT
 		    exit with \\q, \\x, or exit
@@ -15,7 +15,7 @@ module Lost
 		end
 
 		def run
-			puts Ascii.dim "Lost REPL  \\q to quit"
+			puts Ascii.dim "Tape REPL  \\q to quit"
 
 			Readline.completion_append_character = nil
 			Readline.completion_proc             = proc { [] }

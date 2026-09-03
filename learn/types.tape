@@ -1,6 +1,6 @@
 ### Introduction
 
-Capitalization tells Lost what something is, instead of a keyword. UPPERCASE is a constant (`ISLAND`), Capitalized is a type (`Survivor`), lowercase is a variable or function (`name`, `push_button`). A type is declared with `Identifier { body }` -- no `class` keyword needed, the capital letter already said it.
+Capitalization tells Tape what something is, instead of a keyword. UPPERCASE is a constant (`ISLAND`), Capitalized is a type (`Survivor`), lowercase is a variable or function (`name`, `push_button`). A type is declared with `Identifier { body }` -- no `class` keyword needed, the capital letter already said it.
 ###
 Survivor {
 	name,
@@ -96,7 +96,7 @@ monster := Smoke_Monster('Smoke Monster', 'control the Island')
 
 ### Composition: | union
 
-Lost has no inheritance -- types compose instead, with four operators borrowed from set theory. `|` (union) merges every declaration from the right side into the left, with the LEFT side winning any name conflicts. Multiple operators chain freely:
+Tape has no inheritance -- types compose instead, with four operators borrowed from set theory. `|` (union) merges every declaration from the right side into the left, with the LEFT side winning any name conflicts. Multiple operators chain freely:
 ###
 Castaway {
 	survived_815 := true

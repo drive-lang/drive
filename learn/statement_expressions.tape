@@ -1,9 +1,9 @@
 ### Introduction
 
-A backtick-wrapped expression -- `` `expr` `` -- doesn't run right away. It builds an `Lost::Statement` that wraps the expression as-is, callable later with `()`.
+A backtick-wrapped expression -- `` `expr` `` -- doesn't run right away. It builds an `Tape::Statement` that wraps the expression as-is, callable later with `()`.
 ###
 x := `1+2`
-@assert "x: `x`" == 'x: Statement{Lost::Infix_Expr}', 'a bare Statement should describe the expression it wraps'
+@assert "x: `x`" == 'x: Statement{Tape::Infix_Expr}', 'a bare Statement should describe the expression it wraps'
 @assert x() == 3, 'calling a Statement should run the wrapped expression'
 
 
@@ -48,6 +48,6 @@ z := `5 * 5`
 
 Directives like `@load` are ordinary expressions too, so wrapping one in backticks defers it the same way -- build the Statement now, run the load later.
 ###
-loader := `@load 'lost/string'`
+loader := `@load 'tapes/string'`
 loader()
-@assert 'lost'.upcase() == 'LOST', 'the deferred @load should have run once the Statement was called'
+@assert 'tape'.upcase() == 'TAPE', 'the deferred @load should have run once the Statement was called'

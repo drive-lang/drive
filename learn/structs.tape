@@ -1,6 +1,6 @@
 ### Introduction
 
-Sometimes you want to attach a small bundle of typed data to something without declaring a whole new Type for it. Structs are Lost's answer: `<...>` builds a small, runtime-inspectable value on the spot.
+Sometimes you want to attach a small bundle of typed data to something without declaring a whole new Type for it. Structs are Tape's answer: `<...>` builds a small, runtime-inspectable value on the spot.
 
 This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see learn/tagged_types.tape for that.
 ###
@@ -13,10 +13,10 @@ type_names := pair.types.values.map((it;
 
 ### Two layers, don't confuse them
 
-- Lost::Member/Lost::Struct (Ruby, src/external/ruby/struct.rb + member.rb) -- the low-level engine behind every `<...>` literal above. Always present, no load required.
-- Member/Struct (Lost, lost/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`lost/preload.tape` -- `@load 'lost/struct.tape'` here is redundant, just explicit). Gives you a proper Lost-level Struct type with a real `.members` array, `has?`/`include?`, and custom `==`/`+` operators, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
+- Tape::Member/Tape::Struct (Ruby, src/external/ruby/struct.rb + member.rb) -- the low-level engine behind every `<...>` literal above. Always present, no load required.
+- Member/Struct (Tape, tapes/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`tapes/preload.tape` -- `@load 'tapes/struct.tape'` here is redundant, just explicit). Gives you a proper Tape-level Struct type with a real `.members` array, `has?`/`include?`, and custom `==`/`+` operators, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
 ###
-@load 'lost/struct.tape'
+@load 'tapes/struct.tape'
 
 
 ### Members
@@ -85,5 +85,5 @@ n := Named <String, Number>
 This only kicks in when the identifier is genuinely undeclared -- a name that collides with something real still behaves exactly as it always did:
 ###
 Abc\<Number> {}
-# Abc<String> would raise Lost::Undeclared_Type_Structure --
+# Abc<String> would raise Tape::Undeclared_Type_Structure --
 # Abc is declared (tagged, via `\`), just not with that shape, so it's never treated as a bare named struct.

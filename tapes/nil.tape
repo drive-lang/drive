@@ -1,4 +1,4 @@
-@load 'lost/struct'
+@load 'tapes/struct'
 
 # This is the type of the `nil` you see throughout code.
 Nil {

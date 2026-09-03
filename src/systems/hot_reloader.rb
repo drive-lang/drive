@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	# Runs a `.tape` entry file and, if it starts a server, keeps the process alive and re-runs the
 	# whole file whenever any watched `.tape` changes on disk. Each cycle is a brand-new Interpreter
 	# (all instance state reset for free) plus a drop of the class-level lex/parse caches -- no
@@ -11,7 +11,7 @@ module Lost
 			@events = Queue.new # fed [:change] by Listen and [:shutdown] by the INT/TERM trap
 		end
 
-		# @return [[Lost::Interpreter, Object]] the interpreter and its last output, for a one-shot
+		# @return [[Tape::Interpreter, Object]] the interpreter and its last output, for a one-shot
 		#   script; [nil, nil] once a server session ends via ^C.
 		def run
 			$stdout.sync = true # a watch process should print reload/announce lines as they happen
@@ -37,37 +37,40 @@ module Lost
 					return [nil, nil]
 				when :change
 					interpreter&.shutdown_all_servers
-					Lost::Interpreter.reset_file_caches!
-					puts Lost::Ascii.dim '↻ reloading'
+					Tape::Interpreter.reset_file_caches!
+					puts Tape::Ascii.dim '↻ reloading'
 				end
 			end
 		end
 
 		private
 
-		# @return [[Lost::Interpreter, Object, Exception, nil]]
+		# @return [[Tape::Interpreter, Object, Exception, nil]]
 		def run_entry
-			interpreter                     = Lost::Interpreter.new
+			interpreter                     = Tape::Interpreter.new
 			interpreter.serve_in_foreground = false # this class owns the wait loop, not Interpreter#run
+			interpreter.live_reload         = true  # mount /_tape/live-reload + inject its client script;
+			#                                         each cycle's fresh Interpreter carries a new token,
+			#                                         which is what tells the browser to refresh
 
 			source = File.read @entry
 			interpreter.register_source @entry, source
 			interpreter.run source
 			[interpreter, interpreter.last_output, nil]
-		rescue Lost::Error, Errno::ENOENT => e
+		rescue Tape::Error, Errno::ENOENT => e
 			[interpreter, nil, e]
 		end
 
 		def announce interpreter
 			interpreter.servers.each do |server|
-				puts "Lost server `#{server.name}` on http://localhost:#{server.port}"
+				puts "Tape server `#{server.name}` on http://localhost:#{server.port}"
 			end
-			puts Lost::Ascii.dim 'watching .tape files — ^C to stop'
+			puts Tape::Ascii.dim 'watching .tape files — ^C to stop (browser auto-refreshes on save)'
 		end
 
 		def report_error error
 			$stderr.puts error.message
-			$stderr.puts Lost::Ascii.dim 'save a fix to retry'
+			$stderr.puts Tape::Ascii.dim 'save a fix to retry'
 		end
 
 		def install_signal_traps
@@ -88,13 +91,13 @@ module Lost
 			@listener.start
 		end
 
-		# The stdlib dir (the user edits `lost/*.tape` too) plus the entry file's own dir when that
+		# The stdlib dir (the user edits `tapes/*.tape` too) plus the entry file's own dir when that
 		# sits outside it. Listen watches recursively.
 		def watch_dirs
-			lost_dir  = File.join(Lost::ROOT_PATH, 'lost')
+			tape_dir  = File.join(Tape::ROOT_PATH, 'tapes')
 			entry_dir = File.dirname(@entry)
-			dirs      = [lost_dir]
-			dirs << entry_dir unless entry_dir == lost_dir || entry_dir.start_with?("#{lost_dir}/")
+			dirs      = [tape_dir]
+			dirs << entry_dir unless entry_dir == tape_dir || entry_dir.start_with?("#{tape_dir}/")
 			dirs
 		end
 	end

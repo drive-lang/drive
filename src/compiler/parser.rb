@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Parser
 		attr_accessor :i, :input, :precedences
 
@@ -69,7 +69,7 @@ module Lost
 			end
 		end
 
-		# If the given operator doesn't exist then it returns Lost::DEFAULT_OPERATOR_PRECEDENCE which binds somewhere around the equality operators. See Lost::PRECEDENCES
+		# If the given operator doesn't exist then it returns Tape::DEFAULT_OPERATOR_PRECEDENCE which binds somewhere around the equality operators. See Tape::PRECEDENCES
 		# Neat reference for precedences: https://rosettacode.org/wiki/Operator_precedence
 		# @param operator [::String]
 		# @return precedence [Integer]
@@ -83,7 +83,7 @@ module Lost
 		end
 
 		# input[i]
-		# @return [Lost::Lexeme]
+		# @return [Tape::Lexeme]
 		def curr_lexeme
 			input[i]
 		end
@@ -113,7 +113,7 @@ module Lost
 			slice.each_with_index.all? do |lexeme, index|
 				expected = sequence[index]
 
-				if expected.is_a?(Lost::Array) || expected.is_a?(::Array)
+				if expected.is_a?(Tape::Array) || expected.is_a?(::Array)
 					expected.any? do |alt|
 						lexeme.is(alt)
 					end
@@ -163,7 +163,7 @@ module Lost
 				depth += 1 if token.value == '('
 				depth -= 1 if token.value == ')'
 
-				return true if token.value == Lost::FUNCTION_DELIMITER && depth == 1
+				return true if token.value == Tape::FUNCTION_DELIMITER && depth == 1
 				return false if depth <= 0 && token.value == ')'
 			end
 			false
@@ -183,7 +183,7 @@ module Lost
 				depth -= 1 if token.value == ')'
 				return false if depth <= 0
 
-				return true if token.value == Lost::FUNCTION_DELIMITER
+				return true if token.value == Tape::FUNCTION_DELIMITER
 				next if token.type == :newline
 				next if %i[identifier Identifier].include? token.type
 				next if PARAM_LIST_TOKEN_VALUES.include? token.value
@@ -225,11 +225,11 @@ module Lost
 		#   end
 		#
 		def parse_for_loop_expr
-			it            = Lost::For_Loop_Expr.new
+			it            = Tape::For_Loop_Expr.new
 			it.lexeme     = eat 'for'
 			it.collection = parse_expression
 
-			if curr? Lost::FOR_VERBS and verb = eat
+			if curr? Tape::FOR_VERBS and verb = eat
 				it.type   = verb
 				it.lexeme = verb
 			end
@@ -253,7 +253,7 @@ module Lost
 		end
 
 		def parse_conditional_expr
-			it            = Lost::Conditional_Expr.new
+			it            = Tape::Conditional_Expr.new
 			it.type       = eat # One of %w(if while unless until)
 			it.condition  = parse_expression
 			it.when_true  = []
@@ -291,7 +291,7 @@ module Lost
 
 		def parse_circumfix_expr opening: '('
 			start = curr_lexeme
-			it    = Lost::Circumfix_Expr.new
+			it    = Tape::Circumfix_Expr.new
 			it.grouping = CIRCUMFIX_GROUPINGS[opening] or raise "parse_circumfix_expr unknown opening #{opening}"
 			eat opening
 			reduce_newlines
@@ -327,7 +327,7 @@ module Lost
 		# ]
 		def parse_enum_expr
 			# TYPE_IDENT [
-			expr             = Lost::Enum_Expr.new
+			expr             = Tape::Enum_Expr.new
 			expr.expressions = []
 			expr.name        = eat TYPE_IDENTIFIER
 			eat '['
@@ -347,21 +347,21 @@ module Lost
 					#   TYPE_IDENT: TYPE_IDENT = EXPR
 					item_name = parse_identifier_expr # also consumes a trailing `: Type` annotation itself, if there is one
 
-					Lost.assert item_name.is_a? Lost::Identifier_Expr
+					Tape.assert item_name.is_a? Tape::Identifier_Expr
 
 					case curr_lexeme.value
 					when ','
 						parse_nil_init_expr item_name
 					when ':='
 						eat ':='
-						infix          = Lost::Infix_Expr.new
+						infix          = Tape::Infix_Expr.new
 						infix.operator = Lexeme.new(:operator, ':=')
 						infix.left     = item_name
 						infix.right    = parse_expression
 						infix
 					when '='
 						eat '='
-						infix          = Lost::Infix_Expr.new
+						infix          = Tape::Infix_Expr.new
 						infix.operator = Lexeme.new(:operator, '=')
 						infix.left     = item_name
 						infix.right    = parse_expression
@@ -384,7 +384,7 @@ module Lost
 		def parse_func precedence = STARTING_PRECEDENCE
 			named            = curr?(:identifier)
 			start            = curr_lexeme
-			func             = Lost::Func_Expr.new
+			func             = Tape::Func_Expr.new
 			func.expressions = [] # Expression
 			func.parameters  = [] # Param_Expr
 
@@ -401,7 +401,7 @@ module Lost
 			eat '('
 			reduce_newlines
 
-			until curr? Lost::FUNCTION_DELIMITER
+			until curr? Tape::FUNCTION_DELIMITER
 				before_i = @i
 
 				if curr? '->' and eat '->'
@@ -410,9 +410,9 @@ module Lost
 					next
 				end
 
-				param = Lost::Param_Expr.new
+				param = Tape::Param_Expr.new
 
-				if curr? Lost::BUILTIN_OPERATOR
+				if curr? Tape::BUILTIN_OPERATOR
 					identifier = parse_identifier_expr
 					case identifier&.value
 					when 'add_readable_scope', 'add_readable', 'readable'
@@ -472,7 +472,7 @@ module Lost
 				raise "unexpected #{curr_lexeme.value.inspect} in function parameter list" if @i == before_i
 			end
 
-			eat Lost::FUNCTION_DELIMITER if curr? Lost::FUNCTION_DELIMITER
+			eat Tape::FUNCTION_DELIMITER if curr? Tape::FUNCTION_DELIMITER
 			reduce_newlines
 
 			until curr? ')'
@@ -487,9 +487,9 @@ module Lost
 			# A declared return type with no real body (just params) is a signature-only declaration — either self-declaring under a name (`double: (Number -> Number;)`) or anonymous (`(Number, Number -> Number;)`). Every param slot in a signature must carry a type (there's no name to fall back on at call sites), so a named-but-untyped param here (`(a -> Number;)`) is malformed.
 			if func.type && !has_real_body
 				untyped_param = func.parameters.find { |param| param.type.nil? }
-				raise Lost::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
+				raise Tape::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
 
-				sig        = Lost::Func_Signature_Expr.new
+				sig        = Tape::Func_Signature_Expr.new
 				sig.name   = func.name
 				sig.type   = func.type
 				sig.lexeme = func.lexeme
@@ -527,8 +527,8 @@ module Lost
 		def integer_tag_struct_expr
 			start  = curr_lexeme
 			member = parse_number_expr
-			Lost::Struct_Expr.new.tap do |it|
-				it.lexeme      = Lost::Lexeme.new :struct, '<>'
+			Tape::Struct_Expr.new.tap do |it|
+				it.lexeme      = Tape::Lexeme.new :struct, '<>'
 				it.types       = [member]
 				it.names       = [nil]
 				it.c0          = start.c0
@@ -542,9 +542,9 @@ module Lost
 		def parse_struct
 			# TYPE_IDENTIFIER <...>
 			start = curr_lexeme
-			Lost::Struct_Expr.new.tap do |it|
+			Tape::Struct_Expr.new.tap do |it|
 				it.name   = eat if curr? TYPE_IDENTIFIER
-				it.lexeme = Lost::Lexeme.new :struct, '<>'
+				it.lexeme = Tape::Lexeme.new :struct, '<>'
 				it.types  = []
 				it.names  = []
 				eat '<'
@@ -568,16 +568,16 @@ module Lost
 						if curr? ':='
 							eat ':='
 							element.member_default = parse_expression(precedence_for('<'))
-						elsif element.is_a?(Lost::Identifier_Expr) && element.type && curr?('=')
+						elsif element.is_a?(Tape::Identifier_Expr) && element.type && curr?('=')
 							eat '='
 							element.member_default = parse_expression(precedence_for('<'))
 						end
 
 						# A `:` still sitting here means #parse_identifier_expr's own `: Type` lookahead (above, inside `element`) saw a `:` but declined to consume it, because what followed wasn't a valid type -- almost always a lowercase value, as if `:` worked like a Dictionary's `key: value`. It doesn't in a struct member list, so raise here rather than silently leaving the `:` to be reparsed as an unrelated `:symbol` prefix literal starting a whole new element next iteration (commas are optional between struct members, same as any other list).
-						raise Lost::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
+						raise Tape::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
 
 						it.types << element
-						it.names << if element.is_a?(Lost::Identifier_Expr) && (element.type || element.member_default)
+						it.names << if element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
 							element.value
 						else
 							nil
@@ -611,13 +611,13 @@ module Lost
 			#
 
 			start        = curr_lexeme
-			it           = Lost::Type_Expr.new eat # one of valid_idents
+			it           = Tape::Type_Expr.new eat # one of valid_idents
 			it.name      = it.lexeme.value
 			valid_idents = %i(Identifier IDENTIFIER)
 			is_type      = Helpers.type_identifier? it.name
 			is_const     = Helpers.constant_identifier? it.name
 
-			Lost.assert is_type || is_const, "Type names can only be Capitalized or UPPERCASE" # todo; proper error
+			Tape.assert is_type || is_const, "Type names can only be Capitalized or UPPERCASE" # todo; proper error
 
 			if curr?(TAG_OPERATOR, '<') and eat(TAG_OPERATOR)
 				# Inline anonymous struct literal (`Array\<String>`) -- reuses #parse_struct verbatim.
@@ -673,9 +673,9 @@ module Lost
 
 		def parse_comment
 			lexeme   = eat
-			it       = Lost::Comment_Expr.new lexeme
-			it.value = Lost::String_Expr.new lexeme
-			it.body  = Lost::String_Expr.new lexeme
+			it       = Tape::Comment_Expr.new lexeme
+			it.value = Tape::String_Expr.new lexeme
+			it.body  = Tape::String_Expr.new lexeme
 			it.type  = lexeme.type
 			it
 		end
@@ -683,8 +683,8 @@ module Lost
 		def parse_fence_expr
 			start    = curr_lexeme
 			lexeme   = eat
-			it       = Lost::Fence_Expr.new lexeme
-			it.value = Lost::String_Expr.new lexeme
+			it       = Tape::Fence_Expr.new lexeme
+			it.value = Tape::String_Expr.new lexeme
 			it.type  = lexeme.type # :fence by default
 			copy_location it, start
 			it
@@ -693,8 +693,8 @@ module Lost
 		def parse_html_expr
 			# TODO: :html_vs_type_expr
 			start      = curr_lexeme
-			it         = Lost::Html_Fence_Expr.new eat
-			it.value   = Lost::String_Expr.new start
+			it         = Tape::Html_Fence_Expr.new eat
+			it.value   = Tape::String_Expr.new start
 			it.body    = it.value
 			it.element = it.lexeme
 			copy_location it, start
@@ -702,14 +702,14 @@ module Lost
 
 		def parse_composition_expr
 			start         = curr_lexeme
-			expr          = Lost::Composition_Expr.new
+			expr          = Tape::Composition_Expr.new
 			expr.operator = eat(:operator)
 			ident         = parse_identifier_expr
 
 			while curr?('.') && peek.is(:Identifier)
 				dot_op         = eat('.')
 				right          = parse_identifier_expr
-				infix          = Lost::Infix_Expr.new
+				infix          = Tape::Infix_Expr.new
 				infix.left     = ident
 				infix.operator = dot_op
 				infix.right    = right
@@ -718,8 +718,8 @@ module Lost
 			end
 
 			# A composed operand can itself be a tagged reference (`| Other\<'users'>`) -- #parse_identifier_expr already consumed it onto `.tag`; repackage into a Type_Expr so #interp_composition resolves it properly instead of dropping it.
-			if ident.is_a?(Lost::Identifier_Expr) && ident.tag
-				type_ref      = Lost::Type_Expr.new
+			if ident.is_a?(Tape::Identifier_Expr) && ident.tag
+				type_ref      = Tape::Type_Expr.new
 				type_ref.name = ident.value
 				type_ref.tag  = ident.tag
 				copy_location type_ref, ident
@@ -732,7 +732,7 @@ module Lost
 		end
 
 		def parse_statement_expr
-			Lost::Statement_Expr.new.tap do |it|
+			Tape::Statement_Expr.new.tap do |it|
 				eat '`'
 				it.expression = parse_expression
 				eat '`'
@@ -741,7 +741,7 @@ module Lost
 
 		def parse_identifier_expr
 			start = curr_lexeme
-			expr  = Lost::Identifier_Expr.new
+			expr  = Tape::Identifier_Expr.new
 
 			if curr? BUILTIN_OPERATOR and eat BUILTIN_OPERATOR
 				expr.directive = true
@@ -750,7 +750,7 @@ module Lost
 			end
 
 			expr.lexeme  = eat
-			expr.privacy = Lost.privacy_of_ident expr.value
+			expr.privacy = Tape.privacy_of_ident expr.value
 
 			# A type reference can carry its own trailing tag. A named reference recurses, so `Abc\Cd\Ef` nests as `.tag.tag`. note; A recursive call here never goes through #parse_type_decl so it's handled directly.
 			if TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, '<')
@@ -775,7 +775,7 @@ module Lost
 				expr.type = parse_struct # bare struct annotation, e.g. `thing: <String, Number>` -- sugar for `thing: Struct<String, Number>`
 			end
 
-			expr.kind = Lost.type_of_identifier expr.value
+			expr.kind = Tape.type_of_identifier expr.value
 			copy_location expr, start
 		end
 
@@ -785,7 +785,7 @@ module Lost
 			eat '.'
 
 			expr                = parse_identifier_expr
-			expr.scope_operator = Lost::Lexeme.new(:operator, keyword.value == 'Self' ? '../' : './')
+			expr.scope_operator = Tape::Lexeme.new(:operator, keyword.value == 'Self' ? '../' : './')
 			expr
 		end
 
@@ -794,7 +794,7 @@ module Lost
 
 			if curr? SCOPE_OPERATORS
 				# There should not be any more scope operators at this point. We've implicitly handled . and ..
-				raise Lost::Invalid_Scope_Syntax.new curr_lexeme
+				raise Tape::Invalid_Scope_Syntax.new curr_lexeme
 			end
 
 			scope
@@ -803,7 +803,7 @@ module Lost
 		def parse_symbol_expr
 			start = curr_lexeme
 			eat ':'
-			it = Lost::Symbol_Expr.new eat
+			it = Tape::Symbol_Expr.new eat
 			copy_location it, start
 		end
 
@@ -828,7 +828,7 @@ module Lost
 			expr = parse_expression
 
 			# Validate: handler params must include all route params
-			handler_params = if expr.is_a? Lost::Func_Expr
+			handler_params = if expr.is_a? Tape::Func_Expr
 				expr.parameters.map(&:name).map(&:value)
 			else
 				[]
@@ -839,8 +839,8 @@ module Lost
 			# unless missing_params.empty?
 			# end
 
-			route             = Lost::Route_Expr.new
-			route.http_method = Lost::Identifier_Expr.new.tap do |expr|
+			route             = Tape::Route_Expr.new
+			route.http_method = Tape::Identifier_Expr.new.tap do |expr|
 				expr.value = http_method
 				expr.kind  = :identifier
 			end
@@ -884,17 +884,17 @@ module Lost
 
 			eat ')'
 
-			percent_lit             = Lost::Percent_Literal_Expr.new # This extends Circumfix_Expr
+			percent_lit             = Tape::Percent_Literal_Expr.new # This extends Circumfix_Expr
 			percent_lit.kind        = kind.value
 			percent_lit.grouping    = '[]' # so that it interprets as an array later
 			percent_lit.expressions = items
 
 			valid_items = percent_lit.expressions.all? do |it|
 				# Each of these can easily be converted to a string, so for now they're the only ones allowed.
-				it.is_a?(Lost::Identifier_Expr) || it.is_a?(Lost::Number_Expr) || it.is_a?(Lost::Operator_Expr) || it.is_a?(Lost::Statement_Expr)
+				it.is_a?(Tape::Identifier_Expr) || it.is_a?(Tape::Number_Expr) || it.is_a?(Tape::Operator_Expr) || it.is_a?(Tape::Statement_Expr)
 			end
 
-			raise Lost::Invalid_Percent_Literal_Expression.new(percent_lit) unless valid_items
+			raise Tape::Invalid_Percent_Literal_Expression.new(percent_lit) unless valid_items
 
 			copy_location percent_lit, start
 		end
@@ -908,22 +908,22 @@ module Lost
 			# Scope operators can't be followed by literals like numbers or strings
 			if SCOPE_OPERATORS.include? operator_lexeme.value
 				if curr? :number
-					raise Lost::Invalid_Scope_Syntax.new
+					raise Tape::Invalid_Scope_Syntax.new
 				elsif curr? :string
-					raise Lost::Invalid_Scope_Syntax.new
+					raise Tape::Invalid_Scope_Syntax.new
 				end
 			end
 
-			it = Lost::Operator_Expr.new operator_lexeme
+			it = Tape::Operator_Expr.new operator_lexeme
 			copy_location it, start
 		end
 
 		def parse_number_expr
 			start       = curr_lexeme
-			expr        = Lost::Number_Expr.new start
+			expr        = Tape::Number_Expr.new start
 			expr.lexeme = eat(:number)
 			if expr.lexeme.value.count('.') > 1
-				expr                  = Lost::Array_Index_Expr.new expr.lexeme
+				expr                  = Tape::Array_Index_Expr.new expr.lexeme
 				expr.indices_in_order = expr.lexeme.value.split '.'
 				expr.indices_in_order = expr.indices_in_order.map &:to_i
 				# It's important not to convert number.value here to anything to preserve the variant number of dots in the string. I think this'll be cool syntax, 2d_array.1.2 would be the equivalent of 2d_array[1][2].
@@ -942,27 +942,27 @@ module Lost
 		def parse_nil_init_expr left = nil
 			start = left&.lexeme || curr_lexeme
 
-			expr          = Lost::Nil_Init_Expr.new
+			expr          = Tape::Nil_Init_Expr.new
 			expr.lexeme   = start
 			expr.left     = left || (curr?(SELF_KEYWORDS, '.') ? parse_self_prefixed_identifier : parse_identifier_expr)
 			expr.operator = Lexeme.new(:operator, '=')
 
-			nil_expr         = Lost::Identifier_Expr.new
+			nil_expr         = Tape::Identifier_Expr.new
 			nil_expr.value   = 'nil'
 			nil_expr.kind    = :identifier
-			nil_expr.privacy = Lost.privacy_of_ident 'nil'
+			nil_expr.privacy = Tape.privacy_of_ident 'nil'
 			expr.right       = nil_expr
 
 			copy_location expr, start
 		end
 
 		def begin_expression precedence = STARTING_PRECEDENCE, member_rhs: false
-			raise Lost::Out_Of_Tokens.new unless lexemes?
+			raise Tape::Out_Of_Tokens.new unless lexemes?
 
 			if curr? :route
 				parse_route_expr
 
-			elsif curr?(ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Lost::NIL_INIT_POSTFIX)
+			elsif curr?(ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
 			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
@@ -978,7 +978,7 @@ module Lost
 				parse_struct
 
 			elsif curr?(TYPE_IDENTIFIER, '{') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, '<') || curr?(TYPE_IDENTIFIER, TAG_OPERATOR, TYPE_IDENTIFIER) || type_then_integer_tag_next? || curr?(TYPE_IDENTIFIER, TYPE_COMPOSITION_OPERATORS)
-				# No trailing `{` guard needed for the named-reference form -- unlike `/`, `\` never collides with anything else in Lost, so it's unambiguous with or without a body.
+				# No trailing `{` guard needed for the named-reference form -- unlike `/`, `\` never collides with anything else in Tape, so it's unambiguous with or without a body.
 				parse_type_decl
 
 			elsif curr?(TYPE_COMPOSITION_OPERATORS) && peek.is(:Identifier)
@@ -1014,7 +1014,7 @@ module Lost
 
 			elsif curr? :string
 				start = curr_lexeme
-				expr  = Lost::String_Expr.new eat(:string)
+				expr  = Tape::String_Expr.new eat(:string)
 				copy_location expr, start
 
 				# elsif curr? SCOPE_OPERATORS
@@ -1026,12 +1026,12 @@ module Lost
 
 			elsif curr? FUNCTION_DELIMITER
 				# This is reserved for function declarations
-				raise Lost::Reserved_Function_Delimiter.new curr_lexeme
+				raise Tape::Reserved_Function_Delimiter.new curr_lexeme
 
 			elsif curr?(:delimiter) && NEWLINES.include?(curr_lexeme.value)
 				reduce_newlines and nil
 
-			elsif curr? :html # This is a subtype of Lost::Fence_Expr
+			elsif curr? :html # This is a subtype of Tape::Fence_Expr
 				parse_html_expr
 
 			elsif curr? :fence
@@ -1063,9 +1063,9 @@ module Lost
 		def complete_expression expr, precedence = STARTING_PRECEDENCE
 			return expr unless expr && lexemes?
 
-			if expr.is_a?(Lost::Identifier_Expr) && expr.directive && expr.value != 'ruby'
+			if expr.is_a?(Tape::Identifier_Expr) && expr.directive && expr.value != 'ruby'
 				# note: I'm intentionally skipping `ruby` here because a Directive_Expr assumes an expression will follow it. But in the case of @ruby, I want it to be a standalone expression. Maybe this warrants rewriting how directives work? Or maybe this can just stay as an implementation detail. For now it's fine.
-				directive      = Lost::Directive_Expr.new
+				directive      = Tape::Directive_Expr.new
 				directive.name = expr
 				copy_location directive, expr
 
@@ -1075,15 +1075,15 @@ module Lost
 					unless %i(operator identifier).include? op_lexeme.type
 						raise "An operator can only by an :operator or :identifier. Your `#{op_lexeme.value}` is :#{op_lexeme.type}. Maybe it's reserved. todo; Better message!"
 					end
-					operator_expr        = Lost::Operator_Expr.new op_lexeme
+					operator_expr        = Tape::Operator_Expr.new op_lexeme
 					directive.expression = operator_expr
 					copy_location operator_expr, op_lexeme
 
 					# If @operator <Op_Expr> is followed by @infix <Num_Expr> then we have a complete operator overload expression
 					next_expr = begin_expression
-					if next_expr.is_a?(Lost::Identifier_Expr) && next_expr.directive
+					if next_expr.is_a?(Tape::Identifier_Expr) && next_expr.directive
 						if %w(prefix infix postfix circumfix).include? next_expr.value
-							subdirective      = Lost::Directive_Expr.new
+							subdirective      = Tape::Directive_Expr.new
 							subdirective.name = next_expr
 							copy_location subdirective, next_expr
 
@@ -1091,7 +1091,7 @@ module Lost
 								precedence_for(directive.expression.value)
 							else
 								# A bare primitive parse, not #parse_expression -- the precedence is always immediately followed by the overload's own func body (`(left, right; ...)`), and #parse_expression's own call-continuation (`curr?('(') && precedence_for('(') > precedence`) would otherwise swallow that `(` as a call on the precedence number itself, now that funcs and calls share the same delimiter.
-								Lost.assert curr? :number
+								Tape.assert curr? :number
 								parse_number_expr.value
 							end
 
@@ -1100,7 +1100,7 @@ module Lost
 							end
 
 							# If you can't wrap your mind around this. At this point we know `@operator + @infix 90` so all that's left to parse is the function
-							overload            = Lost::Operator_Overload_Expr.new operator_expr.lexeme
+							overload            = Tape::Operator_Overload_Expr.new operator_expr.lexeme
 							overload.fixity     = subdirective.name.lexeme
 							overload.precedence = subdirective.expression
 							overload.func_expr  = parse_func
@@ -1114,7 +1114,7 @@ module Lost
 				else
 					directive.expression = parse_expression
 
-					# note; Only `@assert cond, "message"` gets a trailing `, <expr>` parsed as part of the same directive (see Lost::Interpreter#interp_directive). This can't be generic across all directives: some fixtures chain unrelated directives on one line via `@load 'a', @load 'b'`, relying on a stray `,` here being silently discarded and the next statement.
+					# note; Only `@assert cond, "message"` gets a trailing `, <expr>` parsed as part of the same directive (see Tape::Interpreter#interp_directive). This can't be generic across all directives: some fixtures chain unrelated directives on one line via `@load 'a', @load 'b'`, relying on a stray `,` here being silently discarded and the next statement.
 					if expr.value == 'assert' && curr?(',')
 						eat
 						directive.message = parse_expression
@@ -1131,7 +1131,7 @@ module Lost
 				return complete_expression directive, precedence
 			end
 
-			if SCOPE_OPERATORS.any? { |it| expr.is it } && !expr.is_a?(Lost::Nil_Init_Expr)
+			if SCOPE_OPERATORS.any? { |it| expr.is it } && !expr.is_a?(Tape::Nil_Init_Expr)
 				return expr
 			end
 
@@ -1142,13 +1142,13 @@ module Lost
 			# string literally spelled `'return'`) matched too -- `"hi".end_with?('!')` parsed `'!'` as
 			# the `!` prefix operator applied to nothing, not the string value "!". A string's content
 			# should never be reinterpreted as an operator, so it's excluded here regardless of value.
-			prefix    = !expr.is_a?(Lost::Operator_Overload_Expr) && !expr.is_a?(Lost::String_Expr) && (PREFIX.include?(expr.value) || (expr.is_a?(Lost::Operator_Expr) && @custom_prefix.include?(expr.value)))
+			prefix    = !expr.is_a?(Tape::Operator_Overload_Expr) && !expr.is_a?(Tape::String_Expr) && (PREFIX.include?(expr.value) || (expr.is_a?(Tape::Operator_Expr) && @custom_prefix.include?(expr.value)))
 			infix     = INFIX.include?(curr_lexeme.value) || @custom_infix.include?(curr_lexeme.value)
 			postfix   = POSTFIX.include?(curr_lexeme.value) || @custom_postfix.include?(curr_lexeme.value)
 			circumfix = CIRCUMFIX.include?(curr_lexeme.value)
 
 			if prefix
-				expr = Lost::Prefix_Expr.new.tap do |it|
+				expr = Tape::Prefix_Expr.new.tap do |it|
 					it.operator   = expr
 					it.expression = parse_expression precedence_for(it.operator.value)
 				end
@@ -1161,20 +1161,20 @@ module Lost
 					return expr if curr_operator_prec <= precedence
 					###
 
-					it          = Lost::Infix_Expr.new
+					it          = Tape::Infix_Expr.new
 					it.left     = expr
 					it.operator = eat
 					it.right    = parse_expression precedence_for it.operator.value
-					it.right    = it.right.left if it.right.is_a? Lost::Nil_Init_Expr
+					it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
 
 					copy_location it, expr
 					return complete_expression it, precedence
 				elsif RANGE_OPERATORS.include? curr_lexeme.value
-					it          = Lost::Infix_Expr.new
+					it          = Tape::Infix_Expr.new
 					it.left     = expr
 					it.operator = eat
 					it.right    = parse_expression
-					it.right    = it.right.left if it.right.is_a? Lost::Nil_Init_Expr
+					it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
 
 					copy_location it, expr
 					return complete_expression it, precedence
@@ -1183,7 +1183,7 @@ module Lost
 						# A `>>`/`>>>`/etc token might really be two or more `<...>` structs closing back-to-back (`Array\<String>>`), glued at the lexer level -- split it into individual `>` tokens whenever a lone `>` would stop this very loop anyway (i.e. we're already at or below `>`'s own precedence) AND we're actually somewhere inside a `<...>` struct right now. Both conditions matter: the precedence check alone would also misfire on an ordinary top-level `8 >> 2 >> 1` (that recurses into its own right-hand side at `>>`'s own high precedence, satisfying the precedence check on its own); gating on `@struct_nesting_depth` keeps a genuine `>>`/`>>=` completely unaffected everywhere outside a struct.
 						split_glued_close_angles! if @struct_nesting_depth > 0 && curr_lexeme.value.length > 1 && curr_lexeme.value.chars.all? { |char| char == '>' } && precedence_for('>') <= precedence
 
-						# It's very important that the curr?(:operator) check here remains because otherwise it breaks Lost::Call_Expr when the receiver is an Lost::Infix_Expr.
+						# It's very important that the curr?(:operator) check here remains because otherwise it breaks Tape::Call_Expr when the receiver is an Tape::Infix_Expr.
 						curr_operator      = curr_lexeme.value
 						curr_operator_prec = precedence_for curr_operator
 
@@ -1192,16 +1192,16 @@ module Lost
 						end
 
 						left          = expr
-						expr          = Lost::Infix_Expr.new
+						expr          = Tape::Infix_Expr.new
 						expr.left     = left
 						expr.operator = eat(curr_lexeme.value)
 						expr.right    = parse_expression curr_operator_prec, member_rhs: expr.operator.value == '.'
-						expr.right    = expr.right.left if expr.right.is_a? Lost::Nil_Init_Expr
+						expr.right    = expr.right.left if expr.right.is_a? Tape::Nil_Init_Expr
 						copy_location expr, left
 
-						if expr.left.is(Lost::Identifier_Expr) && expr.operator.value == '.' && expr.right.is(Lost::Number_Expr) && expr.right.type == :float
+						if expr.left.is(Tape::Identifier_Expr) && expr.operator.value == '.' && expr.right.is(Tape::Number_Expr) && expr.right.type == :float
 							# @copypaste from above #parse_expression when :number.
-							number                  = Lost::Array_Index_Expr.new expr.right
+							number                  = Tape::Array_Index_Expr.new expr.right
 							number.indices_in_order = expr.right.value.to_s.split '.'
 							number.indices_in_order = number.indices_in_order.map &:to_i
 							expr.right              = number
@@ -1212,7 +1212,7 @@ module Lost
 				end
 
 			elsif postfix && precedence_for(curr_lexeme.value) > precedence
-				expr = Lost::Postfix_Expr.new.tap do |it|
+				expr = Tape::Postfix_Expr.new.tap do |it|
 					it.expression = expr
 					it.operator   = eat(%i(operator identifier))
 				end
@@ -1221,13 +1221,13 @@ module Lost
 			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` – an unrelated anonymous func literal on the same line – would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
 			#
 			# Exception – the "spread lambda" sugar: a single anonymous-function argument may drop its own parens, `xs.map(x; x * 2)` for `xs.map((x; x * 2))`. Only when the receiver is a member access, a call result, or a subscript – shapes that are unambiguously a call target and can't be an accidental adjacent `(;)` literal (`"endpoint" (;)`) or a fresh `f(x; body)` declaration (#begin_expression's `member_rhs` path already kept the member name an identifier so we land here with the whole `x.foo` as `expr`).
-			spread_receiver   = expr.is_a?(Lost::Call_Expr) || expr.is_a?(Lost::Subscript_Expr) || (expr.is_a?(Lost::Infix_Expr) && expr.operator&.value == '.')
+			spread_receiver   = expr.is_a?(Tape::Call_Expr) || expr.is_a?(Tape::Subscript_Expr) || (expr.is_a?(Tape::Infix_Expr) && expr.operator&.value == '.')
 			spread_lambda_arg = curr?('(') && spread_receiver && anon_func_param_list_follows?
 			call_expr         = curr?('(') && curr?(:delimiter) && (!func_declaration_follows? || spread_lambda_arg)
 			subscript         = curr? '['
 			if call_expr && (precedence_for(curr_lexeme.value) > precedence)
 				receiver       = expr
-				expr           = Lost::Call_Expr.new
+				expr           = Tape::Call_Expr.new
 				expr.receiver  = receiver
 				expr.arguments = if spread_lambda_arg
 					[parse_func]
@@ -1238,7 +1238,7 @@ module Lost
 				copy_location expr, receiver
 				return complete_expression expr, precedence
 			elsif subscript && (precedence_for(curr_lexeme.value) > precedence)
-				it            = Lost::Subscript_Expr.new
+				it            = Tape::Subscript_Expr.new
 				it.receiver   = expr
 				it.expression = parse_circumfix_expr opening: curr_lexeme.value
 				it
@@ -1252,7 +1252,7 @@ module Lost
 					return expr
 				end
 
-				it            = Lost::Conditional_Expr.new
+				it            = Tape::Conditional_Expr.new
 				it.when_true  = []
 				it.when_false = []
 				it.type       = eat # One of %w(if while unless until)

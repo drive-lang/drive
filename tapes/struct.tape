@@ -1,4 +1,4 @@
-@load 'lost/member.tape'
+@load 'tapes/member.tape'
 
 ### Valid members syntax:
 
@@ -29,7 +29,7 @@ Struct {
 
 	# todo; implement set comparison as well
 	@operator == @infix ( left, right;
-		# `.?members`, not `.members` -- `right` isn't guaranteed to be Struct-shaped (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix); Array's own `==` (lost/array.tape) already handles a nil right side safely.
+		# `.?members`, not `.members` -- `right` isn't guaranteed to be Struct-shaped (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix); Array's own `==` (tapes/array.tape) already handles a nil right side safely.
 		left.members == right.?members
 	)
 

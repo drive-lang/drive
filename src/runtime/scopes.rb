@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Scope
 		attr_accessor :enclosing_scope, :readable_scopes, :writable_scopes, :declarations, :name, :type_by_identifier, :static_declarations, :tagged_type_variants, :interpreter_reference
 
@@ -134,7 +134,7 @@ module Lost
 			super name
 			@types                = Set[name]
 			@declarations['name'] = name
-			# Same as `.name` until/unless a tag makes this type's real display richer than its bare name (see #declare_tag) -- lets consumers (e.g. lost/member.tape's `to_s`) read one field for "how should this type be shown" without needing to know about `.tag` at all.
+			# Same as `.name` until/unless a tag makes this type's real display richer than its bare name (see #declare_tag) -- lets consumers (e.g. tapes/member.tape's `to_s`) read one field for "how should this type be shown" without needing to know about `.tag` at all.
 			@declarations['display_name'] = name
 			@static_declarations          += %w(name display_name) # So that Type.name/Type.display_name work
 			@declaration_in_progress      = false
@@ -153,7 +153,9 @@ module Lost
 			if delegate_name && key.to_s == delegate_name
 				delegate_value = value.respond_to?(key) ? value.send(key) : value
 				send "#{key}=", delegate_value
-				@declarations[key.to_s] = delegate_value
+				# Read back what the setter actually stored, not the raw input -- a subclass setter may
+				# coerce (Tape::Integer#value= runs to_i, Tape::Decimal#value= builds a BigDecimal).
+				@declarations[key.to_s] = send key
 			else
 				super
 			end
@@ -182,7 +184,7 @@ module Lost
 		end
 	end
 
-	class Nil < Instance # Like Ruby's NilClass, this represents the absence of a value. An ordinary instance -- constructible like any other type, so `Nil()` / a tagged `Nil\Error()` work and Lost code can hold its own shared nil.
+	class Nil < Instance # Like Ruby's NilClass, this represents the absence of a value. An ordinary instance -- constructible like any other type, so `Nil()` / a tagged `Nil\Error()` work and Tape code can hold its own shared nil.
 	end
 
 	class Bool < Instance

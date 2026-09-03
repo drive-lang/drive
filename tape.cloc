@@ -1,4 +1,4 @@
-# This file was created using "--write-lang-def=". I then removed all languages except Ruby, and added Lost.
+# This file was created using "--write-lang-def=". I then removed all languages except Ruby, and added Tape.
 Ruby
     filter remove_matches ^\s*#
     filter remove_below_above ^=begin ^=end
@@ -44,9 +44,9 @@ Ruby
     script_exe ruby
     3rd_gen_scale 4.20
     end_of_line_continuation \\$
-Lost
+Tape
     filter remove_matches ^\s*`
     filter remove_inline `.*$
     filter remove_between_general ``` ```
-    extension lost
+    extension tape
     3rd_gen_scale 2.00

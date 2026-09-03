@@ -6,7 +6,7 @@ Statement {
 	memoize := false
 
 	# Internal bookkeeping for `memoize`, above -- read/written by Interpreter#invoke_statement on the first `()` call. Not meant to be set directly.
-	_expression     := nil   # The raw wrapped AST expression (an Lost::*_Expr, not an Lost::Statement) -- untyped on purpose
+	_expression     := nil   # The raw wrapped AST expression (an Tape::*_Expr, not an Tape::Statement) -- untyped on purpose
 	_memoized       := false
 	_memoized_value := nil
 
@@ -15,7 +15,7 @@ Statement {
 		from(literal)
 	)
 
-	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Lost-level declaration).
+	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Tape-level declaration).
 	from ( other: Statement;
 		@ruby
 	)

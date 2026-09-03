@@ -3,8 +3,8 @@
 # Input values are sent to the server on click, allowing
 # handlers to read what the user typed.
 
-@load 'lost/html.tape'
-@load 'lost/server.tape'
+@load 'tapes/html.tape'
+@load 'tapes/server.tape'
 
 # Custom textarea component
 Todo_Input | Textarea {}

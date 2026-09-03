@@ -1,5 +1,5 @@
-@load 'lost/html.tape'
-@load 'lost/server.tape'
+@load 'tapes/html.tape'
+@load 'tapes/server.tape'
 
 Page_Body | Body {
   css_display := 'flex'
@@ -34,7 +34,7 @@ Layout | Html {
 Hero | Section {
 	render (;
 		[
-			H1("Lost"),
+			H1("Tape"),
 			P("Programming Language For Web Development")
 		]
 	)
@@ -174,7 +174,7 @@ Hello('World').output() # Hi, World!"
 ### The app serving this HTML ###
 App | Server {
 	get:// (;
-		Layout("Lost - Programming Language", Page_Content(readme_snippet))
+		Layout("Tape - Programming Language", Page_Content(readme_snippet))
 	)
 }
 

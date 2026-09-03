@@ -1,8 +1,8 @@
 ### Introduction
 
-`lost/database.tape` is not part of the default preload. You must `@load` it. `Sqlite` composes with the built-in `Database` type. `':memory:'` opens a database that lives only for this run. This database leaves no file on disk. `Self.memory (;)` is a static function. It is shorthand for `':memory:'`.
+`tapes/database.tape` is not part of the default preload. You must `@load` it. `Sqlite` composes with the built-in `Database` type. `':memory:'` opens a database that lives only for this run. This database leaves no file on disk. `Self.memory (;)` is a static function. It is shorthand for `':memory:'`.
 ###
-@load 'lost/database.tape'
+@load 'tapes/database.tape'
 
 db := Sqlite.memory()
 @connect db   # establishes the actual connection
@@ -10,7 +10,7 @@ db := Sqlite.memory()
 
 ### create_table and table_exists?
 
-A table's schema is a named Struct. Each member is one column. The member's type sets the column's type. `Primary_Key` marks a member as the table's primary key. Here, `id` uses this marker. `Primary_Key` is a small, provided type, like `String` or `Bool` (`lost/database.tape`).
+A table's schema is a named Struct. Each member is one column. The member's type sets the column's type. `Primary_Key` marks a member as the table's primary key. Here, `id` uses this marker. `Primary_Key` is a small, provided type, like `String` or `Bool` (`tapes/database.tape`).
 
 `table_exists?` and `delete_table!` take that same schema Struct. They also accept a bare table-name Symbol instead, if you do not have the Struct on hand. When given a Struct, each method derives the real table name from the Struct's own name. It makes the name lowercase and plural. So a Struct named `Survivor` maps to the `survivors` table.
 ###

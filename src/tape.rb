@@ -40,9 +40,9 @@ require_relative 'runtime/return'
 require_relative 'runtime/interpreter'
 require_relative 'runtime/repl'
 
-module Lost
+module Tape
 	ROOT_PATH             = File.expand_path('../', __dir__)
-	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'lost', 'preload.tape')
+	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'tapes', 'preload.tape')
 
 	extend Helpers
 
@@ -89,8 +89,8 @@ module Lost
 	end
 
 	def self.type_check source
-		expressions = Lost.parse source
-		checker     = Lost::Type_Checker.new expressions
+		expressions = Tape.parse source
+		checker     = Tape::Type_Checker.new expressions
 		if checker.output
 			raise checker.output
 		end

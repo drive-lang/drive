@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	class Lexer
 		attr_accessor :i, :col, :line, :source_file, :input
 
@@ -17,15 +17,15 @@ module Lost
 		end
 
 		def whitespace? char = curr
-			Lost::WHITESPACES.include? char
+			Tape::WHITESPACES.include? char
 		end
 
 		def newline? char = curr
-			Lost::NEWLINES.include? char
+			Tape::NEWLINES.include? char
 		end
 
 		def delimiter? char = curr
-			Lost::DELIMITERS.include? char
+			Tape::DELIMITERS.include? char
 		end
 
 		def identifier? char = curr
@@ -33,15 +33,15 @@ module Lost
 		end
 
 		def numeric? char = curr
-			char&.match? Lost::NUMERIC_REGEX
+			char&.match? Tape::NUMERIC_REGEX
 		end
 
 		def alpha? char = curr
-			char&.match? Lost::ALPHA_REGEX
+			char&.match? Tape::ALPHA_REGEX
 		end
 
 		def alphanumeric? char = curr
-			char&.match? Lost::ALPHANUMERIC_REGEX
+			char&.match? Tape::ALPHANUMERIC_REGEX
 		end
 
 		def symbol? char = curr
@@ -51,10 +51,10 @@ module Lost
 		def route_pattern?
 			return false unless identifier?
 
-			verb_match = Lost::HTTP_VERBS.any? { |verb| peek(0, verb.length) == verb }
+			verb_match = Tape::HTTP_VERBS.any? { |verb| peek(0, verb.length) == verb }
 			return false unless verb_match
 
-			verb_length = Lost::HTTP_VERBS.find { |verb| peek(0, verb.length) == verb }.length
+			verb_length = Tape::HTTP_VERBS.find { |verb| peek(0, verb.length) == verb }.length
 			peek(verb_length, 3) == '://'
 		end
 
@@ -77,7 +77,7 @@ module Lost
 
 		def eat expected = nil
 			if expected && expected != curr
-				raise Lost::Lexed_Unexpected_Char.new(expected: expected, got: curr)
+				raise Tape::Lexed_Unexpected_Char.new(expected: expected, got: curr)
 			end
 
 			eaten = curr
@@ -101,7 +101,7 @@ module Lost
 			end
 
 			if expected_chars && expected_chars != it
-				raise Lost::Lexed_Unexpected_Char.new(expected: expected_chars, got: it)
+				raise Tape::Lexed_Unexpected_Char.new(expected: expected_chars, got: it)
 			end
 
 			it
@@ -136,7 +136,7 @@ module Lost
 
 		def lex_oneline_comment
 			it = ::String.new
-			eat Lost::COMMENT_CHAR
+			eat Tape::COMMENT_CHAR
 			eat while whitespace?
 
 			while chars? && !newline?
@@ -206,7 +206,7 @@ module Lost
 							it << "\\#{escaped}"
 						end
 					else
-						raise Lost::Unterminated_String_Literal.new
+						raise Tape::Unterminated_String_Literal.new
 					end
 				else
 					it << eat
@@ -214,7 +214,7 @@ module Lost
 			end
 
 			if !chars? || curr != quote
-				raise Lost::Unterminated_String_Literal.new
+				raise Tape::Unterminated_String_Literal.new
 			end
 
 			eat quote
@@ -233,15 +233,15 @@ module Lost
 				break if it == '>' && curr == '.' && !%w(. <).include?(peek)
 
 				# Same idea for `\` immediately followed by `<` -- `Type\<Struct>` would otherwise glue into one bogus token.
-				break if it == Lost::TAG_OPERATOR && curr == '<'
+				break if it == Tape::TAG_OPERATOR && curr == '<'
 
 				# `<` immediately followed by `>` (empty struct literal `<>`) isn't a real operator either, unlike `<=`/`<=>`.
 				break if it == '<' && curr == '>'
 
 				it << eat
-				break if Lost::SCOPE_OPERATORS.include? it
-				break if Lost::ILLEGAL_OPERATOR_CHARS.include? it
-				break if Lost::ILLEGAL_OPERATOR_CHARS.include? curr
+				break if Tape::SCOPE_OPERATORS.include? it
+				break if Tape::ILLEGAL_OPERATOR_CHARS.include? it
+				break if Tape::ILLEGAL_OPERATOR_CHARS.include? curr
 			end
 			it
 		end
@@ -266,11 +266,11 @@ module Lost
 		def lex_route
 			verb = ::String.new
 			while chars? && (identifier? || alphanumeric?)
-				break unless Lost::HTTP_VERBS.any? { |v| v.start_with?(verb + curr) }
+				break unless Tape::HTTP_VERBS.any? { |v| v.start_with?(verb + curr) }
 				verb << eat
 			end
 
-			protocol_sep = lex_many 3, Lost::HTTP_VERB_SEPARATOR
+			protocol_sep = lex_many 3, Tape::HTTP_VERB_SEPARATOR
 
 			path = ::String.new
 			while chars? && !whitespace? && !newline? && curr != '('
@@ -284,11 +284,11 @@ module Lost
 			tokens = []
 
 			while chars?
-				single = curr == Lost::COMMENT_CHAR
-				blocked = peek(0, Lost::BLOCK_COMMENT_CHARS.length) == Lost::BLOCK_COMMENT_CHARS
-				fenced = peek(0, Lost::FENCE_CHARS.length) == Lost::FENCE_CHARS
+				single = curr == Tape::COMMENT_CHAR
+				blocked = peek(0, Tape::BLOCK_COMMENT_CHARS.length) == Tape::BLOCK_COMMENT_CHARS
+				fenced = peek(0, Tape::FENCE_CHARS.length) == Tape::FENCE_CHARS
 
-				token = Lost::Lexeme.new.tap do
+				token = Tape::Lexeme.new.tap do
 					it.source_file = source_file
 					it.l0          = line
 					it.c0          = col
@@ -338,7 +338,7 @@ module Lost
 
 					elsif identifier?
 						it.value = lex_identifier
-						it.type  = Lost.type_of_identifier it.value
+						it.type  = Tape.type_of_identifier it.value
 						if %w(for skip stop).include?(it.value)
 							it.type = :operator
 						end
@@ -381,7 +381,7 @@ module Lost
 						end
 
 					else
-						raise Lost::Lex_Char_Not_Implemented.new(char: curr)
+						raise Tape::Lex_Char_Not_Implemented.new(char: curr)
 					end
 
 					it.l1 = line
@@ -390,7 +390,7 @@ module Lost
 
 				next if whitespace?(token.value)
 
-				token.reserved = Lost::RESERVED.include? token.value
+				token.reserved = Tape::RESERVED.include? token.value
 				tokens << token
 			end
 

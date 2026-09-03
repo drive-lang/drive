@@ -1,4 +1,4 @@
-module Lost
+module Tape
 	# A proof of concept to see what a documentation stage might look like
 	class Documenter
 		attr_accessor :input
@@ -10,7 +10,7 @@ module Lost
 		def output
 			input.map do |expr|
 				case expr
-				when Lost::Comment_Expr
+				when Tape::Comment_Expr
 					expr.value
 				else
 					nil
