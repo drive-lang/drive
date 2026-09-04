@@ -173,7 +173,7 @@ class Dom_Test < Base_Test
 
 	def test_whitelisted_named_arg_on_a_non_dom_type_still_raises
 		assert_raises Tape::Unknown_Named_Argument do
-			Tape.interp "Widget { new (; ) }\nWidget(html_id := 'x')"
+			Tape.interp "Widget { Self (; ) }\nWidget(html_id := 'x')"
 		end
 	end
 
@@ -182,7 +182,7 @@ class Dom_Test < Base_Test
 		    @load 'tapes/html'
 		    Tag | Div {
 		    	seen,
-		    	new ( key := nil; self.seen = key )
+		    	Self ( key := nil; self.seen = key )
 		    }
 		    Tag(key := 'bound-to-param').seen
 		TAPE
@@ -205,7 +205,7 @@ class Dom_Test < Base_Test
 		    @load 'tapes/html'
 		    O | Option {
 		    	html_selected: Bool
-		    	new (; self.html_selected = true )
+		    	Self (; self.html_selected = true )
 		    }
 		    O()
 		TAPE

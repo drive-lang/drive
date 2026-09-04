@@ -15,10 +15,10 @@ survivor.name = 'Jack'      # fine -- name already exists
 
 ### Self-declaring with self is legitimate -- but only during construction
 
-`self.member := value` inside a type's own method self-declares a brand new member, same as writing `member := value` in the class body directly. That's allowed in the class body itself and inside `new(;)` (and anything `new(;)` calls) -- while the instance is still being built. (`self` is keyword sugar for the `./` scope operator -- see learn/types.tape.)
+`self.member := value` inside a type's own method self-declares a brand new member, same as writing `member := value` in the class body directly. That's allowed in the class body itself and inside `Self(;)` (and anything `Self(;)` calls) -- while the instance is still being built. (`self` is keyword sugar for the `./` scope operator -- see learn/types.tape.)
 ###
 Raft {
-	new (; self.planks := 6 )
+	Self (; self.planks := 6 )
 }
 
 r := Raft()
@@ -27,10 +27,10 @@ r := Raft()
 
 ### A later method can't grow the instance's shape
 
-Once construction finishes, self-declaring a brand new member the same way -- from some OTHER method, called after `new(;)` has already returned -- raises the same error external `.` access would. An instance's shape is locked in once it's built:
+Once construction finishes, self-declaring a brand new member the same way -- from some OTHER method, called after `Self(;)` has already returned -- raises the same error external `.` access would. An instance's shape is locked in once it's built:
 ###
 Raft2 {
-	new (; self.planks := 6 )
+	Self (; self.planks := 6 )
 
 	add_sail (;
 		self.sail := true   # too late -- construction already finished so self.sail cannot be declared here

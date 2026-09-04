@@ -66,7 +66,6 @@ class Error_Test < Base_Test
 	end
 
 	def test_cannot_call_value
-		# Was Cannot_Initialize_Non_Type_Identifier -- misleading, since nothing here is a construction attempt, just a plain value that isn't callable.
 		assert_raises Tape::Cannot_Call_Value do
 			Tape.interp 'x := 5, x()'
 		end
@@ -150,7 +149,7 @@ class Error_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3099;
+		    	Self ( port := 3099;
 		    		self.port = port
 		    	)
 		    }

@@ -388,7 +388,7 @@ module Tape
 					it.c1 = (line > it.l0) ? col : col - 1
 				end
 
-				next if whitespace?(token.value)
+				next if token.type == :whitespace
 
 				token.reserved = Tape::RESERVED.include? token.value
 				tokens << token

@@ -81,7 +81,7 @@ class Declarator_Test < Base_Test
 		    Point {
 		    	x,
 		    	y,
-		    	new ( x, y; self.x = x, self.y = y )
+		    	Self ( x, y; self.x = x, self.y = y )
 		    }
 
 		    make_point (;

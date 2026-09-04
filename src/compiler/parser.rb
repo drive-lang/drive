@@ -157,9 +157,14 @@ module Tape
 		# close": `foo((a; a+1), 5)` is an ordinary call passing an anonymous func as its first argument,
 		# and the inner func's own `;` (at depth 2, one level past `foo`'s own opening paren) must NOT make
 		# `foo(...)` as a whole look like a declaration too -- it has none of its own, at depth 1.
+		# A literal's *value* can coincidentally equal meaningful punctuation (`';'`, `'('`) -- never treat it as real syntax. Shared by #func_declaration_follows?/#anon_func_param_list_follows? below.
+		LITERAL_LEXEME_TYPES = %i[string symbol number].freeze
+
 		def func_declaration_follows?
 			depth = 0
 			remainder.each do |token|
+				next if LITERAL_LEXEME_TYPES.include? token.type
+
 				depth += 1 if token.value == '('
 				depth -= 1 if token.value == ')'
 
@@ -174,6 +179,9 @@ module Tape
 		def anon_func_param_list_follows?
 			depth = 0
 			remainder.each do |token|
+				# A real param list is never spelled with a literal -- `.join(';')`'s lone string argument isn't a param list that merely happens to contain `;`, it's an ordinary call.
+				return false if LITERAL_LEXEME_TYPES.include? token.type
+
 				if token.value == '('
 					depth += 1
 					next if depth == 1 # the opening paren itself
@@ -196,6 +204,28 @@ module Tape
 		def try_parse_struct
 			saved_i = @i
 			parse_struct
+		rescue StandardError
+			@i = saved_i
+			nil
+		end
+
+		# Same speculative/backtracking approach as #try_parse_struct, for a nameless trailing `<...>` after a composition chain (#parse_type_decl's struct-composition case) rather than one following a bare type name.
+		def try_parse_struct_body
+			saved_i = @i
+			start   = curr_lexeme
+			Tape::Struct_Expr.new.tap do |it|
+				it.lexeme = Tape::Lexeme.new :struct, '<>'
+				it.types  = []
+				it.names  = []
+				eat '<'
+				closing = parse_struct_members it
+
+				it.c0          = start.c0
+				it.l0          = start.l0
+				it.c1          = closing.c1
+				it.l1          = closing.l1
+				it.source_file = start.source_file
+			end
 		rescue StandardError
 			@i = saved_i
 			nil
@@ -390,7 +420,7 @@ module Tape
 
 			if curr?(SELF_KEYWORDS, '.')
 				func.name = parse_self_prefixed_identifier
-			elsif curr?(:identifier) || curr?(SCOPE_OPERATORS)
+			elsif curr?(SELF_KEYWORDS) || curr?(:identifier) || curr?(SCOPE_OPERATORS)
 				func.name = parse_identifier_expr
 			end
 
@@ -548,47 +578,7 @@ module Tape
 				it.types  = []
 				it.names  = []
 				eat '<'
-				@struct_nesting_depth += 1
-				begin
-					loop do
-						split_glued_close_angles!
-						break if curr? '>'
-
-						reduce_newlines
-						split_glued_close_angles!
-						break if curr? '>'
-
-						element = if curr?(ANY_IDENTIFIER, ',')
-							parse_identifier_expr
-						else
-							parse_expression(precedence_for('<'))
-						end
-
-						# A named member can carry a default, either typed (`dict: Dictionary = {}`) or bare (`id := 4815`, type inferred from the default at interpret time -- see #interp_struct). Both `=` and `:=` bind looser than `precedence_for('<')`, so #parse_expression above already stopped right before either, leaving them for us here.
-						if curr? ':='
-							eat ':='
-							element.member_default = parse_expression(precedence_for('<'))
-						elsif element.is_a?(Tape::Identifier_Expr) && element.type && curr?('=')
-							eat '='
-							element.member_default = parse_expression(precedence_for('<'))
-						end
-
-						# A `:` still sitting here means #parse_identifier_expr's own `: Type` lookahead (above, inside `element`) saw a `:` but declined to consume it, because what followed wasn't a valid type -- almost always a lowercase value, as if `:` worked like a Dictionary's `key: value`. It doesn't in a struct member list, so raise here rather than silently leaving the `:` to be reparsed as an unrelated `:symbol` prefix literal starting a whole new element next iteration (commas are optional between struct members, same as any other list).
-						raise Tape::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
-
-						it.types << element
-						it.names << if element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
-							element.value
-						else
-							nil
-						end
-
-						eat if curr? ','
-					end
-					closing = eat '>'
-				ensure
-					@struct_nesting_depth -= 1
-				end
+				closing = parse_struct_members it
 
 				# Manually tracking location insead of using `#copy_location`, because I want it to span all of "<....>
 				it.c0          = start.c0
@@ -596,6 +586,51 @@ module Tape
 				it.c1          = closing.c1
 				it.l1          = closing.l1
 				it.source_file = start.source_file
+			end
+		end
+
+		# The member list inside `<...>` -- factored out of #parse_struct so struct-composition's trailing body (`Both | Abc | Def <extra: String>`) can reuse it without re-eating a leading name. Returns the closing `>` lexeme.
+		def parse_struct_members it
+			@struct_nesting_depth += 1
+			begin
+				loop do
+					split_glued_close_angles!
+					break if curr? '>'
+
+					reduce_newlines
+					split_glued_close_angles!
+					break if curr? '>'
+
+					element = if curr?(ANY_IDENTIFIER, ',')
+						parse_identifier_expr
+					else
+						parse_expression(precedence_for('<'))
+					end
+
+					# A named member can carry a default, typed (`dict: Dictionary = {}`) or bare (`id := 4815`) -- both bind looser than `precedence_for('<')`, so #parse_expression left them for us here.
+					if curr? ':='
+						eat ':='
+						element.member_default = parse_expression(precedence_for('<'))
+					elsif element.is_a?(Tape::Identifier_Expr) && element.type && curr?('=')
+						eat '='
+						element.member_default = parse_expression(precedence_for('<'))
+					end
+
+					# A `:` still here means `element`'s own `: Type` lookahead saw one but declined it (not a valid type) -- almost always a Dictionary-style `key: value` typo, invalid in a struct member list.
+					raise Tape::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
+
+					it.types << element
+					it.names << if element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
+						element.value
+					else
+						nil
+					end
+
+					eat if curr? ','
+				end
+				eat '>'
+			ensure
+				@struct_nesting_depth -= 1
 			end
 		end
 
@@ -652,6 +687,12 @@ module Tape
 			end
 
 			unless curr? '{'
+				# A trailing `<...>` composes structs instead of a type's `{}` body. Speculative -- a bare `<` could just as easily be a comparison (`x := A | B < 5`), so only commit if it actually parses as a struct.
+				if curr?('<') && (body = try_parse_struct_body)
+					it.struct_body = body
+					return copy_location it, start
+				end
+
 				# No body followed the composition chain (`Abc|Def`, `A & B`, ...) so this is a reference to an anonymous type built by applying the chain, not a declaration.
 				it.anonymous_composition = true
 				return copy_location it, start
@@ -729,6 +770,18 @@ module Tape
 			expr.identifier = ident
 			expr
 			copy_location expr, start
+		end
+
+		# `x := |Compo` / `y := |This ^ That` -- a composition chain with no left operand, used as a value. Same Type_Expr shape #parse_type_decl builds for `Base | Compo`, just with `.name` left nil. Only reachable from `:=`'s own RHS parsing.
+		def parse_bare_composition_chain
+			start = curr_lexeme
+			it    = Tape::Type_Expr.new
+			it.anonymous_composition = true
+			it.expressions           = []
+
+			it.expressions << parse_composition_expr while curr?(TYPE_COMPOSITION_OPERATORS, ANY_IDENTIFIER)
+
+			copy_location it, start
 		end
 
 		def parse_statement_expr
@@ -861,21 +914,10 @@ module Tape
 			eat '('
 			reduce_newlines
 
-			# Items are parsed one bare token at a time rather than via #parse_expression -- a symbolic operator item like `+`/`-` is also a valid PREFIX operator, and `parse_expression` would happily reparse it as a prefix/infix expression that swallows the *next* item as its operand instead of treating it as its own standalone item (`%str(+ - ^)` collapsing into one nested Prefix_Expr instead of three separate items being the symptom).
+			# Items split only on whitespace (or `,`), not per lexer token -- #parse_percent_literal_item merges e.g. `1px` back into one item.
 			items = []
 			until curr? ')'
-				items << if curr? '`'
-					parse_statement_expr
-				elsif curr? :operator
-					parse_operator_expr
-				elsif curr? :number
-					parse_number_expr
-				elsif curr?(ANY_IDENTIFIER)
-					parse_identifier_expr
-				else
-					# Anything else (a string literal, `[1, 2]`, ...) still has to consume at least one token here -- otherwise the cursor never advances and `until curr? ')'` spins forever. #parse_expression is just a general-purpose way to consume *something* so the caller's own validity check below can raise a clean Invalid_Percent_Literal_Expression instead.
-					parse_expression
-				end
+				items << parse_percent_literal_item
 
 				break if curr? ')'
 				eat if curr? ','
@@ -897,6 +939,53 @@ module Tape
 			raise Tape::Invalid_Percent_Literal_Expression.new(percent_lit) unless valid_items
 
 			copy_location percent_lit, start
+		end
+
+		# One item is a run of tokens with no whitespace between them, not one lexer token (`1px` lexes as number+identifier). A backtick item never merges -- it's a whole evaluated expression.
+		def parse_percent_literal_item
+			item = parse_percent_literal_token
+			return item if item.is_a? Tape::Statement_Expr
+
+			while !curr?(')') && !curr?(',') && !curr?('`') && lexeme_adjacent?(item.lexeme, curr_lexeme)
+				item = merge_percent_literal_items item, parse_percent_literal_token
+			end
+
+			item
+		end
+
+		# One bare token at a time, not #parse_expression -- an operator item (`+`/`-`) is also a valid prefix operator, and parse_expression would swallow the next item as its operand.
+		def parse_percent_literal_token
+			if curr? '`'
+				parse_statement_expr
+			elsif curr? :operator
+				parse_operator_expr
+			elsif curr? :number
+				parse_number_expr
+			elsif curr?(ANY_IDENTIFIER)
+				parse_identifier_expr
+			else
+				# Anything else still has to consume at least one token, or the caller's loop spins forever -- lets #parse_percent_literal_expr's own check raise a clean error instead.
+				parse_expression
+			end
+		end
+
+		# No gap between the two lexemes in the original source -- same line, second starting exactly one column past where the first ends.
+		def lexeme_adjacent? a, b
+			a && b && a.l1 == b.l0 && a.c1 + 1 == b.c0
+		end
+
+		# Concatenates two adjacent items' source text -- always folds into a plain Identifier_Expr, since #interp_percent_literal only reads `.value`/`.lexeme` off it either way.
+		def merge_percent_literal_items left, right
+			lexeme       = left.lexeme.dup
+			lexeme.value = "#{left.lexeme.value}#{right.lexeme.value}"
+			lexeme.l1    = right.lexeme.l1
+			lexeme.c1    = right.lexeme.c1
+
+			merged = Tape::Identifier_Expr.new lexeme
+			merged.l0, merged.c0 = left.l0, left.c0
+			merged.l1, merged.c1 = right.l1, right.c1
+			merged.source_file   = left.source_file
+			merged
 		end
 
 		def parse_operator_expr
@@ -965,7 +1054,7 @@ module Tape
 			elsif curr?(ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX) || curr?(SELF_KEYWORDS, '.', ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
-			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
+			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_OPERATORS, :identifier, '(') || curr?(SCOPE_OPERATORS, :identifier, ':', '(') || curr?(SELF_KEYWORDS, '(') || curr?(SELF_KEYWORDS, '.', :identifier, '(') || curr?(SELF_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
 				parse_func precedence
 
 			elsif curr?(TYPE_IDENTIFIER, '[')
@@ -1195,7 +1284,12 @@ module Tape
 						expr          = Tape::Infix_Expr.new
 						expr.left     = left
 						expr.operator = eat(curr_lexeme.value)
-						expr.right    = parse_expression curr_operator_prec, member_rhs: expr.operator.value == '.'
+						expr.right    = if expr.operator.value == ':=' && curr?(TYPE_COMPOSITION_OPERATORS) && peek.is(:Identifier)
+							# `x := |Compo` -- a composition chain used as a value, not #parse_expression's usual single bare Composition_Expr.
+							parse_bare_composition_chain
+						else
+							parse_expression curr_operator_prec, member_rhs: expr.operator.value == '.'
+						end
 						expr.right    = expr.right.left if expr.right.is_a? Tape::Nil_Init_Expr
 						copy_location expr, left
 

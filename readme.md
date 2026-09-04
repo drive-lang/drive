@@ -203,13 +203,13 @@ a := 123
 ## Classes
 
 1. Must start with an uppercase character
-2. Can have an initializer `new`
+2. Can have an initializer `Self`
 
 ```tape
 My_Class {
     input,
     
-    new ( input;
+    Self ( input;
         self.input = input  # self is the current instance, like this in other languages
         @puts 'Initted with "`input`"'
     )
@@ -272,7 +272,7 @@ My_Class {
     Self.count := 0   # Type-level (static) variable
     value,
 
-    new ( value;
+    Self ( value;
         self.value = value   # Instance variable (like this.value in other languages)
         Self.count += 1      # Access static from instance
     )
@@ -297,7 +297,7 @@ Counter {
         count += 1
     )
 
-    new (;
+    Self (;
         Self.count += 1
     )
 }
@@ -570,7 +570,7 @@ Point {
     a := 0
     b := 0
 
-    new ( a, b;
+    Self ( a, b;
         self.a = a
         self.b = b
     )
@@ -664,6 +664,7 @@ dict.fetch(:missing, 'default')
 ```tape
 s := 'Hello, World!'
 s.length            # 13
+s.0                 # 'H' (dot notation, indexes by character -- same as Array's own .0)
 s.upcase()          # 'HELLO, WORLD!'
 s.downcase()        # 'hello, world!'
 s.split(', ')       # ['Hello', 'World!']
@@ -683,7 +684,8 @@ s.empty?()          # false
 1. `%string(...)`/`%symbol(...)` turn space-separated bare items into a real Array of String/Symbol literals, preserving each item's own casing
 2. `%str`/`%Str`/`%STR` force lower/Capital/UPPER casing on the strings; `%sym`/`%Sym`/`%SYM` do the same for symbols
 3. Items can be identifiers, numbers, or operators, not just letters
-4. A `` `expr` `` item (see Statement Expressions below) is evaluated immediately, like string interpolation, and folded through the same casing treatment as everything else
+4. Items split only on whitespace, not on punctuation — `1px` and `file.ext` each stay one item
+5. A `` `expr` `` item (see Statement Expressions below) is evaluated immediately, like string interpolation, and folded through the same casing treatment as everything else
 
 ```tape
 %string(boo Hoo COOL)      # [boo, Hoo, COOL]
@@ -701,6 +703,9 @@ s.empty?()          # false
 
 cool := 2342
 %string(481516 `cool`)     # [481516, 2342] -- `cool` is interpolated, not stored as-is
+
+%string(1px solid red)     # [1px, solid, red]
+%string(file.ext other)    # [file.ext, other]
 ```
 
 ## Statement Expressions
@@ -731,7 +736,7 @@ cached()                   # 4
 cached()                   # 4 -- didn't run again
 ```
 
-See `learn/statement_expressions.tape`/`learn/advanced_statements.tape` for the full picture, including `.use_caller_scope`.
+See `learn/statements.tape` for the full picture, including `.use_caller_scope`.
 
 ## Numbers
 
@@ -825,6 +830,13 @@ my_mod.Some_Type()
 @puts "Value: `expression`"
 ```
 
+`@puts` is a passthrough: it prints, then returns the original value unchanged, so it can sit inline anywhere an expression is expected:
+
+```tape
+double ( n; n * 2 )
+double(@puts 5)   # prints 5, returns 10 -- the call still gets the real 5
+```
+
 ### Telling printed values apart
 
 Tape's built-in collection types each wrap their printed contents in a different bracket, so you can tell what you're looking at at a glance:
@@ -873,7 +885,7 @@ supplies := <water: Number = 40, wood: Number = 12>
 @load 'tapes/server.tape'
 
 App | Server {
-    new (;
+    Self (;
         self.port = 3000
     )
 
@@ -1032,6 +1044,49 @@ page := Html([
 ])
 ```
 
+## CSS
+
+1. `@load 'tapes/css.tape'` -- CSS is plain data: `Property`/`Style_Rule`/`At_Rule`/`Scope_Rule`/`Custom_Property_Rule`/`Layer_Order`/`Keyframe`/`Variable_Declaration`/`Css_Function`/`Color` are all bare structs, no parser involved
+2. `Css_Formatter_Visitor` walks a tree of those structs and turns it into a real CSS string -- pretty by default, `minify := true` for one line
+3. A rule nested inside another rule's own `rules` gets a synthesized `&` prefix (real CSS nesting); a rule merely sitting inside an `At_Rule`/`Scope_Rule` body does not, since there's no parent selector for `&` to refer to there
+4. `Css_Lint_Visitor` walks the same kind of tree checking for duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` -> `0`) instead of formatting it
+
+```tape
+@load 'tapes/css.tape'
+
+rule := Style_Rule(['.card'], [Property('color', 'red'), Property('padding', '8px')])
+
+Css_Formatter_Visitor().format(rule)
+# ".card {\n    color: red;\n    padding: 8px;\n}"
+
+Css_Formatter_Visitor(minify := true).format(rule)
+# ".card{color:red;padding:8px;}"
+
+Css_Lint_Visitor().lint(Style_Rule(['.a'], [Property('color', 'red'), Property('color', 'blue')]))
+# ["Duplicate property 'color'"]
+```
+
+## Struct-Based HTML
+
+1. `@load 'tapes/html2.tape'` -- same spirit as CSS above: `Element <tag, attributes: Array\Attribute, css: Css, children>` is the one node shape, and lowercase constructors (`div`, `p`, `h1`, ...) build it. Coexists with `tapes/html.tape`'s `Dom` types above rather than replacing them -- this one only builds an HTML string, it doesn't hook into the server's live-render pipeline (onclick wiring, `dom.js`)
+2. `attributes` is an ordered `Array\Attribute` (`Attribute(name, value)`, built the same way `Property` builds a CSS declaration) -- not a Dictionary, so attributes keep their given order and can even collide (see `Html_Lint_Visitor` below)
+3. `css` takes any css.tape struct directly -- `Html_Formatter_Visitor` renders it as one more child, an embedded `<style>` block, wherever it's attached
+4. `Html_Render`/`Html_Format` are two shared `Html_Formatter_Visitor` instances (compact/pretty); void tags (`br`, `img`, `input`, ...) never get a closing tag in either mode
+5. `Html_Stats_Visitor` (node count, depth, unique tags), `Html_Sanitizer_Visitor` (strips `script`/`iframe`/`object`/`embed` and `on*`/`javascript:` attributes), and `Html_Lint_Visitor` (void element given children, `<img>` missing `alt`, empty containers, duplicate attribute names) walk the same tree for their own purposes -- `Html_Lint_Visitor` and `Css_Lint_Visitor` both compose `tapes/visitor.tape`'s `Warnings_Visitor` mixin for their shared `warnings`/`warn` machinery
+
+```tape
+@load 'tapes/html2.tape'
+@load 'tapes/css.tape'
+
+page := div([
+    h1('Welcome'),
+    p('Hello!', [Attribute('class', 'greeting')])
+], [], Style_Rule(['.greeting'], [Property('color', 'blue')]))
+
+Html_Render.render(page)
+# '<div><h1>Welcome</h1><p class="greeting">Hello!</p><style>.greeting{color:blue;}</style></div>'
+```
+
 ## Operators
 
 ### Arithmetic
@@ -1175,7 +1230,7 @@ $42  # Currency(amount: 42, name: 'US Dollar', code: 'USD')
 
 Wrapped {
     val,
-    new ( v; self.val = v )
+    Self ( v; self.val = v )
     @operator ~> @infix 300 ( left, right; left.val )
 }
 
@@ -1240,9 +1295,9 @@ lying(5)   # raises Tape::Type_Contract_Violation — declared Number, actually 
 
 1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type), `Primary_Key\4815` (a bare integer, a "version tag")
 2. `\` chains: `Thing\One\Two {}` tags `Thing` with `One`, which is itself tagged with `Two`. `.tag` is `One`, `.tag.tag` is `Two`
-3. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `new`/methods, and `Thing\One\Two` and `Thing\One\Three` are distinct too
+3. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `Self`/methods, and `Thing\One\Two` and `Thing\One\Three` are distinct too
 4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Tape::Undeclared_Type_Structure`
-5. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `new(;)` runs, never forwarded as constructor args
+5. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `Self(;)` runs, never forwarded as constructor args
 6. `x.tag = new_tag` re-tags at runtime, but only on a value whose type was declared with a tag, and only when `new_tag` composes at least everything the current tag does, at every chain link (`=>=`) — otherwise `Tape::Tag_Signature_Violation`
 7. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
 

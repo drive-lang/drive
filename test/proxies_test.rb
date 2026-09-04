@@ -150,7 +150,7 @@ class ProxiesTest < Base_Test
 		    	x,
 		    	y,
 
-		    	new ( x, y;
+		    	Self ( x, y;
 		    		self.x = x
 		    		self.y = y
 		    	)
@@ -174,7 +174,7 @@ class ProxiesTest < Base_Test
 		    	x,
 		    	y,
 
-		    	new ( x, y;
+		    	Self ( x, y;
 		    		self.x = x
 		    		self.y = y
 		    	)

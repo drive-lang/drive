@@ -5,7 +5,7 @@ Dom {
 	onclick,
 	key,   # optional stable id for this element's handler/input token
 
-	new ( children := [];
+	Self ( children := [];
 		self.children = children
 	)
 
@@ -45,7 +45,7 @@ Title | Dom {
 	html_element := 'title'
 	title,
 
-	new ( title;
+	Self ( title;
 		self.title = title
 	)
 
@@ -95,7 +95,7 @@ A | Dom {
 	html_href,
 	title,
 
-	new ( href, title;
+	Self ( href, title;
 		html_href = href
 		self.title = title
 	)

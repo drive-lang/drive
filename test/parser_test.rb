@@ -660,6 +660,73 @@ class Parser_Test < Base_Test
 		refute_nil result, 'parser must terminate on this shape rather than spinning'
 	end
 
+	# A literal's own *value* can coincidentally equal a meaningful punctuation character (`';'`, `'('`,
+	# `','`, ...) -- #anon_func_param_list_follows? used to scan upcoming tokens by value alone, so an
+	# ordinary string argument like `.join(';')` got mistaken for a param-list-shaped spread-lambda
+	# argument, purely because its *content* happens to spell the real param/body separator.
+	def test_spread_lambda_not_triggered_by_a_string_argument_matching_the_separator_character
+		out = Tape.parse "xs.join(';')"
+		assert_kind_of Tape::Call_Expr, out.first
+		assert_equal 1, out.first.arguments.count
+		assert_kind_of Tape::String_Expr, out.first.arguments.first
+	end
+
+	def test_spread_lambda_not_triggered_by_string_arguments_matching_other_param_list_tokens
+		[',', ':', '->', '<', '>', '@', '(', ')', '[', '{'].each do |value|
+			out = Tape.parse "xs.join('#{value}')"
+			assert_kind_of Tape::String_Expr, out.first.arguments.first, "failed for '#{value}'"
+		end
+	end
+
+	def test_join_with_a_semicolon_separator_actually_runs_correctly
+		out = Tape.interp "[1, 2, 3].join(';')"
+		assert_equal '1;2;3', out
+	end
+
+	# #func_declaration_follows? has the same value-vs-type shape -- a param default whose own literal
+	# value contains real syntax characters (parens, the separator) must not confuse where the param
+	# list/body boundary actually is.
+	def test_func_declaration_with_a_punctuation_like_string_default_still_parses_correctly
+		out = Tape.interp "f (x := '(;)'; x), f()"
+		assert_equal '(;)', out
+	end
+
+	# Root-cause fix for the whole family above: Lexeme#is (the primitive every `curr?(...)` check goes
+	# through) used to match a bare string comparator against `.value` alone, with no type check -- so
+	# any literal (string/symbol/number/fence) whose own content coincidentally equalled a delimiter
+	# confused whichever loop was scanning for that delimiter, not just the spread-lambda/func-decl
+	# lookaheads. #parse_circumfix_expr (parses every `(...)`/`[...]`/`{...}`/`|...|` grouping -- calls,
+	# tuples, arrays, dicts, struct literals) is the highest-traffic example: `until curr? closing`
+	# mistook a literal argument equal to the closing character for the real delimiter, ending the
+	# group early and leaving the true closer to crash the parser as an "unhandled lexeme".
+	def test_call_argument_matching_the_closing_paren_does_not_end_the_call_early
+		out = Tape.interp "[1, 2].join(')')"
+		assert_equal '1)2', out
+	end
+
+	def test_array_literal_element_matching_the_closing_bracket_parses_correctly
+		out = Tape.interp "['a', ']']"
+		assert_equal ['a', ']'], out.values
+	end
+
+	def test_dictionary_value_matching_the_closing_brace_parses_correctly
+		out = Tape.interp "d := {a: 1, b: '}'}
+		d.b"
+		assert_equal '}', out
+	end
+
+	def test_tuple_element_matching_the_closing_paren_parses_correctly
+		out = Tape.interp "t := ('x', ')')
+		t.1"
+		assert_equal ')', out
+	end
+
+	def test_struct_member_matching_the_closing_angle_bracket_parses_correctly
+		out = Tape.interp "s := <'>'>
+		s.0"
+		assert_equal '>', out
+	end
+
 	def test_return_is_an_identifier
 		out = Tape.parse 'return 1 + 2'
 		assert_kind_of Tape::Prefix_Expr, out.first

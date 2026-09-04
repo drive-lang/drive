@@ -30,7 +30,7 @@ make_stats ( filepath: String -> Task_List_Stats;
 
 	# note; these arguments must be in this order, structs don't support named arguments
 	# note; also commas are optional in this case
-	Task_List_Stats.new(
+	Task_List_Stats(
 		filepath.split('.').0
 		open_count
 		done_count
@@ -41,5 +41,5 @@ make_stats ( filepath: String -> Task_List_Stats;
 
 files := ['todos.md' 'bugs.md' 'design.md'] # note; optional commas
 for files
-	@puts make_stats(filepath := it).to_s(compact := true)
+	@puts make_stats(filepath := it).to_s(compact := false)
 end

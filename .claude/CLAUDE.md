@@ -326,15 +326,15 @@ Person.increment()   # Call static method on type => 3 (2 from init(), 1 more fr
 A member must be declared in a type's own body — including via `./member := value` inside any of its own methods — before it can be written to from outside. `.` (external dot access) never creates a member:
 
 ```tape
-Thing { new (; ./member := 123 ) }   # self-declaration via ./ inside a method -- legitimate,
+Thing { Self (; ./member := 123 ) }   # self-declaration via ./ inside a method -- legitimate,
                                      # equivalent to declaring `member,` in the body directly
 t := Thing()
 t.member = 5                         # fine -- member already exists
 t.missing = 5                       # raises Tape::Cannot_Assign_Undeclared_Identifier
 ```
 
-- `./`/`../` self-declaration (`:=`) is only allowed while the instance is still under construction — the class body's own declarations, or `new(;)` itself (and anything it calls). A later method self-declaring a brand-new member this way also raises `Tape::Cannot_Assign_Undeclared_Identifier`, so an instance's shape can't keep growing after it's built. Detected via `instance.has?('new')` — `#interp_type_call` deletes the `new` declaration the moment construction finishes, so that check is true for exactly the construction window
-- Not yet covered: the equivalent restriction for `../` creating a brand-new *static* member from outside the type's original body walk — no "still being defined" signal exists for `Type` the way `has?('new')` does for `Instance`
+- `./`/`../` self-declaration (`:=`) is only allowed while the instance is still under construction — the class body's own declarations, or `Self(;)` itself (and anything it calls). A later method self-declaring a brand-new member this way also raises `Tape::Cannot_Assign_Undeclared_Identifier`, so an instance's shape can't keep growing after it's built. Detected via `instance.has?('Self')` — `#interp_type_call` deletes the `Self` declaration the moment construction finishes, so that check is true for exactly the construction window
+- Not yet covered: the equivalent restriction for `../` creating a brand-new *static* member from outside the type's original body walk — no "still being defined" signal exists for `Type` the way `has?('Self')` does for `Instance`
 - A constant-named member (`X.SOME_CONST = ...`) can never be reassigned via `.`, raising `Tape::Cannot_Reassign_Constant`
 - All three `.`-write forms — plain `=`, plain `:=`, and destructuring dot-targets (see Destructuring below) — share one implementation, `#assign_dot_member` in `interpreter.rb`. `:=` onto an *existing* member re-infers/overwrites its recorded type (same as re-running `:=` on a plain identifier); `=` checks the new value against any previously recorded type instead
 - A `.`-write onto a `nil` receiver (`x.y = z` / `x.y := z` where `x` is `nil`) raises `Tape::Receiver_Is_Nil`, not `Cannot_Assign_Undeclared_Identifier` — see "Nil receiver" under Scope System above
@@ -431,7 +431,7 @@ x := Abc\<Number>             # reference — dup of the existing Abc type, tagg
 x: Abc\<Number>                # same, as a type annotation — lands on the Identifier_Expr's `.tag`
 thing: <String, Number>        # bare struct annotation — lands on the Identifier_Expr's `.type` as a Struct_Expr, sugar for `thing: Struct<String, Number>`; a standalone Tape::Struct value, unrelated to `\`
 z := Abc\<4815>                # a reference tagged with an actual value rather than a type
-z()                            # constructs Abc, with .tag bound before new(;) runs
+z()                            # constructs Abc, with .tag bound before Self(;) runs
 Abc\<4815>()                   # same, in one step
 Abc\4815                       # bare integer, no `<...>` — shorthand for Abc\<4815> (a "version tag")
 Primary_Key\Int               # bare identifier RHS is still a named reference, not this shorthand
@@ -449,7 +449,7 @@ A named reference's RHS must resolve to a real `Tape::Struct` or `Tape::Type` �
 - A struct is only ever reachable via `.tag` (`.tag.types`, `.tag.some_string` for named members) — never auto-unpacked into `./`
 - A bare identifier immediately followed by `,` inside `<...>` (`<String, Number>`) is special-cased in `parse_struct` to parse as a plain identifier rather than the nil-init idiom (`ident,` ⇒ `ident = ident or nil`), which would otherwise misfire on the exact same shape
 - Reference forms (`x := Abc\<Number>`) `dup` the matched variant (see below) rather than mutating it in place — `Object#dup` is shallow, so `@declarations`/`@static_declarations` are explicitly re-forked too, otherwise tagging one reference would silently mutate every other reference sharing that variant
-- Constructing from a tagged reference binds `.tag` onto the instance *before* `type.expressions` (and therefore `new(;)`) run, so `new`'s own body can read `.tag` — but member values are never forwarded as constructor arguments; whatever `(...)` actually passes still binds to `new`'s own declared params, entirely separately
+- Constructing from a tagged reference binds `.tag` onto the instance *before* `type.expressions` (and therefore `Self(;)`) run, so `Self`'s own body can read `.tag` — but member values are never forwarded as constructor arguments; whatever `(...)` actually passes still binds to `Self`'s own declared params, entirely separately
 - A named member's value, supplied positionally at the reference site (`Woof\<'hello', 4815>`, never `Woof\<key: 'hello'>`), gets re-associated with the *matched variant's own* `tag_declaration` names before landing on the instance, so `.tag.key` still resolves correctly
 
 ### Tag chains
@@ -471,7 +471,7 @@ Two chains sharing a prefix are distinct variants: `Thing\One\Two {}` and `Thing
 
 ### Each declared tag is its own type
 
-`Abc\<Number> {}` and `Abc\<String> {}` are independent `Tape::Type` objects, not one shared type with two tags bolted on — declaring a tag creates a fresh type seeded from a copy of the *bare* type's own body (if one exists at declaration time), so one tagged variant's `new`/methods can never clobber another's. This is handled by `#interp_tagged_type_declaration` (`interpreter.rb`), a sibling of `#interp_bare_type_declaration` (used for plain, untagged `Type { ... }`, which still reopens/extends one shared object as before). Both funnel into `#declare_tagged_type_variant` (shared with the auto-declare-on-reference fallback, see above) then `#finish_type_declaration` (Tape:: Ruby-class linking, `@types` bookkeeping, running the body) — reopening an existing variant (bare or tagged) only re-runs its *new* expressions, not ones already run on an earlier declaration.
+`Abc\<Number> {}` and `Abc\<String> {}` are independent `Tape::Type` objects, not one shared type with two tags bolted on — declaring a tag creates a fresh type seeded from a copy of the *bare* type's own body (if one exists at declaration time), so one tagged variant's `Self`/methods can never clobber another's. This is handled by `#interp_tagged_type_declaration` (`interpreter.rb`), a sibling of `#interp_bare_type_declaration` (used for plain, untagged `Type { ... }`, which still reopens/extends one shared object as before). Both funnel into `#declare_tagged_type_variant` (shared with the auto-declare-on-reference fallback, see above) then `#finish_type_declaration` (Tape:: Ruby-class linking, `@types` bookkeeping, running the body) — reopening an existing variant (bare or tagged) only re-runs its *new* expressions, not ones already run on an earlier declaration.
 
 Each variant is kept in a per-scope list (`Scope#tagged_type_variants`, keyed by base name — e.g. every declared tag of `String`) rather than a single mangled-string-keyed member, so `String\<dict: Dictionary> {}` and `String\<other: Dictionary> {}` are two distinct variants instead of colliding on a shared `"String<Dictionary>"` key. Matching pairs top-level structure equality (`Tape::Struct#structure_declaration_equal?`, `struct.rb` — both `names` and resolved `type_names`, positionally, mirroring the language's own `===` on Type/Instance) with `#tag_chains_equal?` for anything chained (`Thing\One\Two` vs `Thing\One\Three`).
 
@@ -489,7 +489,7 @@ String\<5>().to_s()       # "I'm a number-tagged string" -- 5 is a Number
 
 ```tape
 String\<dict: Dictionary> {
-    new ( str: String = "";
+    Self ( str: String = "";
         value = str
     )
     to_s (;
@@ -578,12 +578,20 @@ Implemented in `#interp_struct`/`#register_bare_named_struct` (`interpreter.rb`)
 
 cool := 2342
 %string(481516 `cool`)     # [481516, 2342] — a backtick item (see Statement Expressions below) is interpolated immediately, then folded through the same casing treatment as everything else
+
+%string(1px solid red)     # [1px, solid, red]     — "1px" stays one item, even though the lexer tokenizes it as a number then an identifier
+%string(file.ext other)    # [file.ext, other]      — same for "file.ext" (identifier/operator/identifier)
 ```
 
 - Eight kinds total: `string`/`str`/`Str`/`STR` (String), `symbol`/`sym`/`Sym`/`SYM` (Symbol) — see `PERCENT_LITERALS` in `constants.rb`
 - Items can be identifiers, numbers, operators, or `` `expr` `` (Statement) literals; anything else (a string literal, `[1, 2]`, ...) raises `Tape::Invalid_Percent_Literal_Expression`
-- **Parsing**: items are parsed one bare token at a time (`curr? :operator`/`:number`/identifier-kind dispatch inside `#parse_percent_literal_expr`), never via the general `#parse_expression` — a symbolic operator item like `+`/`-` is also a valid PREFIX operator, and `#parse_expression` would happily reparse it as a prefix/infix expression that swallows the *next* item as its operand (`%str(+ - ^)` used to collapse into one nested `Prefix_Expr` instead of three separate items); a run like `^^^ + - * /` would similarly get glommed into one compound infix expression by ordinary expression parsing, since nothing else marks item boundaries besides whitespace
+- **Items split only on whitespace (or `,`), not per lexer token.** `1px`/`file.ext` are each one item even though the lexer tokenizes them as several lexemes (a number then an identifier; two identifiers split by a `.` operator) — matching how the rest of Tape treats `.` as meaningful punctuation, not a word boundary. `#parse_percent_literal_item` (`parser.rb`) parses one token via `#parse_percent_literal_token` (the same one-token-at-a-time dispatch described below), then keeps merging in further tokens via `#merge_percent_literal_items` as long as `#lexeme_adjacent?` says there's no gap in the source between the previous token's end and the next one's start. A merged item always becomes a plain `Identifier_Expr` carrying the concatenated text (regardless of what token kinds it merged) — downstream (`#interp_percent_literal`) only ever reads `.value`/`.lexeme` off an item, casing included, so the merge is transparent to it. A backtick item never merges with neighboring text; it stands alone, same as before
+- **Parsing (one token)**: `#parse_percent_literal_token` reads one bare token at a time (`curr? :operator`/`:number`/identifier-kind dispatch), never via the general `#parse_expression` — a symbolic operator item like `+`/`-` is also a valid PREFIX operator, and `#parse_expression` would happily reparse it as a prefix/infix expression that swallows the *next* item as its operand (`%str(+ - ^)` used to collapse into one nested `Prefix_Expr` instead of three separate items); a run like `^^^ + - * /` would similarly get glommed into one compound infix expression by ordinary expression parsing, since nothing else marks item boundaries besides whitespace
 - The one remaining `else -> #parse_expression` branch exists purely so an *invalid* item still consumes at least one token — without it, the parser looped forever re-checking the same un-consumed token instead of raising `Invalid_Percent_Literal_Expression`
+
+## @puts Directive
+
+`#interp_directive`'s `'puts'` case (`interpreter.rb`) prints a display form (via `#stringify_for_display`, which calls the value's own `to_s`/`pretty_print` when the Tape type declares one) but **returns the original, un-stringified value** — `@puts` is a passthrough, not a statement, so it can sit inline anywhere an expression is expected: `f(@puts thing)` prints `thing` and still passes the real `thing` through to `f` untouched. Don't collapse this into `value = stringify_for_display(...); puts value; value` — that returns the printed *display string* instead of the original value, breaking the passthrough (regressed and fixed once already).
 
 ## Statement Expressions
 
@@ -611,7 +619,7 @@ Slacker {
 	count := 0
 	statement: Statement
 
-	new ( statement; ./statement = statement )
+	Self ( statement; ./statement = statement )
 	live_count (-> Number; statement() )
 }
 
@@ -625,14 +633,14 @@ dynamic.use_caller_scope = true
 Slacker(dynamic).live_count()    # 4 — resolves Slacker's *own* count member instead (0 -> 4); outer count untouched
 ```
 
-- `.use_caller_scope = true` switches a Statement from captured (predictable, closure-like) to dynamic (resolves fresh at every call site) — see `learn/advanced_statements.tape`
+- `.use_caller_scope = true` switches a Statement from captured (predictable, closure-like) to dynamic (resolves fresh at every call site) — see `learn/statements.tape`
 - `.memoize = true` caches the first `()` result and returns it on every call after that, instead of re-running — `Memoized_Statement`/`Memoizer` no longer exist as separate types, this replaced them
-- `Statement(other)` adopts `other`'s wrapped expression, `captured_scope`, and settings rather than re-capturing "wherever this `Statement(...)` call happens to be written" — `Statement(x+1)` behaves exactly like writing `` `x+1` `` directly (`Tape::Statement#proxy_from`, called from `tapes/statement.tape`'s `new(;)`)
+- `Statement(other)` adopts `other`'s wrapped expression, `captured_scope`, and settings rather than re-capturing "wherever this `Statement(...)` call happens to be written" — `Statement(x+1)` behaves exactly like writing `` `x+1` `` directly (`Tape::Statement#proxy_from`, called from `tapes/statement.tape`'s `Self(;)`)
 
 **Two construction paths, and why it matters.** Every Ruby-backed Tape type (`Tape::String`, `Tape::Array`, `Tape::Statement`, ...) can be built two different ways, and Statement's `captured_scope` makes the distinction concrete:
 
 1. A backtick literal (`` `expr` ``) — `#interp_statement` builds the Ruby object directly and is the *only* place that can set `captured_scope`, since it's interpreter-side code with a live `stack` to read from; Ruby's `#initialize` has no reference to the running `Interpreter` at all.
-2. An explicit `Statement(...)` call — goes through the normal Type-construction path (`#interp_type_call` -> `#build_instance_of_type`), which calls `Tape::Statement.new` with no meaningful constructor argument. Real argument binding happens afterward, separately, once `new(;)`'s own body (`tapes/statement.tape`) runs. Ruby's `#initialize` only ever needs to set harmless defaults it can't get wrong.
+2. An explicit `Statement(...)` call — goes through the normal Type-construction path (`#interp_type_call` -> `#build_instance_of_type`), which calls `Tape::Statement.new` with no meaningful constructor argument. Real argument binding happens afterward, separately, once `Self(;)`'s own body (`tapes/statement.tape`) runs. Ruby's `#initialize` only ever needs to set harmless defaults it can't get wrong.
 
 `use_caller_scope`/`memoize`/`_memoized`/`_memoized_value` are declared as ordinary Tape members in `tapes/statement.tape` (not Ruby `attr_accessor`s) so plain dot-assignment (`s.memoize = true`) works with no extra plumbing; `#invoke_statement` reads/writes them from Ruby via `Scope#[]`/`#[]=`. `captured_scope` couldn't take that route — it holds a live Ruby `Scope` object, not an Tape-representable value — so it stays a Ruby `attr_accessor` instead.
 
@@ -687,12 +695,12 @@ send_greeting(42)          # labels are opt-in -- a bare positional call still w
 
 - Matching is purely positional — a labeled argument's label must match whatever's declared at that same param index; labels are never used to reorder arguments
 - A supplied label that doesn't match the declared one at that position (including "labeled when none was declared") raises `Tape::Argument_Label_Mismatch`
-- Two params can share the same label (`new ( at x, at y; ... )` then `Point(at: 3, at: 4)`) — matching Swift, labels aren't required to be unique
+- Two params can share the same label (`Self ( at x, at y; ... )` then `Point(at: 3, at: 4)`) — matching Swift, labels aren't required to be unique
 - Implementation: `label: value` parses as an ordinary `:` `Infix_Expr` (same production named struct members use) — `#interp_func_body` unwraps it via `#classify_argument` before interpreting, rather than letting `#interpret` try to resolve the label as an identifier
 
 ## Named Function Arguments
 
-`name := value` at a call site binds by the callee's declared param *name*, order-independent — a separate mechanism from labels (which check a *position*'s declared label, never reorder). Works for any call, including construction (`new(;)` params).
+`name := value` at a call site binds by the callee's declared param *name*, order-independent — a separate mechanism from labels (which check a *position*'s declared label, never reorder). Works for any call, including construction (`Self(;)` params).
 
 ```tape
 sub ( a, b; a - b )
@@ -734,21 +742,32 @@ A capitalized identifier followed by a `{}` grouped block
 <Identifier> { <body> }
 ```
 
-The `new` method is the constructor and is called when instantiating a class:
+`Self (;)` is the constructor. `Type()` is the one documented way to call it:
 
 ```tape
 Point {
     x,
     y,
 
-    new ( x, y;
+    Self ( x, y;
         ./x = x
         ./y = y
     )
 }
 
-p := Point(3, 4)  # Calls new
+p := Point(3, 4)  # Calls Self
 ```
+
+### `Self` is an ordinary function member — no dot-based construction magic
+
+There used to be a separate `X.new`/`X.new(...)` dot-sugar that specially meant "construct". It's gone: the constructor is just named `Self`, declared and reachable like any other function, and `Type()` is the *only* construction sugar — `X.Self`/`X.Self(...)` are deliberately **not** special-cased:
+
+- **`Type.Self`** (bare, no parens) is an ordinary reference to the declared function, same as any other unnamed function access — it returns the raw `Tape::Func`, uncalled. This works because a type's body runs directly onto the type's own scope, not just per-instance (`#finish_type_declaration`), so `Self` stays declared there even though it's deleted off each *instance* right after its own construction finishes (see Member Creation Is Strict above). Getting this right required a bypass in `#interp_member_access` (`interpreter.rb`): without it, a dot-target literally named `Self`/`self` fell into `#interp_identifier`'s bare-keyword branch (which means "the enclosing Type/Instance", and only makes sense with *no* dot receiver at all) instead of doing plain member lookup — `Widget.Self` would silently return `Widget` itself, and `x.Self` on a non-Type receiver would raise the wrong error (`Cannot_Use_Type/Instance_Scope_Operator_Outside_Type/Instance`) instead of `Undeclared_Identifier`. The bypass triggers only when the dot-target's name is a bare `Self`/`self` (no scope operator), doing `receiver[name]`/`receiver.has?(name)` directly instead of routing through `#interp_identifier`.
+- **`Type.Self()`** (called) is just an ordinary call on that `Func` — not documented, not fixed up. It never goes through `#interp_type_call`'s instance-building machinery, so no `Instance` is ever pushed; a constructor body's `self.x = ...` therefore raises `Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance`. This is "fair game" (deliberately left as-is) rather than a designed feature — a side effect of `Self` being ordinary, not something to fix or rely on.
+- **`instance.Self`** raises `Tape::Undeclared_Identifier` — `Self` is deleted off an instance the moment its own construction finishes (`instance.delete :Self` in `#interp_type_call`), same as the old `:new` used to be.
+- `Tape::Cannot_Initialize_Non_Type_Identifier` was removed along with the old dot-based construction special-casing (`errors.rb`) — nothing raises it anymore; a non-callable value now just raises `Tape::Cannot_Call_Value` regardless of how it's written.
+
+**Storing a method reference as a first-class value.** `f := instance.some_method` (bare, no call) followed by `f(...)` later works correctly even from a totally unrelated scope — sibling methods `some_method` itself calls internally stay reachable. This is `#rebind_func_to_scope` (`interpreter.rb`): whenever an identifier lookup finds a `Tape::Func`, it rebinds that func's `enclosing_scope` to whatever Instance/Type it was just found on, so calling it later still has access to the rest of that instance's declarations. This only has to happen *once* per method — guarded by `enclosing_scope.instance_of?(Tape::Type)` (exact class, "still pointing at the bare declaring Type") rather than `is_a?` — `Tape::Instance < Tape::Type` in Ruby, so `is_a?` would also match a method *already* correctly bound to a specific Instance, re-rebinding it to whatever unrelated scope its *container* (a plain variable, an Array/Dictionary/struct member, ...) was found through on every subsequent read, silently losing the original binding.
 
 ## Readable and Writable Scopes
 
@@ -889,6 +908,8 @@ Properties: `length`, `ord`
 
 Methods: `upcase()`, `downcase()`, `split(delimiter)`, `slice(substr)`, `trim()`, `trim_left()`, `trim_right()`, `chars()`, `index(substr)`, `to_i()`, `to_f()`, `empty?()`, `include?(substr)`, `reverse()`, `replace(new)`, `start_with?(prefix)`, `end_with?(suffix)`, `gsub(pattern, replacement)`
 
+`.N`-style positional dot-index (`"abc".0` -> `"a"`) indexes by character, same syntax Array/Tuple/Struct already support — a narrower dispatch (`#interp_dot_string`, `interpreter.rb`), not shared with theirs, since reusing that one outright would also pick up its `.each` shorthand branch and Ruby's own String has no `#each`. Negative/out-of-range indices behave the same as Array's own `.N`; the result is a real `Tape::String` (`#array_index_value` wraps it via `#maybe_instance`), so `"abc".0.upcase()` chains fine.
+
 Defined in: `tapes/string.tape`, implemented in `scopes.rb` as `Tape::String`
 
 ### Array
@@ -900,6 +921,8 @@ Methods: `push(item)`, `pop()`, `shift()`, `unshift(item)`, `length()`, `first(c
 Defined in: `tapes/array.tape`, implemented in `scopes.rb` as `Tape::Array`
 
 **Note:** Methods marked *(Tape)* are implemented in Tape using for loops, not as Ruby proxies.
+
+**Gotcha:** `concat` is destructive — a plain passthrough to Ruby's own `Array#concat`, so it mutates the receiver in place, unlike every other method above (`map`/`filter`/`flatten`/`reverse`/`sort`/`uniq`/...), which all return a new Array and leave the receiver untouched. Dangerous against a struct's own member array specifically, since structs are meant to be plain, immutable data — prefer `[a, b].flatten()` to combine two arrays without mutating either one.
 
 ### Dictionary
 
@@ -1295,7 +1318,7 @@ Tape supports HTML rendering via the built-in `Dom` type (load `tapes/html.tape`
 Layout | Dom {
     title,
 
-    new ( title = 'My Page';
+    Self ( title = 'My Page';
         ./title = title
     )
 
@@ -1327,6 +1350,67 @@ Styled_Div | Dom {
 - HTML rendering only works when `render(;)` is called by a Server instance
 - `html_element` sets the tag name (default `'div'`)
 - Fence blocks starting with `html\n` are treated as raw HTML tokens by the lexer
+
+## CSS (`tapes/css.tape`)
+
+CSS is plain data here, no parser involved: a handful of structs build a small AST by hand, and a visitor walks whatever tree you constructed. `@load 'tapes/css.tape'` — it also `@load`s `tapes/visitor.tape` for the shared `Warnings_Visitor` mixin (see below).
+
+**AST node structs**: `Property <name: String, value: Any, important: Bool = false>`, `Variable_Declaration <name, value>`, `Css_Function <name, args: Array>`, `Keyframe <values: Array\String, declarations: Array\Property>`, `Color <hex: String>`, `Style_Rule <selectors: Array, declarations: Array, rules: Array = []>`, `At_Rule <name, prelude: String = "", body: Any = nil>`, `Scope_Rule <root: String, limit: String = "", rules: Array = []>`, `Custom_Property_Rule <name, syntax: String, inherits: Bool = false, initial_value: Any = nil>`, `Layer_Order <names: Array\String>`, `Stylesheet <rules: Array\Css>` — `Css | Style_Rule | At_Rule | Scope_Rule | Custom_Property_Rule | Layer_Order <>` is the composed sum-type union all of those (except `Stylesheet` itself) belong to.
+
+```tape
+@load 'tapes/css.tape'
+
+rule := Style_Rule(['.card'], [Property('color', 'red'), Property('padding', '8px')])
+
+Css_Formatter_Visitor().format(rule)
+# ".card {\n    color: red;\n    padding: 8px;\n}"
+
+Css_Formatter_Visitor(minify := true).format(rule)
+# ".card{color:red;padding:8px;}"
+```
+
+**`Css_Formatter_Visitor`** — constructed `(indent_size := 4, minify := false)`. `format(node, depth := 0, nested_in_rule := false)` dispatches on `node`'s composed type (`=== Stylesheet`/`Style_Rule`/`At_Rule`/.../`Color`, falling back to `node.to_s()`) to a matching `format_*` method.
+
+- `nested_in_rule` decides whether `format_style_rule` synthesizes a `&` prefix on its own selectors (`format_nested_selector` — only if a selector doesn't already start with `&`/`:`) — it's passed `true` **only** from `format_style_rule`'s own recursive call over `rule.rules` (real CSS nesting, where a parent selector genuinely exists to combine with). Every other caller (`format_stylesheet`'s top-level rules, `format_at_rule`'s/`format_scope_rule`'s own body) leaves it `false`, even though those also increment `depth` — `depth > 0` alone can't tell "really nested inside another selector" apart from "just indented because an `@media`/`@scope` wraps it", which used to wrongly synthesize `&` in the latter case too (bugs.md).
+- `Color`'s shorthand branch (`node.hex.has_all_same_characters?()`) relies on String's positional dot-index (`node.hex.0 * 3` — see the String section above) to repeat a single character three times; the plain branch just returns `node.hex` as-is.
+
+**`Css_Lint_Visitor | Warnings_Visitor`** — `lint(node)` resets `self.warnings` then walks, checking each `Property` for a duplicate name (within the same `Style_Rule`), a hardcoded vendor prefix (`-webkit-`/`-moz-`/`-ms-`/`-o-`), and a redundant zero-unit (`"0px"` where `"0"` would do) via `ZERO_UNITS`/`.any?`. Recurses into `Stylesheet.rules`, `Style_Rule.rules`, `Scope_Rule.rules`, and `At_Rule.body` (when it's an Array).
+
+## Struct-Based HTML (`tapes/html2.tape`)
+
+Same spirit as CSS above, and coexists with `tapes/html.tape`'s `Dom` types rather than replacing them — this one only builds an HTML string, it doesn't hook into the server-side live-render pipeline (route responses, onclick wiring, `dom.js`) the way `Dom` does. `@load 'tapes/html2.tape'` — it also `@load`s `tapes/visitor.tape` and `tapes/css.tape`.
+
+**The one node shape**: `Element <tag: String, attributes: Array\Attribute = [], css: Css = nil, children: Array = []>`. `Attribute <name: String, value: Any>` mirrors `Property` exactly — attributes are an ordered Array, not a Dictionary, so they preserve call-site order and can even collide (see `Html_Lint_Visitor` below). `children` holds a mix of `Element` structs and plain Strings (text nodes); `css`, when set, is any css.tape struct.
+
+```tape
+@load 'tapes/html2.tape'
+
+page := div([h1('Welcome'), p('Hello!')], [], Style_Rule(['.greeting'], [Property('color', 'blue')]))
+
+Html_Render.render(page)
+# '<div><h1>Welcome</h1><p>Hello!</p><style>.greeting{color:blue;}</style></div>'
+```
+
+**`Html_Formatter_Visitor`** — constructed `(indent_size := 2, minify := false)`, same "one type, a mode flag" shape as `Css_Formatter_Visitor`. `Html_Render`/`Html_Format` are two shared instances (compact/pretty). `render(node, depth := 0)` dispatches on `node === Element` (else calls `node.to_s()` for a bare text child).
+
+- Void tags (`VOID_TAGS`: `area base br col command embed hr img input keygen link meta param source track wbr`) never get a closing tag, in either mode.
+- A single bare-text child stays on one line (`<p>Hello</p>`) rather than always expanding to block style; any other shape (multiple children, or an Element child) expands.
+- `css`, if attached, renders as one more child — an embedded `<style>` block (`css_child`), built via a fresh `Css_Formatter_Visitor` sharing this visitor's own `indent_size`/`minify` — appended with `[el.children, [css_child(el.css)]].flatten()`, not `.concat` (see the Array `concat` gotcha above: `.concat` would permanently corrupt `el.children` in place, duplicating the `<style>` tag on a second render).
+
+**`Html_Stats_Visitor`** — `analyze(node)` resets `node_count`/`max_depth`/`tag_counts` then walks; `unique_tags()` reads `tag_counts.keys()`; `minified_size(node)`/`pretty_size(node)` just re-render via `Html_Render`/`Html_Format` and read `.length`.
+
+**`Html_Sanitizer_Visitor`** — `sanitize(node)` returns a cleaned copy (the original is untouched; Elements are plain data). Drops `script`/`iframe`/`object`/`embed` tags entirely, along with their children; strips `on*` attributes and `javascript:`-valued `href`/`src` attributes from whatever's left.
+
+**`Html_Lint_Visitor | Warnings_Visitor`** — `lint(node)` resets `self.warnings` then walks, checking for a void element given children, an `<img>` missing `alt`, an empty (non-void) container, and a duplicate attribute name (`check_duplicate_attributes` — a real possibility now that `attributes` is an ordered Array, not a Dictionary).
+
+**Element constructors** — one lowercase function per tag (`div`, `p`, `h1`–`h6`, `href`, `img`, `input`, ..., full parity with `tapes/html.tape`'s predefined element list), each just `Element("tag", attributes, css, children)`. Lowercase, not capitalized like `tapes/html.tape`'s `Div`/`Title`/etc — a capitalized name before `(` routes to type-reference parsing instead of a function declaration.
+
+- `as_children(children)` wraps a single bare child (a String, or one Element) into a one-element Array, so `li("one")` and `li(["one", "two"])` both just work.
+- `merge_attribute(attributes, attr)` gives `href`/`utf8_meta` the same override-in-place-or-append semantics `Dictionary#merge` used to, before `attributes` became an Array: replaces an existing same-named `Attribute` in place, or appends if there isn't one — non-destructive (builds a new Array via `.map`/`.flatten()`, never mutates the caller's own array).
+
+## Shared Visitor Mixin (`tapes/visitor.tape`)
+
+`Warnings_Visitor` — `warnings := []` plus `warn(message)` (pushes onto it) — composed (`| Warnings_Visitor`) into both `Css_Lint_Visitor` and `Html_Lint_Visitor` above, so neither hand-rolls its own accumulator. Loaded automatically by both `tapes/css.tape` and `tapes/html2.tape`.
 
 ## File Loading
 

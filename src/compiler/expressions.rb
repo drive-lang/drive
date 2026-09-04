@@ -134,6 +134,8 @@ module Tape
 		attr_accessor :name, :expressions, :tag
 		# A bare composition chain (`Abc|Def`), no `{}` body -- an anonymous type reference, not a declaration.
 		attr_accessor :anonymous_composition
+		# A trailing `<...>` (instead of `{...}`) after a composition chain (`Both | Abc | Def <extra: String>`) -- a Struct_Expr holding this declaration's own extra members, merged in on top of whatever the chain composes. Struct-flavored sibling of a `{}` body; nil for an ordinary type declaration/composition.
+		attr_accessor :struct_body
 	end
 
 	class Number_Expr < Expression

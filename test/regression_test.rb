@@ -83,29 +83,27 @@ class Regression_Test < Base_Test
 		assert_instance_of Type, out
 	end
 
-	def test_instance_does_not_have_new_function_regression
+	def test_instance_does_not_have_self_function_regression
 		out = Tape.interp '
 		Atom {
-			new (;)
+			Self (;)
 		}
-		a := Atom()
-		b := Atom.new()
-		(a, b)'
-		refute out.values.first.has? :new
-		refute out.values.last.has? :new
+		Atom()'
+		refute out.has? :Self
 	end
 
-	def test_dot_new_initializer_regression
-		out = Tape.interp 'Widget {
-			count := 8
+	# `Type.Self()` is deliberately not construction sugar -- it's an ordinary call to whatever `Self` resolves to (the type's own raw constructor Func), not `Type()`. No Instance is ever built, so `self.count = num` inside it has nowhere real to write.
+	def test_dot_self_call_is_not_construction_sugar_regression
+		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
+			Tape.interp 'Widget {
+				count := 8
 
-			new ( num;
-				self.count = num
-			)
-		}
-		x := Widget.new(15)
-		x.count'
-		assert_equal 15, out
+				Self ( num;
+					self.count = num
+				)
+			}
+			Widget.Self(15)'
+		end
 	end
 
 	def test_calling_member_functions
@@ -113,7 +111,7 @@ class Regression_Test < Base_Test
 		Widget {
 			count := -100
 
-			new ( num;
+			Self ( num;
 				self.count = num
 			)
 		}
@@ -127,7 +125,7 @@ class Regression_Test < Base_Test
 		Box {
 			kind := "NONE"
 
-			new ( new_kind;
+			Self ( new_kind;
 				self.kind = new_kind
 			)
 
@@ -179,7 +177,7 @@ class Regression_Test < Base_Test
 				id,
 				name := 'Thingy'
 
-				new ( new_name := '', id := 123;
+				Self ( new_name := '', id := 123;
 					self.name = new_name
 					self.id = id
 				)
@@ -198,7 +196,7 @@ class Regression_Test < Base_Test
 				id,
 				name := 'Thingy',
 
-				new ( new_name, id;
+				Self ( new_name, id;
 					self.name = new_name
 					self.id = id
 				)
@@ -289,7 +287,7 @@ class Regression_Test < Base_Test
 		    Outer {
 		    	name,
 
-		    	new ( name;
+		    	Self ( name;
 		    		self.name = name
 		    	)
 
@@ -301,7 +299,7 @@ class Regression_Test < Base_Test
 		    Inner {
 		    	name,
 
-		    	new ( name;
+		    	Self ( name;
 		    		self.name = name
 		    	)
 
@@ -513,7 +511,7 @@ class Regression_Test < Base_Test
 		    Counter {
 		        n,
 
-		        new ( n;
+		        Self ( n;
 					self.n = n
 				)
 
@@ -626,7 +624,7 @@ class Regression_Test < Base_Test
 		    	x,
 		    	y,
 
-		    	new ( x, y;
+		    	Self ( x, y;
 		    		self.x = x
 		    		self.y = y
 		    	)
@@ -668,7 +666,7 @@ class Regression_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Thing {
 		    	x,
-		    	new ( x; self.x = x )
+		    	Self ( x; self.x = x )
 		    	to_s (; "Thing(`x`)" )
 		    }
 		    t := Thing(5)
@@ -678,7 +676,7 @@ class Regression_Test < Base_Test
 
 		# A type with no to_s still falls back to the raw dump -- no change there.
 		out = Tape.interp <<~CODE
-		    Bare { x, new ( x; self.x = x ) }
+		    Bare { x, Self ( x; self.x = x ) }
 		    b := Bare(5)
 		    "value: `b`"
 		CODE
@@ -808,12 +806,12 @@ class Regression_Test < Base_Test
 				add(a: 1, 2)')
 		end
 
-		# Labels work through constructors too (`new(;)` params).
+		# Labels work through constructors too (`Self(;)` params).
 		out = Tape.interp <<~CODE
 		    Point {
 		    	x,
 		    	y,
-		    	new ( at x, at y;
+		    	Self ( at x, at y;
 		    		self.x = x
 		    		self.y = y
 		    	)
@@ -911,7 +909,7 @@ class Regression_Test < Base_Test
 		    Vec2 {
 		        x,
 		        y,
-		        new ( x, y;
+		        Self ( x, y;
 		            self.x = x
 		            self.y = y
 		        )
@@ -943,7 +941,7 @@ class Regression_Test < Base_Test
 		# `<=>` on a custom Instance with no @operator overload used to fall through to Ruby's own Kernel#<=> (every Object gets a trivial, identity-based default), silently returning nil instead of raising -- respond_to?(:<=>) can't tell the trivial default apart from a real one.
 		assert_raises Tape::Undeclared_Infix_Operator do
 			Tape.interp <<~CODE
-			    Point { x, new ( x; self.x = x ) }
+			    Point { x, Self ( x; self.x = x ) }
 			    Point(1) <=> Point(2)
 			CODE
 		end
@@ -952,7 +950,7 @@ class Regression_Test < Base_Test
 		assert_equal 1, Tape.interp('5 <=> 3')
 
 		out = Tape.interp <<~CODE
-		    Point { x, new ( x; self.x = x )
+		    Point { x, Self ( x; self.x = x )
 		        @operator <=> @infix ( left, right; left.x <=> right.x )
 		    }
 		    Point(1) <=> Point(2)

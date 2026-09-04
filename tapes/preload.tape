@@ -42,7 +42,7 @@ Bool {
 	truthiness,
 
 	# todo: Think about what else might make a boolean true
-	new ( value := true;
+	Self ( value := true;
 		self.truthiness = value != false and value != nil and value != 0 and value != 0.0
 	)
 

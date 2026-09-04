@@ -1,7 +1,7 @@
 Greet {
 	subject,
 
-	new ( subject;
+	Self ( subject;
 		self.subject = subject
 	)
 

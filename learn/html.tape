@@ -15,7 +15,7 @@ A `Dom` type's `render(;)` returns what belongs inside its tag -- by default tha
 Camp_Sign | Dom {
 	message,
 
-	new ( message;
+	Self ( message;
 		self.message = message
 	)
 
@@ -27,7 +27,7 @@ Camp_Sign | Dom {
 
 ### html_* and css_* prefixes
 
-An `html_*` declaration becomes an HTML attribute (`html_class` -> `class`); a `css_*` declaration becomes an inline style property (`css_padding` -> `padding`). Both are just regular declarations underneath, readable like any other -- but they're only actually folded into attribute/style output by the server's own rendering pipeline when a `Dom` instance comes back from a route (see learn/web_server.tape). Calling `.to_s()` directly, like above, ignores them entirely and only wraps `children` in the tag.
+An `html_*` declaration becomes an HTML attribute (`html_class` -> `class`); a `css_*` declaration becomes an inline style property (`css_padding` -> `padding`). Both are just regular declarations underneath, readable like any other -- but they're only actually folded into attribute/style output by the server's own rendering pipeline when a `Dom` instance comes back from a route (see learn/web_servers.tape). Calling `.to_s()` directly, like above, ignores them entirely and only wraps `children` in the tag.
 ###
 Card | Div {
 	css_padding := '1rem'

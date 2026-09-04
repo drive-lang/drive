@@ -29,12 +29,12 @@ Table_With_Opts\<other: Dictionary> { to_s (; "other-named" ) }
 
   Abc\<Number> {}      -- declaration: defines a new variant
   x := Abc\<Number>    -- reference: dups the matched variant, doesn't mutate it
-  Abc\<Number>()       -- construct: binds .tag onto the instance BEFORE new(;) runs
+  Abc\<Number>()       -- construct: binds .tag onto the instance BEFORE Self(;) runs
 
-A tagged reference is a dup of the variant it matched, so tagging it can never leak back and mutate the shared declaration (or any other reference sharing that variant). `.tag` is readable inside `new(;)` itself, but member values are never forwarded as constructor arguments -- whatever you pass to `(...)` still just binds to new's own declared params, entirely separately.
+A tagged reference is a dup of the variant it matched, so tagging it can never leak back and mutate the shared declaration (or any other reference sharing that variant). `.tag` is readable inside `Self(;)` itself, but member values are never forwarded as constructor arguments -- whatever you pass to `(...)` still just binds to new's own declared params, entirely separately.
 ###
 Abc\<Number> {
-	new (;)
+	Self (;)
 }
 z  := Abc\<4815>
 zz := z()
@@ -61,7 +61,7 @@ The spread rule above only applies when declaring -- a reference never spreads. 
 Options := <a: String, b: Number>
 
 Widget\<opts: Options> {
-	new (;)
+	Self (;)
 }
 
 Widget\Options {}

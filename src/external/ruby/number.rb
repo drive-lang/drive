@@ -18,7 +18,7 @@ module Tape
 			self.value = value.is_a?(::Numeric) ? value : 0
 		end
 
-		# Also the sync point for a later `self.value = n` from Tape's own `new(;)` -- that write reaches
+		# Also the sync point for a later `self.value = n` from Tape's own `Self(;)` -- that write reaches
 		# here through Instance#[]=, since `value` is the proxy_delegate name. Subclasses override to
 		# coerce (`Integer` -> `to_i`, etc).
 		def value= numeric

@@ -150,7 +150,7 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp 'Number {}
 		Integer | Number {}'
 		assert_instance_of Tape::Type, out
-		assert_equal %w(Integer Number), out.types
+		assert_equal Set['Integer', 'Number'], out.types
 	end
 
 	def test_inbody_type_composition_declaration
@@ -162,7 +162,7 @@ class Interpreter_Test < Base_Test
 			| Number
 		}'
 		assert_instance_of Tape::Type, out
-		assert_equal %w(Float Number Numeric), out.types
+		assert_equal Set['Float', 'Number', 'Numeric'], out.types
 	end
 
 	def test_invalid_type_declaration
@@ -445,6 +445,72 @@ class Interpreter_Test < Base_Test
 		assert_equal [4815, 4815], out.values
 	end
 
+	# `[]`/`[]=` (#proxy_get/#proxy_set) normalize a key to a Symbol before touching the underlying hash -- `has_key?`/`delete`/`fetch` used to skip that normalization entirely, so a String key that matched what `[]=` actually stored (a Symbol) silently never matched.
+	def test_dictionary_has_key_with_string_key_matches_what_bracket_assignment_stored
+		out = Tape.interp "d := {}
+		d['color'] = 1
+		d.has_key?('color')"
+		assert_equal true, out
+	end
+
+	def test_dictionary_delete_with_string_key_removes_the_entry
+		out = Tape.interp "d := {a: 1}
+		d.delete('a')
+		d.count()"
+		assert_equal 0, out
+	end
+
+	def test_dictionary_fetch_with_string_key_finds_the_value
+		out = Tape.interp "d := {a: 1}
+		d.fetch('a', 99)"
+		assert_equal 1, out
+	end
+
+	def test_dictionary_fetch_missing_key_returns_the_default
+		out = Tape.interp "d := {}
+		d.fetch('missing', 42)"
+		assert_equal 42, out
+	end
+
+	# The key normalization fix has to work for a real Tape::String value (an ordinary call argument, e.g. a variable), not just a raw Ruby string literal interpreted directly by `[]`/`[]=`'s own subscript handling.
+	def test_dictionary_has_key_with_a_variable_holding_a_string_still_matches
+		out = Tape.interp "d := {}
+		d[:x] = 1
+		s := 'x'
+		d.has_key?(s)"
+		assert_equal true, out
+	end
+
+	# `:=` declares an identifier -- a subscript target isn't one, so `d[key] := value` isn't meaningful the way `d[key] = value` is (and used to silently declare a bogus identifier instead of writing to the dictionary).
+	def test_dictionary_subscript_assignment_via_declare_operator_raises
+		assert_raises Tape::Cannot_Declare_Subscript_Target do
+			Tape.interp "d := {}
+			d[:x] := 5"
+		end
+	end
+
+	# Tape::Array had no `[]=` of its own, so `a[i] = value` fell through to the generic declarations-hash write every other Scope uses, silently declaring a bogus member instead of writing into `.values`.
+	def test_array_subscript_assignment_mutates_in_place
+		out = Tape.interp "a := [1, 2, 3]
+		a[1] = 99
+		a"
+		assert_equal [1, 99, 3], out.values
+	end
+
+	def test_array_subscript_assignment_out_of_bounds_raises
+		assert_raises Tape::Invalid_Array_Index do
+			Tape.interp "a := [1, 2, 3]
+			a[10] = 99"
+		end
+	end
+
+	def test_array_subscript_assignment_via_declare_operator_raises
+		assert_raises Tape::Cannot_Declare_Subscript_Target do
+			Tape.interp "a := [1, 2, 3]
+			a[1] := 99"
+		end
+	end
+
 	def test_too_many_dictionary_subscript_arguments
 		assert_raises Tape::Too_Many_Subscript_Expressions do
 			Tape.interp "dict := {x=4815}
@@ -538,37 +604,43 @@ class Interpreter_Test < Base_Test
 		assert_kind_of Tape::Func_Expr, out.expressions[4]
 	end
 
-	def test_undeclared_type_init_with_new_keyword
+	def test_undeclared_type_init_via_call
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp 'Type.new'
+			Tape.interp 'Type()'
 		end
 	end
 
-	def test_raises_non_type_initialization_error
-		assert_raises Tape::Cannot_Initialize_Non_Type_Identifier do
-			Tape.interp 'x := 1, x.new'
+	# `Self` is deleted off an instance right after construction finishes, so a dot-access to it from an already-built value (a lowercase-receiver `x.Self`, as opposed to a Type's own `Ident.Self`) just fails like any other missing member.
+	def test_ident_dot_self_fails_after_construction
+		assert_raises Tape::Undeclared_Identifier do
+			Tape.interp 'x := 1, x.Self'
 		end
 	end
 
-	def test_declared_type_init_with_new_keyword
-		out = Tape.interp 'Type {}, Type.new'
+	def test_declared_type_init_via_call
+		out = Tape.interp 'Type {}, Type()'
 		assert_instance_of Tape::Instance, out
 		assert_equal 'Type', out.name
 	end
 
-	# Bare `X.new` is equivalent to `X()` — it runs `new(;)`, so required constructor params raise.
-	def test_bare_new_runs_constructor
+	# Bare `X.Self` is equivalent to `X()` — it runs `Self(;)`, so required constructor params raise.
+	# Bare `X.Self` (no parens) is an ordinary reference to the declared function, same as any other unnamed function access -- it does not call it, let alone construct an instance. `X()` remains the real, documented way to construct.
+	def test_bare_self_returns_function_reference
 		out = Tape.interp 'Thing {
 			x,
-			new (;
+			Self (;
 				self.x = 123
 			)
-		}, Thing.new.x'
-		assert_equal 123, out
+		}, Thing.Self'
+		assert_kind_of Tape::Func, out
 
-		assert_raises Tape::Missing_Argument do
-			Tape.interp 'Thing { x, new ( x; self.x = x ) }, Thing.new'
-		end
+		out = Tape.interp 'Thing {
+			x,
+			Self (;
+				self.x = 123
+			)
+		}, Thing().x'
+		assert_equal 123, out
 	end
 
 	def test_complex_type_init
@@ -583,8 +655,8 @@ class Interpreter_Test < Base_Test
 				"Transform!"
 			)
 
-			new ( position := 0; )
-		}, Transform.new'
+			Self ( position := 0; )
+		}, Transform()'
 		assert_kind_of Tape::Instance, out
 		assert_equal 'Transform', out.name
 		assert_kind_of ::Array, out.expressions
@@ -594,7 +666,7 @@ class Interpreter_Test < Base_Test
 
 	def test_complex_type_with_value_lookup
 		out = Tape.interp 'Vector1 { x := 4 }
-		Vector1.new.x
+		Vector1().x
 		'
 		assert_equal 4, out
 	end
@@ -602,9 +674,9 @@ class Interpreter_Test < Base_Test
 	def test_instance_complex_value_lookup
 		out = Tape.interp 'Vector2 { x := 1, y := 2 }
 		Transform {
-			position := Vector2.new
+			position := Vector2()
 		}
-		t := Transform.new
+		t := Transform()
 		(t.position, t.position.y)
 		'
 		assert_kind_of Tape::Tuple, out
@@ -716,7 +788,7 @@ class Interpreter_Test < Base_Test
 		    Point {
 		    	x,
 		    	y,
-		    	new ( x, y;
+		    	Self ( x, y;
 		    		self.x = x
 		    		self.y = y
 		    	)
@@ -759,11 +831,11 @@ class Interpreter_Test < Base_Test
 		assert_instance_of Tape::Type, out
 
 		out = Tape.interp "#{shared_code}
-		A.B.C.new()"
+		A.B.C()"
 		assert_instance_of Tape::Instance, out
 
 		out = Tape.interp "#{shared_code}
-		A.B.C.new().d"
+		A.B.C().d"
 		assert_equal 4, out
 	end
 
@@ -879,24 +951,21 @@ class Interpreter_Test < Base_Test
 		assert_equal "true!", out
 	end
 
-	def test_type_does_have_new_function
+	def test_type_does_have_self_function
 		out = Tape.interp '
 		Atom {
-			new (;)
+			Self (;)
 		}'
-		assert out.has? :new
+		assert out.has? :Self
 	end
 
-	def test_instance_does_not_have_new_function
+	def test_instance_does_not_have_self_function
 		out = Tape.interp '
 		Atom {
-			new (;)
+			Self (;)
 		}
-		a := Atom()
-		b := Atom.new()
-		(a, b)'
-		refute out.values.first.has? :new
-		refute out.values.last.has? :new
+		Atom()'
+		refute out.has? :Self
 	end
 
 	def test_while_loops
@@ -1002,7 +1071,7 @@ class Interpreter_Test < Base_Test
 		Vec2 {
 			x := 0, y := 0
 
-			new ( x, y;
+			Self ( x, y;
 				self.x = x
 				self.y = y
 			)
@@ -1015,7 +1084,7 @@ class Interpreter_Test < Base_Test
 		}
 
 		Transform | Vec2 {
-			new ( position := Vec2();
+			Self ( position := Vec2();
 				self.x = position.x
 				y = position.y
 			)
@@ -1055,7 +1124,7 @@ class Interpreter_Test < Base_Test
 			Vec2 {
 				x := 0, y := 0
 
-				new ( x, y;
+				Self ( x, y;
 					self.x = x
 					self.y = y
 				)
@@ -1063,7 +1132,7 @@ class Interpreter_Test < Base_Test
 			v := Vec2(4, 8)
 
 			Transform | Vec2 {
-				new ( position := Vec2();
+				Self ( position := Vec2();
 					self.x = position.x
 					y = position.y
 				)
@@ -1071,13 +1140,13 @@ class Interpreter_Test < Base_Test
 			t := Transform(Vec2(15, 16))
 
 			Xform | Transform ~ Vec2 {
-				# ~Vec2 removes x and y declarations, but retains Transform's new(;) so unless you declare a new initializer here, you are still required to pass in position arg from Transform, which depends on x and y, which have been removed.
-				new ( p: Vec2; )
+				# ~Vec2 removes x and y declarations, but retains Transform's Self(;) so unless you declare a new initializer here, you are still required to pass in position arg from Transform, which depends on x and y, which have been removed.
+				Self ( p: Vec2; )
 			}
 			x := Xform(v)
 			"
 			assert_instance_of Tape::Instance, out
-			assert_equal ['Xform', 'Transform'], out.types
+			assert_equal Set['Xform', 'Transform'], out.types
 		end
 	end
 
@@ -1345,7 +1414,7 @@ class Interpreter_Test < Base_Test
 		    Numbers {
 		    	numbers := []
 
-				new ( numbers;
+				Self ( numbers;
 					self.numbers = numbers
 				)
 
@@ -1687,7 +1756,7 @@ class Interpreter_Test < Base_Test
 			x := 0
 			y := 0
 
-			new ( x, y;
+			Self ( x, y;
 				self.x = x
 				self.y = y
 			)
@@ -1709,7 +1778,7 @@ class Interpreter_Test < Base_Test
 			b := 0
 
 
-			new ( a, b;
+			Self ( a, b;
 				self.a = a
 				self.b = b
 			)
@@ -1731,7 +1800,7 @@ class Interpreter_Test < Base_Test
 			a := 0
 			b := 0
 
-			new ( a, b;
+			Self ( a, b;
 				self.a = a
 				self.b = b
 			)
@@ -1753,7 +1822,7 @@ class Interpreter_Test < Base_Test
 			a := 0
 			b := 0
 
-			new ( a, b;
+			Self ( a, b;
 				self.a = a
 				self.b = b
 			)
@@ -1778,7 +1847,7 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp "
 		Vector {
 			x := 0
-			new ( x; self.x = x )
+			Self ( x; self.x = x )
 		}
 
 		add ( @add_readable_scope vec;
@@ -2196,7 +2265,7 @@ class Interpreter_Test < Base_Test
 		    	a := 0
 		    	b := 0
 
-		    	new ( a, b;
+		    	Self ( a, b;
 		    		self.a = a
 		    		self.b = b
 		    	)
@@ -2375,7 +2444,7 @@ class Interpreter_Test < Base_Test
 		# And inside a constructor, self-declaring from a param.
 		assert_raises Tape::Type_Contract_Violation do
 			Tape.interp 'Thing {
-					new ( v;
+					Self ( v;
 						x: Number = v
 					)
 				}
@@ -2497,6 +2566,17 @@ class Interpreter_Test < Base_Test
 		    4 -> double -> add_fifteen
 		CODE
 		assert_equal 23, out
+	end
+
+	# #interp_string's own interpolation-region regex used `.` with no /m flag, so a sub-expression
+	# containing a real embedded newline (a nested `"\n"` escape, e.g. `` `arr.join("\n")` ``) couldn't
+	# be matched end to end -- `.*?` can't cross a newline without /m -- so the scan silently found no
+	# match and the whole `` `...` `` region was left as literal, un-interpolated text in the output.
+	def test_string_interpolation_handles_a_sub_expression_containing_a_real_newline
+		out = Tape.interp '
+		arr := ["a", "b"]
+		"X:\n`arr.join(\"\n\")`:Y"'
+		assert_equal "X:\na\nb:Y", out
 	end
 
 	def test_string_interpolation_can_see_custom_operators_declared_elsewhere_in_the_program
@@ -2988,7 +3068,7 @@ class Interpreter_Test < Base_Test
 	def test_member_destructuring_targets
 		# `thing.member` reassigns an existing member, same as plain `thing.member = value`.
 		out = Tape.interp <<~CODE
-		    Thing { member, new (; self.member = 0 ) }
+		    Thing { member, Self (; self.member = 0 ) }
 		    thing := Thing()
 		    (thing.member, local) := <Number, Number>(1, 1)
 		    (thing.member, local)
@@ -2998,7 +3078,7 @@ class Interpreter_Test < Base_Test
 		# The member must already exist -- destructuring can't silently create one.
 		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
 			Tape.interp <<~CODE
-			    Thing { member, new (; self.member = 0 ) }
+			    Thing { member, Self (; self.member = 0 ) }
 			    thing := Thing()
 			    (thing.missing, local) := <Number, Number>(1, 1)
 			CODE
@@ -3007,7 +3087,7 @@ class Interpreter_Test < Base_Test
 		# A constant member can't be reassigned this way either.
 		assert_raises Tape::Cannot_Reassign_Constant do
 			Tape.interp <<~CODE
-			    Thing { MEMBER, new (; self.MEMBER = 0 ) }
+			    Thing { MEMBER, Self (; self.MEMBER = 0 ) }
 			    thing := Thing()
 			    (thing.MEMBER, local) := <Number, Number>(1, 1)
 			CODE
@@ -3017,7 +3097,7 @@ class Interpreter_Test < Base_Test
 		error = assert_raises Tape::Type_Contract_Violation do
 			Tape.interp <<~CODE
 			    Thing {
-					new (;
+					Self (;
 						self.member := 0
 					)
 				}
@@ -3080,7 +3160,7 @@ class Interpreter_Test < Base_Test
 	def test_self_declaration_during_construction_works_but_external_dot_does_not_regression
 		out = Tape.interp <<~CODE
 		    Thing {
-		        new (;
+		        Self (;
 		            self.member := 123
 		        )
 		    }
@@ -3090,7 +3170,7 @@ class Interpreter_Test < Base_Test
 		assert_equal 123, out
 
 		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
-			# but actually it raises something about not being able to declare members on the type outside of new(;) or the explicit class body declarations
+			# but actually it raises something about not being able to declare members on the type outside of Self(;) or the explicit class body declarations
 			Tape.interp <<~CODE
 			    Thing {
 			        not_new_func (;
@@ -3112,7 +3192,7 @@ class Interpreter_Test < Base_Test
 
 		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
 			Tape.interp <<~CODE
-			    Thing { member, new (; self.member = 0 ) }
+			    Thing { member, Self (; self.member = 0 ) }
 			    thing := Thing()
 			    thing.missing = 5
 			CODE
@@ -3423,7 +3503,7 @@ class Interpreter_Test < Base_Test
 	def test_self_dot_declare_self_declares_new_member_during_construction
 		out = Tape.interp <<~CODE
 		    Thing {
-		        new (;
+		        Self (;
 		            self.member := 123
 		        )
 		    }
@@ -3498,7 +3578,7 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Thing {
 		        value,
-		        new ( v; self.value = v )
+		        Self ( v; self.value = v )
 		        make_with_arg (; Self(99) )
 		    }
 		    Thing(1).make_with_arg().value
@@ -3548,5 +3628,48 @@ class Interpreter_Test < Base_Test
 	def test_number_rand_zero
 		out = Tape.interp 'Number.rand(0)'
 		assert_equal 0, out
+	end
+
+	# #rebind_func_to_scope rebinds a just-found instance method's enclosing_scope to the
+	# specific Instance it was found on, so sibling methods/static members stay reachable from
+	# inside it -- but that must happen only the *first* time (while it's still pointing at the
+	# bare declaring Type). Tape::Instance < Tape::Type in Ruby, so a naive `is_a?(Tape::Type)`
+	# guard also matches an *already*-bound Instance, and re-rebinds a stored method reference to
+	# whatever unrelated scope its *container* (a plain variable, here) was found through instead
+	# -- losing the original binding and, with it, access to any sibling method it calls internally.
+	# `.N` positional dot-index on a String, indexing by character -- mirrors the same syntax
+	# already supported on Array/Tuple/Struct (#interp_dot_string, a narrower sibling of
+	# #interp_dot_array_or_tuple so String doesn't also pick up its `.each` shorthand branch, which
+	# Ruby's own String has no #each for #interp_each_loop to call).
+	def test_string_positional_dot_index
+		assert_equal 'a', Tape.interp('"abc".0')
+		assert_equal 'c', Tape.interp('"abc".2')
+	end
+
+	def test_string_positional_dot_index_negative
+		assert_equal 'c', Tape.interp('"abc".-1')
+	end
+
+	def test_string_positional_dot_index_out_of_range_raises
+		assert_raises Tape::Invalid_Array_Index do
+			Tape.interp '"abc".5'
+		end
+	end
+
+	def test_string_positional_dot_index_result_is_a_real_string_with_methods
+		assert_equal 'A', Tape.interp('"abc".0.upcase()')
+	end
+
+	def test_stored_method_reference_keeps_calling_its_own_instances_sibling_methods
+		out = Tape.interp "
+		Greeter {
+			greeting := 'Hello'
+			greet ( name; \"`shout(greeting)`, `name`!\" )
+			shout ( text; text.upcase() )
+		}
+		g := Greeter()
+		f := g.greet
+		f('World')"
+		assert_equal 'HELLO, World!', out
 	end
 end

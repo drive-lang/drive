@@ -32,7 +32,7 @@ Two params can share one label -- nothing requires labels to be unique, matching
 Point {
 	x, y,
 
-	new ( at x, at y;
+	Self ( at x, at y;
 		self.x = x
 		self.y = y
 	)

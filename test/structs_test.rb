@@ -110,7 +110,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Point {
 		    	x, y,
-		    	new ( x, y;
+		    	Self ( x, y;
 		    		self.x = x
 		    		self.y = y
 		    	)
@@ -149,7 +149,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new ( v; self.val = v )
+		    	Self ( v; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    Y := Abc\\<Number>
@@ -162,7 +162,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new ( v; self.val = v )
+		    	Self ( v; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    y := Abc\\<Number>
@@ -172,10 +172,10 @@ class Structs_Test < Base_Test
 		assert_equal 5, out
 	end
 
-	def test_struct_bound_onto_instance_before_new_runs
+	def test_struct_bound_onto_instance_before_self_runs
 		out = Tape.interp <<~CODE
 		    Abc\\<Number> {
-		    	new (;)
+		    	Self (;)
 		    }
 		    z := Abc\\<4815>
 		    zz := z()
@@ -188,7 +188,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Abc {
 		    	val,
-		    	new ( v := -1; self.val = v )
+		    	Self ( v := -1; self.val = v )
 		    }
 		    Abc\\<Number> {}
 		    zz := Abc\\<4815>()
@@ -464,7 +464,7 @@ class Structs_Test < Base_Test
 		    Options := <table_name: String, columns: Number>
 
 		    Thing\\<opts: Options = Options> {
-		    	new (;)
+		    	Self (;)
 		    }
 
 		    a := Thing\\<opts: Options>()
@@ -482,7 +482,7 @@ class Structs_Test < Base_Test
 	# check) where it should have read `supplied.values` for the actual result.
 	def test_named_reference_member_preserves_the_real_supplied_value_regression
 		out = Tape.interp <<~CODE
-		    Data_Conn { name, new ( name; self.name = name ) }
+		    Data_Conn { name, Self ( name; self.name = name ) }
 		    Table\\<columns: Struct, database: Data_Conn> {}
 
 		    cols := <name: String, age: Number>
@@ -536,7 +536,7 @@ class Structs_Test < Base_Test
 	def test_string_tagged_with_a_dictionary
 		src = <<~CODE
 		    String\\<dict: Dictionary> {
-		    	new ( str: String = "";
+		    	Self ( str: String = "";
 		    		value = str
 		    	)
 		    	to_s (;
@@ -574,7 +574,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    @load 'tapes/struct.tape'
 		    Abc\\<dict: Dictionary> {
-		    	new (;)
+		    	Self (;)
 		    }
 		    z := Abc\\<{x=1}>
 		    zz := z()
@@ -1037,5 +1037,181 @@ class Structs_Test < Base_Test
 			    t.tag = 5
 			CODE
 		end
+	end
+
+	# Struct Composition -- `Both | Abc | Def <extra: ...>` composes Bare Named Structs the same way `Type | Other {}` composes Types, with `<...>` playing the role `{}` plays for a type declaration.
+
+	def test_parses_struct_composition_trailing_body
+		out = Tape.parse 'Both | Abc | Def <>'
+		expr = out.first
+		assert_kind_of Tape::Type_Expr, expr
+		assert_equal 'Both', expr.name
+		refute expr.anonymous_composition
+		assert_kind_of Tape::Struct_Expr, expr.struct_body
+		assert_equal [], expr.struct_body.names
+		assert_equal 2, expr.expressions.length
+	end
+
+	def test_parses_struct_composition_with_own_extra_members
+		out = Tape.parse 'Both2 | Abc <my_own: String>'
+		expr = out.first
+		assert_equal ['my_own'], expr.struct_body.names
+		assert_equal %w(String), expr.struct_body.types.map { |member| member.type.value }
+	end
+
+	# A trailing `<` after a composition chain that doesn't actually parse as a struct member list falls back to an ordinary comparison, same ambiguity #try_parse_struct already resolves for a bare `Ident <...>`.
+	def test_composition_followed_by_real_comparison_still_parses_as_comparison
+		out = Tape.parse 'x := A | B < 5'
+		infix = out.first.right
+		assert_kind_of Tape::Infix_Expr, infix
+		assert_equal '<', infix.operator.value
+	end
+
+	def test_struct_composition_union_merges_members_from_both_operands
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int>
+		    Def <def: String>
+		    Both | Abc | Def <>
+		    b := Both(1, 'hi')
+		    (b.abc, b.def)
+		CODE
+		assert_equal [1, 'hi'], out.values
+	end
+
+	def test_struct_composition_with_own_extra_members
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int>
+		    Both2 | Abc <my_own: String>
+		    b := Both2(1, 'yo')
+		    (b.abc, b.my_own)
+		CODE
+		assert_equal [1, 'yo'], out.values
+	end
+
+	def test_struct_composition_union_leftmost_operand_wins_a_name_collision
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int, shared: String>
+		    Def <def: String, shared: String>
+		    U | Abc | Def <>
+		    u := U(1, 'left-shared', 'right-only')
+		    (u.abc, u.shared, u.def)
+		CODE
+		assert_equal [1, 'left-shared', 'right-only'], out.values
+	end
+
+	# Own declared members always win, even over a name a composed operand already claimed -- the struct-composition counterpart of a type's own `{}` body always overwriting anything pulled in via composition.
+	def test_struct_composition_own_members_win_over_composed_members
+		out = Tape.interp <<~CODE
+		    Abc <shared: Int>
+		    Both3 | Abc <shared: String>
+		    b := Both3('mine')
+		    b.shared
+		CODE
+		assert_equal 'mine', out
+	end
+
+	def test_struct_composition_intersection_keeps_only_shared_members
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int, shared: String>
+		    Def <def: String, shared: String>
+		    I | Abc & Def <>
+		    i := I('only-shared')
+		    i.shared
+		CODE
+		assert_equal 'only-shared', out
+	end
+
+	def test_struct_composition_difference_removes_the_operands_members
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int, shared: String>
+		    Def <def: String, shared: String>
+		    D | Abc ~ Def <>
+		    d := D(1)
+		    d.abc
+		CODE
+		assert_equal 1, out
+	end
+
+	def test_struct_composition_symmetric_difference_keeps_only_unique_members
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int, shared: String>
+		    Def <def: String, shared: String>
+		    S | Abc ^ Def <>
+		    s := S(1, 'unique-def')
+		    (s.abc, s.def)
+		CODE
+		assert_equal [1, 'unique-def'], out.values
+	end
+
+	def test_struct_composition_result_is_a_real_bare_named_struct
+		out = Tape.interp <<~CODE
+		    Abc <abc: Int>
+		    Def <def: String>
+		    Both | Abc | Def <>
+		    b := Both(1, 'hi')
+		    (b === Both, Both.name)
+		CODE
+		assert_equal [true, 'Both'], out.values
+	end
+
+	def test_struct_composition_operand_that_is_not_a_struct_raises
+		assert_raises Tape::Invalid_Composition_With_A_Non_Scope_type do
+			Tape.interp <<~CODE
+			    Abc <abc: Int>
+			    Real_Type {}
+			    Bad | Abc | Real_Type <>
+			CODE
+		end
+	end
+
+	# Redeclaring the identical struct composition a second time is a no-op, same as a plain Bare Named Struct -- both funnel through the same #register_bare_named_struct.
+	def test_redeclaring_same_struct_composition_is_a_no_op
+		refute_raises do
+			out = Tape.interp <<~CODE
+			    Abc <abc: Int>
+			    Def <def: String>
+			    Both | Abc | Def <>
+			    Both | Abc | Def <>
+			    Both.name
+			CODE
+			assert_equal 'Both', out
+		end
+	end
+
+	# Positional `.N` dot-index -- same mechanism Array/Tuple already use (#array_index_value only ever needs `.values`, which every Tape::Struct already has), so it works unchanged for a struct too.
+
+	def test_struct_positional_index_on_an_instance
+		out = Tape.interp "s := <'a', 'b'>
+		s.0"
+		assert_equal 'a', out
+	end
+
+	def test_struct_positional_index_on_an_anonymous_unnamed_literal
+		out = Tape.interp '<123>.0'
+		assert_equal 123, out
+	end
+
+	def test_struct_positional_index_on_a_named_member_literal
+		out = Tape.interp '<a := 456>.0'
+		assert_equal 456, out
+	end
+
+	# A typed-only member with no value supplied (a schema declaration, not real data) is still a valid, in-bounds index -- just nil, same as any other unset member.
+	def test_struct_positional_index_on_a_typed_only_member_is_nil
+		out = Tape.interp '<id: Int>.0'
+		assert_nil out
+	end
+
+	def test_struct_positional_index_out_of_bounds_raises
+		assert_raises Tape::Invalid_Array_Index do
+			Tape.interp '<1, 2>.5'
+		end
+	end
+
+	# Named/reflective access must still fall through to ordinary member lookup, unaffected by the new numeric-index dispatch.
+	def test_struct_named_member_access_still_works_alongside_positional_index
+		out = Tape.interp "s := <a := 456>
+		(s.0, s.a)"
+		assert_equal [456, 456], out.values
 	end
 end

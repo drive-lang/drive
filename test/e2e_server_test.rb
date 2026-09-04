@@ -22,7 +22,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -49,7 +49,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -98,7 +98,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -133,7 +133,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -165,7 +165,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -193,13 +193,85 @@ class E2E_Server_Test < Minitest::Test
 		assert_equal 'Form submitted', response.body
 	end
 
+	# `request.body[:key]` (and even `request.body['key']`) silently missed and returned `nil` --
+	# `Tape::Dictionary#normalize_dict_key` always converts a subscript key to a Symbol before
+	# checking `@hash`, but `body_hash` (from CGI.parse/JSON.parse) is String-keyed, so neither form
+	# ever actually matched the one key that was really stored. `query_params`/`url_params` already
+	# worked around this same problem by hand (storing each entry under both its String and Symbol
+	# form) -- `body_hash`/`headers_hash` didn't get the same treatment. Fixed with a shared
+	# `#double_key_with_symbols` helper, applied to both in `#handle_request`.
+	def test_request_body_subscript_access
+		code = <<~TAPE
+		    @load 'tapes/server'
+
+		    Web_App | Server {
+		    	Self ( port := #{@port}; self.port = port )
+
+		    	post://submit (;
+		    		"symbol: `request.body[:name]`, string: `request.body['name']`"
+		    	)
+		    }
+
+		    app := Web_App()
+		TAPE
+
+		@interpreter    = Tape::Interpreter.new
+		server_instance = @interpreter.run code
+
+		@server_runner        = server_instance
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
+		@interpreter.start_server @server_runner
+
+		uri      = URI("http://localhost:#{@port}/submit")
+		response = Net::HTTP.post_form uri, { 'name' => 'World' }
+		assert_equal '200', response.code
+		assert_equal 'symbol: World, string: World', response.body
+	end
+
+	# `response.redirect` was completely unreachable: Response is a plain Scope, not a Tape::Instance,
+	# and #build_tape_response pokes `declarations` directly rather than running the Type's own body
+	# on it, so `redirect` (declared in tapes/server.tape's `Response {}`) never got copied onto the
+	# instance -- and the Instance-fallback lookup that would normally rescue that is gated on
+	# `is_a?(Tape::Instance)`, so it never fired either. Every call raised `Undeclared_Identifier:
+	# redirect has not been declared`. Fixed with a real `Tape::Response#proxy_redirect` (scopes.rb).
+	def test_response_redirect
+		code = <<~TAPE
+		    @load 'tapes/server'
+
+		    Web_App | Server {
+		    	Self ( port := #{@port}; self.port = port )
+
+		    	post://go (;
+		    		response.redirect('/landed')
+		    	)
+		    }
+
+		    app := Web_App()
+		TAPE
+
+		@interpreter    = Tape::Interpreter.new
+		server_instance = @interpreter.run code
+
+		@server_runner        = server_instance
+		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
+		@interpreter.start_server @server_runner
+
+		uri            = URI("http://localhost:#{@port}/go")
+		http           = Net::HTTP.new uri.host, uri.port
+		response       = http.post uri.path, ''
+		assert_equal '303', response.code
+		assert_equal '/landed', response['Location']
+	end
+
 	def test_dialog_and_popover_render_through_a_real_route
 		code = <<~TAPE
 		    @load 'tapes/html'
 
 		    Server {
 		    	port,
-		    	new ( port := #{@port};
+		    	Self ( port := #{@port};
 		    		self.port = port
 		    	)
 		    }
@@ -242,7 +314,7 @@ class E2E_Server_Test < Minitest::Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port;
+		    	Self ( port;
 		    		self.port = port
 		    	)
 		    }

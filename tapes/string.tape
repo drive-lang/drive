@@ -4,7 +4,7 @@ String {
 	ord,        # Integer ordinal of the first character
 	quotation_style: Symbol
 
-	new ( value := '';
+	Self ( value := '';
 		self.value = value
 	)
 
@@ -24,6 +24,14 @@ String {
 	@operator == @infix ( left: String, right;
 		# `right: String` isn't runtime-enforced (param types never are, only literal args at the static checker), so this can be called with any `right` -- including `nil` (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix). `.?value` -- rather than a bare `.value` -- returns nil instead of raising when `right` isn't a String at all.
 		left.value == right.?value
+	)
+
+	@operator * @infix ( left: String, right: Number;
+		result := ""
+        for 0 ..< right
+            result += left.value
+        end
+        result
 	)
 
 	downcase (; @ruby )
@@ -49,5 +57,9 @@ String {
 
 	lines (;
 		value.split('\n')
+	)
+
+	has_all_same_characters? (;
+		value.squeeze.length <= 1
 	)
 }

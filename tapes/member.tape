@@ -3,7 +3,7 @@ Member {
 	type: Any
 	value: Any
 
-	new ( name: String, value := nil, type := nil;
+	Self ( name: String, value := nil, type := nil;
 		self.name  = name
 		self.value = value
 		self.type  = type

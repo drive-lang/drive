@@ -53,8 +53,8 @@ module Tape
 			# @live_reload_token is unique per Interpreter instance: a hot reload builds a fresh
 			# Interpreter, so the token the /_tape/live-reload stream reports changes, which is exactly
 			# the "the server rebooted, refresh now" signal the browser watches for.
-			@live_reload           = false
-			@live_reload_token     = SecureRandom.hex(8)
+			@live_reload       = false
+			@live_reload_token = SecureRandom.hex(8)
 
 			@lexer               = Lexer.new
 			@parser              = Parser.new
@@ -325,10 +325,10 @@ module Tape
 			when ::Integer, ::Float, ::BigDecimal
 				# Tape::Number_Expr is already handled in #interpret but this is short-circuiting that for cases like 1.something where we have to make sure the 1 is no longer a numeric literal, but instead a runtime object version of the number 1. The Ruby class of the already-evaluated value picks the matching Tape numeric type (Ruby's own Integer/Float/Rational tower, minus Rational for now). `Integer`/`Float` are bare here (not `::`) on purpose -- they mean `Tape::Integer`/`Tape::Float`.
 				tape_class, type_name = case expr
-					when ::Integer    then [Tape::Integer, 'Integer']
-					when ::Float      then [Tape::Float,   'Float']
-					when ::BigDecimal then [Tape::Decimal, 'Decimal']
-					end
+				when ::Integer then [Tape::Integer, 'Integer']
+				when ::Float then [Tape::Float, 'Float']
+				when ::BigDecimal then [Tape::Decimal, 'Decimal']
+				end
 
 				finish_intrinsic_instance tape_class.new(expr), type_name
 			when ::String
@@ -531,15 +531,15 @@ module Tape
 			# response access.
 			if live_reload
 				webrick.mount_proc '/_tape/live-reload' do |_req, res|
-					res.status              = 200
-					res['Content-Type']     = 'text/event-stream'
-					res['Cache-Control']    = 'no-cache'
-					res.chunked             = true # no Content-Length possible; emit one chunk per write
-					token                   = live_reload_token
+					res.status           = 200
+					res['Content-Type']  = 'text/event-stream'
+					res['Cache-Control'] = 'no-cache'
+					res.chunked          = true # no Content-Length possible; emit one chunk per write
+					token                = live_reload_token
 
 					res.body = proc do |out|
-						out.write "retry: 300\n\n"        # how long EventSource waits before reconnecting
-						out.write "data: #{token}\n\n"    # the only line the client actually keys on
+						out.write "retry: 300\n\n" # how long EventSource waits before reconnecting
+						out.write "data: #{token}\n\n" # the only line the client actually keys on
 
 						# Heartbeat. Its real jobs: (1) a write eventually raises once the browser tab
 						# closes, freeing this thread; (2) the status check ends the thread promptly when
@@ -547,7 +547,7 @@ module Tape
 						# worker threads, so without this poll the thread would leak on every reload.
 						while webrick.status == :Running
 							sleep 0.5
-							out.write ": ping\n\n"        # SSE comment line -- ignored by the client
+							out.write ": ping\n\n" # SSE comment line -- ignored by the client
 						end
 					rescue Errno::EPIPE, IOError
 						# browser tab went away mid-stream -- expected, nothing to clean up
@@ -598,7 +598,9 @@ module Tape
 				CGI.parse(request.body || "").transform_values(&:first)
 			end
 
-			headers_hash = request.header.to_h
+			# Dictionary subscripts always normalize to a Symbol key, but these sources are String-keyed -- double-key both, like query_params/url_params below already do.
+			body_hash    = double_key_with_symbols body_hash
+			headers_hash = double_key_with_symbols request.header.to_h
 
 			req_info = Ascii.dim ""
 			unless body_hash.empty?
@@ -704,8 +706,8 @@ module Tape
 							''
 						end
 
-						injected  = script_tag + view_transition_tag + live_reload_tag
-						body_str  = response.body.to_s
+						injected = script_tag + view_transition_tag + live_reload_tag
+						body_str = response.body.to_s
 
 						if body_str.include?('<head>')
 							response.body = body_str.sub('<head>', '<head>' + injected)
@@ -768,6 +770,14 @@ module Tape
 			# regardless of declaration order -- so `get://favicon.ico` wins over `get://:id` for
 			# `/favicon.ico`. Fewest `:param` segments wins; #min_by keeps the first on a tie.
 			candidates.min_by { |route| route.parts.count { |part| part.start_with?(':') } }
+		end
+
+		# Stores each entry under both its String and Symbol form, like #extract_url_params/#parse_query_string already do by hand.
+		def double_key_with_symbols hash
+			hash.each_with_object({}) do |(key, value), result|
+				result[key] = value
+				result[key.to_sym] = value if key.respond_to? :to_sym
+			end
 		end
 
 		def extract_url_params path_parts, route
@@ -926,8 +936,11 @@ module Tape
 		# silently drop its closure the moment it's passed to a Tape-implemented HOF (map/filter/find,
 		# which look their `func` param up and would otherwise rebind it to the HOF's own call frame).
 		# Non-Func values pass through unchanged.
+		# Rebinds a just-found method to the Instance it was found on, so its siblings stay reachable --
+		# only while still unbound (`instance_of?`, not `is_a?`: Instance < Type, so `is_a?` would also
+		# match an already-bound method and re-rebind it to whatever unrelated scope it's later read from).
 		def rebind_func_to_scope value, scope
-			return value unless value.is_a?(Tape::Func) && value.enclosing_scope.is_a?(Tape::Type)
+			return value unless value.is_a?(Tape::Func) && value.enclosing_scope.instance_of?(Tape::Type)
 			func                 = value.dup
 			func.enclosing_scope = scope
 			func
@@ -1062,7 +1075,8 @@ module Tape
 				#
 
 				result    = expr.value
-				sub_exprs = result.scan(/(?<!\\)`(.*?)(?<!\\)`/).flatten
+				# /m so a sub-expression containing a real newline (e.g. `` `arr.join("\n")` ``) still matches.
+				sub_exprs = result.scan(/(?<!\\)`(.*?)(?<!\\)`/m).flatten
 
 				sub_exprs.each do |sub|
 					# Reuses the interpreter's own @parser (not a fresh Tape.parse) so it still knows about @operator declarations registered elsewhere in the program -- #input= resets the cursor but not @custom_infix/etc.
@@ -1101,6 +1115,31 @@ module Tape
 			end
 		end
 
+		# `d[key] = value` on a Dictionary or Array -- `:=` on a subscript raises instead (Cannot_Declare_Subscript_Target below), it doesn't come through here.
+		def assign_subscript target, value
+			if target.expression.expressions.count > 1
+				raise Tape::Too_Many_Subscript_Expressions.new(target)
+			end
+			receiver = interpret target.receiver
+			key      = interpret target.expression.expressions.first # Circumfix_Expr stores subscript args as an array; only the first is the key
+
+			if receiver.is_a? Tape::Dictionary
+				receiver.proxy_set key, value
+				receiver.proxy_get key
+			elsif receiver.is_a? Tape::Array
+				# Array has no `[]=` of its own -- without this it'd fall through to Instance#[]=, declaring a bogus member instead of writing `.values`.
+				index = key.is_a?(Tape::Number) ? key.value : key
+				unless index.is_a?(::Integer) && index.between?(-receiver.values.length, receiver.values.length - 1)
+					raise Tape::Invalid_Array_Index.new(target)
+				end
+				receiver.values[index] = value
+				receiver.values[index]
+			else
+				receiver[key] = value
+				receiver[key]
+			end
+		end
+
 		# @param expr [Tape::Infix_Expr]
 		def interp_infix_assignment expr
 			assignment_scope = scope_for_identifier expr.left # Reminder; this returns a scope whether or not the identifier exists
@@ -1131,21 +1170,7 @@ module Tape
 			#
 
 			if expr.left.is_a? Tape::Subscript_Expr
-				if expr.left.expression.expressions.count > 1
-					raise Tape::Too_Many_Subscript_Expressions.new(expr.left)
-				end
-				# note: I'm interpreting only the first expression of left.expression.expressions as the key because the brackets are a Circumfix_Expr which uses an array to store the values.
-				receiver = interpret expr.left.receiver
-				key      = interpret expr.left.expression.expressions.first
-				value    = interpret expr.right
-
-				if receiver.is_a? Tape::Dictionary
-					receiver.proxy_set key, value
-					return receiver.proxy_get key
-				else
-					receiver[key] = value
-					return receiver[key] # note: Intentionally returning the value here because the code starting with the directive check runs to the end of the method. todo: Imrpove?
-				end
+				return assign_subscript expr.left, interpret(expr.right)
 			end
 
 			# Handle dot assignment
@@ -1233,6 +1258,11 @@ module Tape
 
 			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator&.value == '.'
 				return assign_dot_member expr, expr.left, interpret(expr.right), declare: true
+			end
+
+			# `:=` declares an identifier; a subscript target isn't one -- raise rather than silently declaring a bogus identifier below.
+			if expr.left.is_a? Tape::Subscript_Expr
+				raise Tape::Cannot_Declare_Subscript_Target.new(expr)
 			end
 
 			# Only scope-operator forms (`../x`, `./x`, `.x`) target a specific scope. A plain `:=` always declares on the current scope, shadowing any identically-named identifier in an enclosing scope rather than re-declaring on it.
@@ -1340,7 +1370,7 @@ module Tape
 		# A scope that is "under construction" is still allowed to self-declare a brand-new member via `./`, `../`, `self`, or `Self`
 		def still_under_construction? scope
 			if scope.is_a? Tape::Instance
-				scope.has? 'new'
+				scope.has? 'Self'
 			else
 				scope.declaration_in_progress
 			end
@@ -1364,7 +1394,7 @@ module Tape
 			# (`=>=`). A value with no tag has no `.tag` to write -- Member Creation Is Strict
 			# handles that below.
 			if property == 'tag' && receiver.is_a?(Tape::Scope) && receiver.has?('tag')
-				new_tag = tag_struct_for_reassignment value, target
+				new_tag               = tag_struct_for_reassignment value, target
 				unless tag_chains_satisfy? receiver.tag_instance, new_tag
 					raise Tape::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
 				end
@@ -1429,8 +1459,6 @@ module Tape
 
 		# @param expr [Tape::Infix_Expr]
 		def interp_dot_infix expr
-			return interp_dot_new expr if expr.right.is 'new'
-
 			receiver = maybe_instance interpret expr.left
 
 			unless receiver.kind_of?(Tape::Scope) || receiver.kind_of?(Tape::Range)
@@ -1438,8 +1466,12 @@ module Tape
 			end
 
 			case receiver
-			when Tape::Array, Tape::Tuple
+			when Tape::Array, Tape::Tuple, Tape::Struct
+				# A Struct's own `.values` makes `.0`-style positional access work for it too, same as Array/Tuple.
 				interp_dot_array_or_tuple receiver, expr
+			when Tape::String
+				# Separate dispatch, not shared with Array/Tuple/Struct's -- that one's `.each` shorthand would misfire, since String has no #each.
+				interp_dot_string receiver, expr
 			when Tape::Range
 				interp_dot_range receiver, expr
 			when Tape::Dictionary
@@ -1479,6 +1511,12 @@ module Tape
 
 		# Interprets `expr` (the right side of `x.y`) scoped only to `receiver` and global scope, so a missing member can't fall through to an unrelated identically-named one still active further down the caller's stack (this caused a real infinite recursion before the fix).
 		def interp_member_access receiver, expr, exclude_global_scope: false
+			# `X.Self`/`x.self` is an ordinary member lookup, not the bare `Self`/`self` keyword #interp_identifier special-cases -- bypass that branch so a declared `Self` resolves like any other name.
+			if expr.is_a?(Tape::Identifier_Expr) && !expr.scope_operator && Tape::SELF_KEYWORDS.include?(expr.value)
+				return receiver[expr.value] if receiver.is_a?(Tape::Scope) && receiver.has?(expr.value)
+				raise Tape::Undeclared_Identifier.new(expr)
+			end
+
 			begin
 				saved_stack = stack
 				self.stack  = if exclude_global_scope
@@ -1493,28 +1531,36 @@ module Tape
 			end
 		end
 
-		# Bare `X.new` (no parens) is equivalent to `X()`: full construction including `new(;)`, so a constructor with required params raises Missing_Argument. `X.new(...)` with parens never lands here; #interp_call intercepts it and routes to #interp_type_call directly.
-		# @param expr [Tape::Infix_Expr]
-		def interp_dot_new expr
-			receiver = interpret expr.left
-
-			unless receiver.is_a? Tape::Type
-				raise Tape::Cannot_Initialize_Non_Type_Identifier.new expr.left
-			end
-
-			call           = Tape::Call_Expr.new
-			call.receiver  = expr.left
-			call.arguments = []
-			interp_type_call receiver, call
-		end
-
 		# The dot sub-handlers below all take the receiver #interp_dot_infix already interpreted rather than re-interpreting expr.left themselves — re-interpreting ran the receiver expression's side effects (calls, constructions) a second or third time.
 		# Bounds/type-checked element access for `.N`/`.N.M...` dot-index syntax on an Array/Tuple -- plain `values[index]` (Ruby's own Array#[]) silently returns nil past the end, and silently truncates a non-integer index (e.g. `.0.1` lexes as the single float 0.1, which Ruby's [] truncates to index 0) -- both looked like a legitimate result instead of a mistake.
 		def array_index_value collection, index, expr
+			if collection.is_a? Tape::String
+				chars = collection.value.chars
+				unless index.is_a?(::Integer) && index.between?(-chars.length, chars.length - 1)
+					raise Tape::Invalid_Array_Index.new(expr)
+				end
+				return maybe_instance chars[index]
+			end
+
 			unless index.is_a?(::Integer) && index.between?(-collection.values.length, collection.values.length - 1)
 				raise Tape::Invalid_Array_Index.new(expr)
 			end
 			collection.values[index]
+		end
+
+		# `.N`/`.N.M...` positional access on a String, indexing by character.
+		def interp_dot_string str, expr
+			case
+			when expr.right.is(Tape::Number_Expr)
+				array_index_value str, expr.right.value, expr
+			when expr.right.is(Tape::Array_Index_Expr)
+				expr.right.indices_in_order.reduce(str) do |current, index|
+					raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Tape::Array)
+					array_index_value current, index, expr
+				end
+			else
+				interp_dot_scope str, expr
+			end
 		end
 
 		def interp_dot_array_or_tuple scope, expr
@@ -1921,22 +1967,6 @@ module Tape
 
 		# @param expr [Tape::Call_Expr]
 		def interp_call expr
-			# `X.new(...)` parses as Call_Expr(receiver: Infix_Expr(X, '.', new), arguments: [...]). Intercept it here, before evaluating the receiver, so we don't route through interp_dot_new (which eagerly builds a whole Instance for bare `X.new`) and then build a second Instance via interp_type_call below. Bare `X.new` with no call still goes through interp_dot_new untouched, since it never reaches interp_call.
-			if expr.receiver.is_a?(Tape::Infix_Expr) && expr.receiver.operator&.value == '.' && expr.receiver.right.is('new')
-				type = interpret expr.receiver.left
-
-				# Tape::Struct < Instance < Type (Ruby class hierarchy), so a bare struct schema value (`thing := <a: Number>`, or a persisted named struct -- see #interp_type) passes the `is_a? Tape::Type` check below too, but it has no `.expressions` for #interp_type_call's construction path to run -- route it through the same Tape::Struct call path #interp_call's own receiver-dispatch further down already uses for `thing(...)`.
-				if type.is_a? Tape::Struct
-					return interp_struct_call type, expr
-				end
-
-				unless type.is_a? Tape::Type
-					raise Tape::Cannot_Initialize_Non_Type_Identifier.new(expr.receiver.left)
-				end
-
-				return interp_type_call type, expr
-			end
-
 			# A bare `` `expr`() `` written and called in the same place -- always immediate, in whatever scope it's written in. No Tape::Statement is ever built here, so #invoke_statement (used below, once one *has* been built and stored) doesn't apply.
 			if expr.receiver.is_a? Tape::Statement_Expr
 				return interpret expr.receiver.expression
@@ -2058,6 +2088,8 @@ module Tape
 				return referenced
 			end
 
+			return interp_struct_composition expr if expr.struct_body
+
 			if expr.tag
 				interp_tagged_type_declaration expr
 			else
@@ -2071,12 +2103,15 @@ module Tape
 			anonymous.types       = Set.new # Type#initialize seeds `@types = Set[name]` -- Set[nil] here, which would leave a stray nil in .types (breaking #find_ruby_class_for_type's `"Tape::#{type_name}"` lookup) since the union step below only ever adds, never resets.
 			anonymous.expressions = [] # A real declaration always ends up with this set (even to []) via #interp_bare_type_declaration's own body-merge -- there's no body here, but #run_type_body_on_instance still expects an Array to iterate when constructing an instance.
 
-			seed            = Tape::Composition_Expr.new
-			seed.operator   = Tape::Lexeme.new(:operator, '|')
-			seed.identifier = Tape::Identifier_Expr.new.tap { |it| it.lexeme = Tape::Lexeme.new(:Identifier, expr.name) }
-
 			push_then_pop anonymous do
-				interp_composition seed
+				# A bare prefix chain (`x := |Compo`) has no base name to seed with -- only the two-name form (`Base | Compo`) needs Base unioned in first.
+				if expr.name
+					seed            = Tape::Composition_Expr.new
+					seed.operator   = Tape::Lexeme.new(:operator, '|')
+					seed.identifier = Tape::Identifier_Expr.new.tap { |it| it.lexeme = Tape::Lexeme.new(:Identifier, expr.name) }
+					interp_composition seed
+				end
+
 				expr.expressions.each { |composition| interp_composition composition }
 			end
 
@@ -2091,15 +2126,15 @@ module Tape
 			defined   = type.name[0] != '_' && Object.const_defined?(tape_name) # note; #const_defined? does not allow underscore as the first character, hence the underscore check.
 			link_instance_to_type type, type.name if defined
 
-			type.types ||= []
-			type.types << type.name
-			type.types = type.types.uniq
+			type.types ||= Set.new
+			type.types.add type.name
 
 			type.declaration_in_progress = true
 			begin
 				push_then_pop type do
 					body_expressions.each do |sub_expr|
-						interpret sub_expr
+						# A bare composition (`| Compo`) only means anything as a direct top-level item of a type's own body -- dispatch it explicitly rather than through #interpret's generic case (which raises).
+						sub_expr.is_a?(Tape::Composition_Expr) ? interp_composition(sub_expr) : interpret(sub_expr)
 					end
 				end
 			ensure
@@ -2222,8 +2257,8 @@ module Tape
 		# All type names a supplied member value could match a declared struct's member under -- its own primary name first, then everything it composes, so e.g. a `Div` satisfies a member declared `Dom` without being named Dom itself. See #find_tagged_type_variant.
 		def member_candidate_type_names value
 			case value
-			when ::Integer    then ['Integer', 'Number']
-			when ::Float      then ['Float', 'Number']
+			when ::Integer then ['Integer', 'Number']
+			when ::Float then ['Float', 'Number']
 			when ::BigDecimal then ['Decimal', 'Number']
 			when ::String
 				['String']
@@ -2267,14 +2302,14 @@ module Tape
 
 		# Exact structural equality of two tag-chain links, recursively down `.tag_instance`. Both-nil is equal, so an unchained tag is unaffected. Used for declaration-time collision (does `Ab\Cd\Ef {}` reopen an existing variant, or start a new one?).
 		def tag_chains_equal? a, b
-			return true  if a.nil? && b.nil?
+			return true if a.nil? && b.nil?
 			return false if a.nil? || b.nil?
 			a.structure_declaration_equal?(b) && tag_chains_equal?(a.tag_instance, b.tag_instance)
 		end
 
 		# Compositional (`=>=`-style) match of a declared tag chain against a supplied one, in lockstep down `.tag_instance`. Used for reference resolution.
 		def tag_chains_satisfy? declared, supplied
-			return true  if declared.nil? && supplied.nil?
+			return true if declared.nil? && supplied.nil?
 			return false if declared.nil? || supplied.nil?
 
 			lists = (supplied.type_objects || []).map { |value| member_candidate_type_names value }
@@ -2344,8 +2379,8 @@ module Tape
 		# - Interpret type.expressions so the declarations are made on the instance
 		# - Keep instance on the stack
 		# - For each Tape::Func declared on instance, set `func.enclosing_scope = instance`
-		# - Interpret type[:new], the initializer
-		# - Delete :new from instance, inheritd from type, not needed on the instance
+		# - Interpret type[:Self], the initializer
+		# - Delete :Self from instance, inheritd from type, not needed on the instance
 		#
 		# note: There was a bug here where I wasn't popping the instance after interpreting the type's expressions. That caused the #new function below (func_new) to not properly interpret arguments passed to it.
 		# note: We push type.enclosing_scope first (when present) so sibling types declared in the same scope can be found during instantiation.
@@ -2362,7 +2397,8 @@ module Tape
 								next
 							end
 
-							interpret expr
+							# Same bypass as #finish_type_declaration's body walk, re-run per instance here.
+							expr.is_a?(Tape::Composition_Expr) ? interp_composition(expr) : interpret(expr)
 						end
 					end
 				end
@@ -2385,7 +2421,7 @@ module Tape
 			end
 		end
 
-		# Builds the raw instance for #interp_type_call: backed by its Tape:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `new(;)` is invoked afterward by #interp_type_call itself.
+		# Builds the raw instance for #interp_type_call: backed by its Tape:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `Self(;)` is invoked afterward by #interp_type_call itself.
 		def build_instance_of_type type, expr
 			ruby_class = find_ruby_class_for_type type
 			instance   = ruby_class ? ruby_class.new : Tape::Instance.new(type.name)
@@ -2398,7 +2434,7 @@ module Tape
 			instance.enclosing_scope       = type
 			instance.expressions           = type.expressions
 
-			# note; Bind structs onto the instance before the type's expressions (and therefore `new`) are interpreted below, so `new(;)`'s own body can reference `.tag`. This is a completely separate binding path from the call's own arguments — member values never get forwarded into `new`'s params.
+			# note; Bind structs onto the instance before the type's expressions (and therefore `new`) are interpreted below, so `Self(;)`'s own body can reference `.tag`. This is a completely separate binding path from the call's own arguments — member values never get forwarded into `new`'s params.
 			effective_tag = type.tag_instance || type.tag_declaration
 			if effective_tag
 				instance.tag_instance = effective_tag
@@ -2412,7 +2448,7 @@ module Tape
 		def interp_type_call type, expr
 			instance = build_instance_of_type type, expr
 
-			func_new = instance[:new]
+			func_new = instance[:Self]
 
 			# A Dom element accepts whitelisted named arguments (`Button("x", onclick := `...`, html_id
 			# := 'y')`) that aren't `new`'s own params -- they're pulled out here and set on the instance
@@ -2429,7 +2465,7 @@ module Tape
 				raise Tape::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
-			instance.delete :new
+			instance.delete :Self
 
 			dom_props.each { |name, arg| instance.declare name, interpret(classify_argument(arg).last) }
 
@@ -2694,7 +2730,14 @@ module Tape
 					raise Tape::Argument_Given_By_Name_And_Position.new(expr, name_key)
 				end
 
-				has_named ? named_args.delete(name_key) : positional[i]
+				if has_named
+					named_args.delete(name_key)
+				elsif has_positional
+					positional[i]
+				else
+					# Neither supplied -- fall back to the schema's own declared default.
+					struct.values[i]
+				end
 			end
 
 			instance = build_struct struct.names, struct.type_names, struct.type_objects, values
@@ -2702,7 +2745,8 @@ module Tape
 			# #build_struct always links a fresh instance's `.types` to the shared, declared `Struct` type alone (`struct_type.types`, generically `['Struct']`) -- if `struct` (the schema being called) is itself named (see #interp_type's bare named struct handling), carry that name over too, own-name-first, so the constructed instance is `Ident | Struct`-shaped, not just generically Struct-shaped: === and a `-> Ident` return-type contract both key off `.types`.
 			schema_name = struct.get 'name'
 			if schema_name
-				instance.declarations['name'] = schema_name
+				# Don't clobber a real declared `name` member (e.g. `Property <name: String, ...>`) with the reflective type name.
+				instance.declarations['name'] = schema_name unless struct.names.include?('name')
 				instance.types                = Set[schema_name] + instance.types
 			end
 
@@ -2759,7 +2803,7 @@ module Tape
 			params  = handler.parameters
 
 			# A closure built inside a nested call (e.g. `btn.onclick = (;...)` written inside a type's
-			# own `new(;)`) has `.enclosing_scope` pointing at that call's own transient frame, not the
+			# own `Self(;)`) has `.enclosing_scope` pointing at that call's own transient frame, not the
 			# instance it truly belongs to -- the instance sits one or more levels further up that
 			# frame's own `.enclosing_scope` chain. An ordinary dot-call (`w.render()`) never hits this:
 			# #rebind_func_to_scope rebinds `.enclosing_scope` straight to the resolving instance at call
@@ -2894,7 +2938,7 @@ module Tape
 		# @param expr [Tape::Fence_Expr]
 		def interp_fence expr
 			# `expr.value` is the fence's body wrapped in a String_Expr, not yet interpreted -- passing
-			# it straight to Tape::Fence.new (as this used to) stored the raw AST node as the fence's
+			# it straight to Tape::Fence.Self (as this used to) stored the raw AST node as the fence's
 			# own value, so `@puts`ing a fence printed an object dump instead of its text. Interpret it
 			# first, same as any other String_Expr, to get the real Ruby string.
 			#
@@ -2912,6 +2956,27 @@ module Tape
 			interp_string expr.body
 		end
 
+		# `|`/`^` copy a mutable composed-in value (Array/Dictionary/Instance) by reference otherwise,
+		# so every instance of every composing type would share the exact same object. Func/bare Type
+		# values are untouched -- those are meant to stay shared.
+		def dup_composed_value value
+			return value unless value.is_a? Tape::Instance
+
+			duped             = value.dup
+			duped.declarations = value.declarations.dup
+
+			case duped
+			when Tape::Array
+				duped.values                 = duped.values.dup
+				duped.declarations['values'] = duped.values
+			when Tape::Dictionary
+				duped.hash                 = duped.hash.dup
+				duped.declarations['hash'] = duped.hash
+			end
+
+			duped
+		end
+
 		def interp_composition expr
 			# These are interpreted sequentially, so there are no precedence rules. I think that'll be better in the long term because there's no magic behind their evaluation. You can ensure the correct outcome by using these operators to form the types you need.
 
@@ -2926,15 +2991,14 @@ module Tape
 				# Union with Tape::Type
 
 				right.declarations.each do |key, value|
-					curr_scope[key] = value unless curr_scope.has?(key)
+					curr_scope[key] = dup_composed_value(value) unless curr_scope.has?(key)
 				end
 
 				curr_scope.static_declarations ||= Set.new
 				curr_scope.static_declarations.merge right.static_declarations
 
-				curr_scope.types ||= []
-				curr_scope.types += right.types
-				curr_scope.types = curr_scope.types.uniq
+				curr_scope.types ||= Set.new
+				curr_scope.types.merge right.types
 			when '~'
 				# Removal of Tape::Type
 
@@ -2942,7 +3006,7 @@ module Tape
 
 				# Maybe I'll have other keys to protect in the future.
 				operand_keys_to_remove.reject! do |key|
-					key.to_s == 'new'
+					key.to_s == 'Self'
 				end
 
 				operand_keys_to_remove.each do |key|
@@ -2951,7 +3015,7 @@ module Tape
 
 				curr_scope.static_declarations.subtract right.static_declarations
 
-				curr_scope.types = curr_scope.types.reject do |type|
+				curr_scope.types.delete_if do |type|
 					type == expr.identifier.value
 				end
 			when '&'
@@ -2986,11 +3050,71 @@ module Tape
 				curr_scope.static_declarations = curr_scope.static_declarations ^ right.static_declarations
 
 				operand_unique_keys.each do |key|
-					curr_scope[key] = right[key]
+					curr_scope[key] = dup_composed_value(right[key])
 				end
 			else
 				raise Tape::Invalid_Composition_Operator.new(expr)
 			end
+		end
+
+		# Struct-flavored sibling of #interp_composition: `Both | Abc | Def <extra: String>` composes *structs*, not Types. Members are positional, so the merge tracks `[name, type_name, type_object, value]` tuples by hand instead of Scope's key-based storage.
+		def interp_struct_composition expr
+			members = [] # accumulator: [[name, type_name, type_object, value], ...]
+
+			member_index = ->(name) { name && members.index { |m| m[0] == name } }
+
+			expr.expressions.each do |composition_expr|
+				operand = interpret composition_expr.identifier
+				raise Tape::Invalid_Composition_With_A_Non_Scope_type.new(operand) unless operand.is_a? Tape::Struct
+
+				operand_members = operand.names.each_index.map { |i| [operand.names[i], operand.type_names[i], operand.type_objects[i], operand.values[i]] }
+
+				case composition_expr.operator.value
+				when '|'
+					# Union -- leftmost source wins a name collision, same as #interp_composition's own `unless curr_scope.has?(key)`.
+					operand_members.each do |member|
+						next if member_index.call(member[0])
+						members << member
+					end
+				when '~'
+					# Removal -- drop any accumulated member whose name the operand also declares.
+					operand_names = operand_members.filter_map { |m| m[0] }
+					members.reject! { |m| m[0] && operand_names.include?(m[0]) }
+				when '&'
+					# Intersection -- keep only accumulated members the operand also names. An unnamed member has nothing to share by name, so it doesn't survive an intersection.
+					operand_names = operand_members.filter_map { |m| m[0] }
+					members.select! { |m| m[0] && operand_names.include?(m[0]) }
+				when '^'
+					# Symmetric difference -- drop whatever's shared, keep (and pull in) whatever's unique to either side.
+					operand_names = operand_members.filter_map { |m| m[0] }
+					shared_names  = members.filter_map { |m| m[0] }.select { |name| operand_names.include? name }
+					members.reject! { |m| shared_names.include? m[0] }
+					operand_members.each do |member|
+						next unless member[0]
+						next if shared_names.include? member[0]
+						members << member
+					end
+				else
+					raise Tape::Invalid_Composition_Operator.new(composition_expr)
+				end
+			end
+
+			if expr.struct_body
+				# This declaration's own extra members (`<extra: String>`) always win over a composed-in name, same as a type's own `{}` body over composition.
+				own = interp_struct expr.struct_body, allow_spread: false
+				own.names.each_index do |i|
+					member = [own.names[i], own.type_names[i], own.type_objects[i], own.values[i]]
+					if (idx = member_index.call(member[0]))
+						members[idx] = member
+					else
+						members << member
+					end
+				end
+			end
+
+			names, type_names, types, values = members.empty? ? [[], [], [], []] : members.transpose
+			struct = build_struct names, type_names, types, values
+			register_bare_named_struct expr.name, struct, expr
 		end
 
 		# @param for_loop_expr [Tape::For_Loop_Expr]
@@ -3100,6 +3224,7 @@ module Tape
 			case loop_type
 			when 'map', 'select', 'reject'
 				result = Tape::Array.new(collected)
+				link_instance_to_type result, 'Array'
 			when 'count'
 				result = count_val
 			end
@@ -3201,10 +3326,10 @@ module Tape
 				end
 			when 'puts'
 				value = expr.expression ? interpret(expr.expression) : nil
-				# Wrapping here (not generally) is what lets @puts reflect the argument's own quote char when it's a literal (see #wrap_string_literal_value) -- a plain variable/expression has no quotation_style to reflect, so it prints unquoted same as before.
+				# Only a literal has a quote char to reflect -- see #wrap_string_literal_value.
 				value = wrap_string_literal_value(expr.expression, value) if expr.expression
 				puts stringify_for_display(value, show_quotes: true) # note: Don't remove this like I did, it is supposed to print out. todo: Be able to set your own output stream
-				value
+				value # @puts is a passthrough -- returns the original value, not the printed string
 			when 'assert'
 				condition = interpret expr.expression
 				unless truthy? condition
@@ -3376,19 +3501,20 @@ module Tape
 			end
 
 			receiver = maybe_instance interpret expr.receiver
+			subscript = expr.expression.expressions.first
 
 			case receiver
 			when Tape::Dictionary, Tape::Array
-				key = interpret expr.expression.expressions.first
+				key = interpret subscript
 				receiver.proxy_get key
 			when Tape::Nil
 				# todo: What should happen when subscripting nil? A warning of some kind maybe?
 				nil
 			when Tape::String
-				index = interpret expr.expression.expressions.first
+				index = interpret subscript
 				receiver.value[index]
 			else
-				raise Tape::Invalid_Subscript_Receiver.new(expr.receiver)
+				raise Tape::Invalid_Subscript_Receiver.new expr.receiver
 			end
 		end
 
@@ -3513,14 +3639,13 @@ module Tape
 			struct     = build_struct names, type_names, types, values
 
 			# A leading TYPE_IDENTIFIER before `<...>` (`Task <id: Number, done: Bool>`) makes `expr.name` a raw Lexeme -- a Bare Named Struct (see CLAUDE.md), registered globally here. `\<...>`'s inline-literal form sets `.tag.name` to a plain String instead, so it never re-triggers this.
-			return register_bare_named_struct(expr, struct) if expr.name.is_a? Tape::Lexeme
+			return register_bare_named_struct(expr.name.value, struct, expr) if expr.name.is_a? Tape::Lexeme
 
 			struct
 		end
 
-		# Registers (or idempotently confirms) a Bare Named Struct under its own name. Redeclaring the identical shape is a no-op; anything else already bound under that name raises rather than silently clobbering it.
-		def register_bare_named_struct expr, struct
-			name     = expr.name.value
+		# Registers (or idempotently confirms) a Bare Named Struct under `name` -- redeclaring the identical shape is a no-op; anything else already bound there raises instead of clobbering it.
+		def register_bare_named_struct name, struct, expr
 			existing = find_in_stack name
 
 			if existing.is_a?(Tape::Struct) && existing.get('name') == name && existing.structure_declaration_equal?(struct)
@@ -3560,8 +3685,11 @@ module Tape
 			struct.enclosing_scope = struct_type
 			run_type_body_on_instance struct_type, struct
 
+			# Don't clobber a real declared member sharing one of these reflective names (e.g. `Layer_Order <names: Array\String>`).
 			zipped = %w(names type_names types values).zip [names, type_names, types, values]
 			zipped.each do |key, list|
+				next if names.include? key
+
 				array = Tape::Array.new list
 				link_instance_to_type array, 'Array'
 				struct.declarations[key] = array
@@ -3578,8 +3706,15 @@ module Tape
 
 				members_array = Tape::Array.new members
 				link_instance_to_type members_array, 'Array'
-				struct.members                 = members_array
-				struct.declarations['members'] = members_array
+				struct.members = members_array
+				# Same reflective-vs-real-member collision as above, for `members` specifically.
+				struct.declarations['members'] = members_array unless names.include? 'members'
+			end
+
+			# #run_type_body_on_instance above just re-ran Struct's own body, clobbering names/types/values back to their empty defaults -- re-assert the real per-member values one last time.
+			names.each_with_index do |name, i|
+				next unless name
+				struct.declare name, values[i], type_names[i]
 			end
 
 			struct
@@ -3618,7 +3753,8 @@ module Tape
 				interp_func_signature expr
 
 			when Tape::Composition_Expr
-				interp_composition expr
+				# Reaching here means a bare `| Compo` showed up nested somewhere other than a type body's own top level -- #finish_type_declaration/#run_type_body_on_instance dispatch that case explicitly, bypassing this.
+				raise Tape::Composition_Outside_Type_Declaration.new(expr)
 
 			when Tape::Prefix_Expr
 				interp_prefix expr

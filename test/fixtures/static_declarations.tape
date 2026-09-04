@@ -1,7 +1,7 @@
 Person {
     Self.count := 0
 
-    new (;
+    Self (;
         Self.count += 1
     )
 }

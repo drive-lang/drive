@@ -1,4 +1,4 @@
-###Composition Operators Example
+### Composition Operators Example
 This file demonstrates the four class composition operators in Tape:
   | (Union)               - Combine all properties from both classes
   & (Intersection)        - Keep only shared properties

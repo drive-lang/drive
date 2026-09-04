@@ -73,7 +73,7 @@ Two files, independently optional — pure-Tape types skip #2, rare Ruby-only ty
 #### Instance/Type without a backing `Tape::Class`
 
 1. Perfectly valid — most user `Type { }`s have no Ruby class; `build_instance_of_type` falls back to plain `Tape::Instance.new(type.name)`.
-2. A plain `Tape::Instance` works normally for everything declared in Tape — `declarations` hash, methods, `new(;)`, composition, structs.
+2. A plain `Tape::Instance` works normally for everything declared in Tape — `declarations` hash, methods, `Self(;)`, composition, structs.
 3. Only `@ruby` breaks:
    - Outside a `Func` scope → `Tape::Invalid_Ruby_Proxy_Directive_Usage`.
    - Instance doesn't `respond_to?("proxy_#{method_name}")` (no Ruby class, or Ruby class missing that one `proxy_*` method) → `Tape::Missing_Ruby_Proxy_Declaration`.

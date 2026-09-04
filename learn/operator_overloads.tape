@@ -76,7 +76,7 @@ Dispatch checks the left operand's own declarations first, before falling back t
 
 Wrapped {
 	val,
-	new ( v; self.val = v )
+	Self ( v; self.val = v )
 	@operator ~> @infix 300 ( left, right; left.val )
 }
 

@@ -18,7 +18,7 @@ Vec2 {
 	x,
 	y,
 
-	new (x, y;
+	Self (x, y;
 		self.x = x
 		self.y = y
 	)

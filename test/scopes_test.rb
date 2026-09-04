@@ -4,15 +4,15 @@ require_relative '../src/tape'
 require_relative 'base_test'
 
 class Scopes_Test < Base_Test
-	SHARED_VEC2 = "Vec2 { x:=0, y:=0, new ( x,y; self.x=x, self.y=y ) }".freeze
+	SHARED_VEC2 = "Vec2 { x:=0, y:=0, Self ( x,y; self.x=x, self.y=y ) }".freeze
 
-	def test_declaring_new_inside_pushed_scope
+	def test_declaring_self_inside_pushed_scope
 		out = Tape.interp <<-CODE
 			Vec2 { x := 0, y := 0 }
-			# Vec2 intentionally doesn't declare new(;)
+			# Vec2 intentionally doesn't declare Self(;)
 
 			@push_scope Vec2
-			new ( x := 0, y := 0;
+			Self ( x := 0, y := 0;
 				self.x=x, self.y=y
 			)
 			@pop_scope Vec2

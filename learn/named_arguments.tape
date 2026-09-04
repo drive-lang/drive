@@ -21,12 +21,12 @@ A call can start with positional arguments (bare or labeled) and switch to named
 
 ### Named arguments work through constructors too
 
-`new(;)`'s own params are just params -- calling `Type(...)` goes through the exact same binding as any other function call.
+`Self(;)`'s own params are just params -- calling `Type(...)` goes through the exact same binding as any other function call.
 ###
 Point {
 	x, y,
 
-	new ( x, y;
+	Self ( x, y;
 		self.x = x
 		self.y = y
 	)

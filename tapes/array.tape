@@ -1,7 +1,7 @@
 Array {
 	values, # is the internal backing array
 
-	new ( values := [];
+	Self ( values := [];
 		self.values = values
 	)
 

@@ -1,0 +1,217 @@
+### Introduction
+
+`for` iterates a collection. Inside the body, `it` is the current element and `at` is its index -- no loop variable to name and declare yourself. The castaways take inventory of what washed ashore from the plane:
+###
+cargo   := ['water', 'fruit', 'blankets']
+manifest := []
+for cargo
+	manifest.push("`at`: `it`")
+end
+@assert manifest == ['0: water', '1: fruit', '2: blankets'], 'it/at should pair each element with its index'
+
+
+### Ranges iterate too
+
+A range is just another iterable -- `for` walks it the same way it walks an array:
+###
+days_stranded := 0
+for 1...5
+	days_stranded = it
+end
+@assert days_stranded == 5, 'range iteration should end on the last value'
+
+
+### Stride: chunks of N
+
+`by N` groups the collection into chunks of N elements per iteration, instead of one element at a time -- `it` becomes each chunk. Jin pairs up the fish he's caught:
+###
+fish := ['red', 'blue', 'green', 'yellow', 'orange', 'purple']
+pairs := []
+for fish by 2
+	pairs.push(it)
+end
+@assert pairs == [['red', 'blue'], ['green', 'yellow'], ['orange', 'purple']], 'stride 2 should chunk into pairs'
+
+
+### Verbs: map
+
+A verb after the collection turns `for` into a transformation that returns a value, instead of just running side effects. `map` transforms every element:
+###
+supplies := [1, 2, 3, 4, 5]
+doubled := for supplies map
+	it * 2
+end
+@assert doubled == [2, 4, 6, 8, 10], 'map should collect each transformed element'
+
+
+### Verbs: select and reject
+
+`select` keeps elements where the body is truthy, `reject` keeps elements where it's falsy -- mirror images of each other. Splitting the survivors into two search parties by even/odd number:
+###
+group_a := for supplies select
+	it % 2 == 0
+end
+@assert group_a == [2, 4], 'select should keep only the truthy elements'
+
+group_b := for supplies reject
+	it % 2 == 0
+end
+@assert group_b == [1, 3, 5], 'reject should keep only the falsy elements'
+
+
+### Verbs: count
+
+`count` returns a plain number -- how many elements the body was truthy for, nothing collected:
+###
+even_count := for supplies count
+	it % 2 == 0
+end
+@assert even_count == 2, 'count should tally the truthy elements'
+
+
+### Verbs combine with stride
+
+`by N` still groups into chunks first; the verb then runs once per chunk, same as a plain `for` would:
+###
+paired_sums := for [1, 2, 3, 4, 5, 6] map by 2
+	it.0 + it.1
+end
+@assert paired_sums == [3, 7, 11], 'map with stride should run once per chunk'
+
+
+### stop returns partial results
+
+`stop` still breaks out of the loop early, but for `map`/`select`/`reject` the elements collected so far are kept instead of discarded -- Charlie stops counting driftwood the moment he spots a plane part:
+###
+driftwood := for [1, 2, 3, 4, 5] map
+	stop if it == 4
+	it * 2
+end
+@assert driftwood == [2, 4, 6], 'stop should keep the partial results collected so far'
+
+
+### skip: continue to the next iteration
+
+`skip` abandons the rest of the current iteration's body and moves straight to the next one, like `continue` in other languages. Kate is sorting the plane wreckage, skipping anything that isn't a suitcase:
+###
+wreckage := ['suitcase', 'seat', 'suitcase', 'engine', 'suitcase']
+suitcases := []
+for wreckage
+	skip if it != 'suitcase'
+	suitcases.push(it)
+end
+@assert suitcases == ['suitcase', 'suitcase', 'suitcase'], 'skip should abandon the rest of the body for non-matching iterations'
+
+
+### stop: exit the loop entirely
+
+`stop` breaks out of the loop immediately, like `break`. Sawyer keeps stacking firewood until he's got enough for the signal fire:
+###
+firewood := [1, 1, 1, 1, 1, 1]
+logs_used := 0
+for firewood
+	stop if logs_used == 4
+	logs_used += 1
+end
+@assert logs_used == 4, 'stop should exit the loop as soon as the condition is met'
+
+
+### return propagates through loops
+
+`return` exits the enclosing FUNCTION, not just the loop -- it keeps unwinding even from inside a `for`, `while`, or `until` body, because that body is still part of the same function. Searching the camp for Vincent the dog:
+###
+find_vincent ( survivors;
+	for survivors
+		return it if it == 'Vincent'
+	end
+	nil
+)
+
+@assert find_vincent(['Jack', 'Kate', 'Vincent', 'Sawyer']) == 'Vincent', 'return inside a for loop should exit the enclosing function'
+@assert find_vincent(['Jack', 'Kate']) == nil, 'falling through the loop without a match should return the trailing nil'
+
+
+### ...but not through a callback passed to another function
+
+`return` only ever exits the function it's lexically written in -- a `(; ... )` passed as an argument (like `.each`'s callback) is a DIFFERENT function, not part of `find_vincent` at all. When it hits `return`, it returns from itself; `each` (which just called it like any other function) never finds out, and `find_vincent` falls through to its own trailing `nil`. Same reason Python's `return` inside a lambda passed to `map` doesn't return from the caller either -- a passed-in function is still its own function, no matter who calls it or from where.
+###
+find_vincent_via_each ( survivors;
+	survivors.each((it;
+		return it if it == 'Vincent'   # only exits this anonymous function
+	))
+	nil
+)
+
+@assert find_vincent_via_each(['Jack', 'Kate', 'Vincent', 'Sawyer']) == nil, "return inside a callback shouldn't reach past it -- not Vincent!"
+
+
+### while
+
+`while` loops as long as its condition holds. The castaways are rationing a bottle of water -- keep drinking while there's still some left:
+###
+water := 5
+while water > 0
+	water -= 1
+end
+@assert water == 0, 'while should keep looping until the condition goes false'
+
+
+### until: the inverse
+
+`until` reads as "loop until this becomes true" -- exactly `while !condition`, spelled whichever way is clearer at the call site. Sayid keeps trying the signal flare until he's fired it three times:
+###
+flares_fired := 0
+until flares_fired == 3
+	flares_fired += 1
+end
+@assert flares_fired == 3, 'until should keep looping until the condition becomes true'
+
+
+### while/until are expressions too
+
+A loop's value is whatever its body last evaluated to -- there's no need for a separate accumulator variable outside it. If the condition is false from the very start, the loop never runs and the whole expression is `nil`:
+###
+countdown := 0
+last_seen := while countdown < 3
+	countdown += 1
+end
+@assert last_seen == 3, "a loop's value should be whatever its body last evaluated to"
+
+never_ran := while false
+	1
+end
+@assert never_ran == nil, 'a loop that never runs should evaluate to nil'
+
+
+### Chaining with elwhile
+
+`elwhile` chains another loop once the prior one's condition goes false, the same way `elif` chains conditionals. Hurley counts numbers while he's below 4, then Charlie counts down while he's above -8:
+###
+hurley_count := 0
+charlie_count := 0
+while hurley_count < 4
+	hurley_count += 1
+elwhile charlie_count > -8
+	charlie_count -= 1
+end
+@assert hurley_count == 4, 'the first loop in the chain should run to completion'
+@assert charlie_count == -8, 'elwhile should pick up once the prior condition goes false'
+
+
+### else always runs last
+
+`else`, if present, always evaluates after the while/elwhile chain finishes -- regardless of whether any loop in the chain ever ran -- and its value becomes the whole expression's result, overriding whatever the loop bodies produced. That's completely optional though.
+###
+tally := 0
+result := while tally < 4
+	tally += 1
+else
+	'done rationing'
+end
+@assert result == 'done rationing', "else's value should override the loop body's, even though the while loop ran to completion"
+
+tally2 := 0
+result2 := while tally2 < 4
+	tally2 += 1
+end
+@assert result2 == 4, "without else, the loop's own last value should be the result"

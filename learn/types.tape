@@ -6,7 +6,7 @@ Survivor {
 	name,
 	number,
 
-	new ( name, number;
+	Self ( name, number;
 		self.name   = name
 		self.number = number
 	)
@@ -54,7 +54,7 @@ Dharma_Station {
 	Self.station_count := 0
 	station_name,
 
-	new ( station_name;
+	Self ( station_name;
 		self.station_name = station_name
 		Self.station_count += 1
 	)
@@ -78,7 +78,7 @@ Smoke_Monster {
 	_true_agenda,
 	name,
 
-	new ( name, agenda;
+	Self ( name, agenda;
 		self.name          = name
 		self._true_agenda  = agenda
 	)

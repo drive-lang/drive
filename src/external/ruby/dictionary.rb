@@ -10,12 +10,9 @@ module Tape
 		end
 
 		proxy_delegate 'hash'
-		proxy :has_key?
-		proxy :delete
 		proxy :count
 		proxy :empty?
 		proxy :clear
-		proxy :fetch
 
 		def proxy_keys
 			Tape::Array.new hash.keys
@@ -29,13 +26,31 @@ module Tape
 			Tape::Dictionary.new hash.merge other_hash.hash
 		end
 
+		# A key argument reaching any of these five can be a raw Ruby String/Symbol (a literal interpreted directly, e.g. by #interp_infix_assignment's own subscript handling) or a real Tape::String instance (an ordinary call argument, e.g. a variable holding one) -- Tape::String has no #to_sym of its own, so unwrap it to its real Ruby value first either way.
+		def normalize_dict_key key
+			(key.is_a?(Tape::String) ? key.value : key).to_sym
+		end
+
 		# note; To prevent Scope#[] or Scope#get from missing out on the actual location of the hash. Standard members still call through to [] and get. I'm manually calling these proxy methods in some places. @copypaste from array.rb
 		def proxy_get key
-			hash[key.to_sym]
+			hash[normalize_dict_key(key)]
 		end
 
 		def proxy_set key, value
-			hash[key.to_sym] = value
+			hash[normalize_dict_key(key)] = value
+		end
+
+		# `[]`/`[]=` (#proxy_get/#proxy_set above) normalize the key to a Symbol before touching `hash` -- these three need the exact same normalization, or a String key (`d.has_key?('color')`) silently never matches what's actually stored (`d['color'] = 1` really wrote `hash[:color]`), since a plain `proxy :has_key?`/`:delete`/`:fetch` would hand the raw argument straight to Ruby's own Hash methods with no such conversion.
+		def proxy_has_key? key
+			hash.has_key? normalize_dict_key(key)
+		end
+
+		def proxy_delete key
+			hash.delete normalize_dict_key(key)
+		end
+
+		def proxy_fetch key, default = nil
+			hash.fetch normalize_dict_key(key), default
 		end
 
 		def == other

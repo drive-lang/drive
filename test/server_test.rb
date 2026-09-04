@@ -9,7 +9,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3000;
+		    	Self ( port := 3000;
 		    		self.port = port
 		    	)
 		    }
@@ -26,7 +26,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3001;
+		    	Self ( port := 3001;
 		    		self.port = port
 		    	)
 		    }
@@ -49,7 +49,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3002;
+		    	Self ( port := 3002;
 		    		self.port = port
 		    	)
 		    }
@@ -77,7 +77,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 8888;
+		    	Self ( port := 8888;
 		    		self.port = port
 		    	)
 		    }
@@ -96,7 +96,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3003;
+		    	Self ( port := 3003;
 		    		self.port = port
 		    	)
 		    }
@@ -124,7 +124,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3004;
+		    	Self ( port := 3004;
 		    		self.port = port
 		    	)
 		    }
@@ -162,7 +162,7 @@ class Server_Test < Base_Test
 		code = <<~TAPE
 		    Server {
 		    	port,
-		    	new ( port := 3005;
+		    	Self ( port := 3005;
 		    		self.port = port
 		    	)
 		    }

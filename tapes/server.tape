@@ -19,7 +19,7 @@ Response {
 Server {
 	port,
 
-	new ( port := 8080;
+	Self ( port := 8080;
 		self.port = port
 	)
 

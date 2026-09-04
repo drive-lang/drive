@@ -233,6 +233,12 @@ module Tape
 
 	class Response < Scope
 		attr_accessor :webrick_response
+
+		def proxy_redirect location
+			declarations['status']              = 303
+			declarations['headers']['Location'] = location
+			nil
+		end
 	end
 
 end

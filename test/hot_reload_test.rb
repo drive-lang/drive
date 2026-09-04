@@ -16,7 +16,7 @@ class Hot_Reload_Test < Base_Test
 		<<~TAPE
 		    @load 'tapes/server'
 		    App | Server {
-		    	new (; self.port = #{port} )
+		    	Self (; self.port = #{port} )
 		    	get:// (; "ok" )
 		    }
 		    app := App()
@@ -65,7 +65,7 @@ class Hot_Reload_Test < Base_Test
 		<<~TAPE
 		    @load 'tapes/server'
 		    App | Server {
-		    	new (; self.port = #{port} )
+		    	Self (; self.port = #{port} )
 		    	get:// (; "<html><head></head><body>hi</body></html>" )
 		    }
 		    app := App()

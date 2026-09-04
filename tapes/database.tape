@@ -21,7 +21,7 @@ Database {
 }
 
 Sqlite | Database {
-	new (url: String;
+	Self (url: String;
 		adapter = 'sqlite'
 		self.url = url
 	)

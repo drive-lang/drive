@@ -91,10 +91,6 @@ module Tape
 	class Cannot_Assign_Undeclared_Identifier < Error
 	end
 
-	class Cannot_Initialize_Non_Type_Identifier < Error
-	end
-
-	# Distinct from Cannot_Initialize_Non_Type_Identifier -- this is calling () on an ordinary value that just isn't callable, not X.new/X() on a non-Type.
 	class Cannot_Call_Value < Error
 	end
 
@@ -202,6 +198,10 @@ module Tape
 	end
 
 	class Too_Many_Subscript_Expressions < Error
+	end
+
+	# `d[key] := value` -- `:=` declares an identifier; a subscript target isn't one. Use `=` instead.
+	class Cannot_Declare_Subscript_Target < Error
 	end
 
 	class Invalid_Subscript_Receiver < Error
@@ -357,6 +357,10 @@ module Tape
 	end
 
 	class Invalid_Composition_Operator < Error
+	end
+
+	# A bare composition (`|Compo`, `&Compo`, ...) with no left operand is only meaningful while a Type's own body is actually being declared/reopened -- interpreting one anywhere else (`x := |Compo`, as an ordinary statement, ...) used to silently merge the operand into whatever scope happened to be on top of the stack instead of raising.
+	class Composition_Outside_Type_Declaration < Error
 	end
 
 	class Argument_Label_Mismatch < Error

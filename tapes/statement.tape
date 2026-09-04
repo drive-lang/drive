@@ -1,8 +1,8 @@
 Statement {
-	# When true, `()` resolves free identifiers against wherever it's *called from* instead of the scope it was originally captured in. See learn/advanced_statements.tape.
+	# When true, `()` resolves free identifiers against wherever it's *called from* instead of the scope it was originally captured in. See learn/statements.tape.
 	use_caller_scope := false
 
-	# When true, the first `()` call's result is cached and returned by every call after that, instead of re-running the expression. See learn/advanced_statements.tape.
+	# When true, the first `()` call's result is cached and returned by every call after that, instead of re-running the expression. See learn/statements.tape.
 	memoize := false
 
 	# Internal bookkeeping for `memoize`, above -- read/written by Interpreter#invoke_statement on the first `()` call. Not meant to be set directly.
@@ -11,7 +11,7 @@ Statement {
 	_memoized_value := nil
 
 	# Currently you cannot directly init this with a plain value -- you have to build it from a backtick literal such as `x := 1`, or by wrapping an existing Statement: `Statement(x)`.
-	new ( literal := nil; # A literal here is --> `1+1` <-- including the backticks
+	Self ( literal := nil; # A literal here is --> `1+1` <-- including the backticks
 		from(literal)
 	)
 

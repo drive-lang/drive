@@ -206,4 +206,144 @@ class Composition_Test < Base_Test
 			l.email"
 		end
 	end
+
+	# A bare composition (`| Compo`) only means anything as a direct top-level item of a type's own body -- nested anywhere else, it used to silently merge into whatever scope happened to be on top of the stack (the *enclosing* type, if written inside one) and return some incidental leftover value.
+
+	# `x := |Compo` (and chains, `y := |This ^ That`) -- a composition with no left operand, used as a
+	# value (#parse_bare_composition_chain / #interp_anonymous_composition), not merged into whatever
+	# scope happens to be on top of the stack. Works anywhere, same as the existing two-name chain form
+	# (`x := Base | Compo`) -- not restricted to type bodies.
+
+	def test_bare_composition_assigned_to_a_local_builds_a_scoped_value
+		out = Tape.interp "
+		Compo { a := 1 }
+		x := |Compo
+		y := x()
+		y.a"
+		assert_equal 1, out
+	end
+
+	def test_bare_composition_chain_assigned_to_a_local_works
+		out = Tape.interp "
+		This { a := 1, shared := 'this' }
+		That { b := 2, shared := 'that' }
+		z := |This ^ That
+		w := z()
+		(w.a, w.b)"
+		assert_equal [1, 2], out.values
+	end
+
+	def test_bare_composition_assigned_to_a_local_reflects_in_its_composed_type_set
+		out = Tape.interp "
+		Compo { a := 1 }
+		x := |Compo
+		y := x()
+		(y =>= Compo, y === Compo)"
+		assert_equal [true, true], out.values
+	end
+
+	# Declared as a member inside a type body, it scopes to that member -- Compo does not splat into the
+	# enclosing Type's own declarations the way a bare `| Compo` *statement* (no `:=`) would.
+	def test_bare_composition_assigned_inside_a_type_body_does_not_leak_into_the_enclosing_type
+		assert_raises Tape::Undeclared_Identifier do
+			Tape.interp "
+			Compo { a := 99 }
+			Type { x := |Compo }
+			t := Type()
+			t.a"
+		end
+	end
+
+	def test_bare_composition_assigned_inside_a_type_body_is_reachable_through_its_member
+		out = Tape.interp "
+		Compo { a := 99 }
+		Type { x := |Compo }
+		t := Type()
+		i := t.x()
+		i.a"
+		assert_equal 99, out
+	end
+
+	def test_bare_composition_as_a_standalone_statement_raises
+		assert_raises Tape::Composition_Outside_Type_Declaration do
+			Tape.interp "
+			Compo { a := 1 }
+			|Compo"
+		end
+	end
+
+	# The real, working way to get a scoped/local composed type -- a genuine chain (`X | Y`), not a bare
+	# prefix (`|Y`) -- still works: #interp_anonymous_composition builds a fresh, unnamed Type from it.
+	def test_composition_chain_assigned_to_a_local_still_works
+		out = Tape.interp "
+		Base {}
+		Compo { a := 1 }
+		x := Base | Compo
+		y := x()
+		y.a"
+		assert_equal 1, out
+	end
+
+	# Composing as a bare statement inside a type's own `{}` body (not just in the header, before it)
+	# is a distinct, legitimate form -- must keep working after the fix above.
+	def test_composition_as_a_bare_statement_inside_a_type_body_still_works
+		out = Tape.interp "
+		Number {}
+		Float { | Number }
+		Float =>= Number"
+		assert_equal true, out
+	end
+
+	# A composed-in Array/Dictionary/Instance-valued member used to be copied by *reference* -- since
+	# composition re-runs for every instance built (not just once, at the composing type's own
+	# declaration), every instance of every composing type ended up sharing the exact same mutable
+	# object. #dup_composed_value fixes this by duping a mutable value when it's copied in.
+
+	def test_composed_array_member_is_independent_per_instance
+		out = Tape.interp "
+		Has_Items { items := [] }
+		A | Has_Items {}
+		a := A()
+		b := A()
+		a.items.push('a-item')
+		b.items.push('b-item')
+		(a.items, b.items)"
+		assert_equal [['a-item'], ['b-item']], out.values.map(&:values)
+	end
+
+	def test_composed_dictionary_member_is_independent_per_instance
+		out = Tape.interp "
+		Has_Store { store := {} }
+		A | Has_Store {}
+		a := A()
+		b := A()
+		a.store[:x] = 1
+		b.store[:x] = 2
+		(a.store[:x], b.store[:x])"
+		assert_equal [1, 2], out.values
+	end
+
+	# Method sharing via composition (the whole point of `|`) must be unaffected -- Tape::Func isn't a
+	# Tape::Instance, so #dup_composed_value leaves it untouched.
+	def test_composed_method_is_still_shared_and_callable
+		out = Tape.interp "
+		Greeter { greet ( name; \"Hello, `name`!\" ) }
+		My_Type | Greeter {}
+		My_Type().greet('World')"
+		assert_equal 'Hello, World!', out
+	end
+
+	# Symmetric difference (`^`) copies in the operand's unique keys the same way `|` does -- same fix applies there too.
+	def test_composed_array_member_via_symmetric_difference_is_independent_per_instance
+		out = Tape.interp "
+		Abc { }
+		Def { items := [] }
+		S | Abc ^ Def {}
+		a := S()
+		b := S()
+		a.items.push('a-item')
+		b.items.push('b-item')
+		(a.items, b.items)"
+		assert_equal [['a-item'], ['b-item']], out.values.map(&:values)
+	end
 end

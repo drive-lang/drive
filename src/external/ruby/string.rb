@@ -32,6 +32,7 @@ module Tape
 		proxy :start_with?
 		proxy :end_with?
 		proxy :gsub
+		proxy :squeeze
 
 		def proxy_to_md5_hash
 			Digest::MD5.hexdigest value

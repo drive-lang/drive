@@ -1,7 +1,7 @@
 Dictionary {
 	hash,
 
-	new ( hash := {};
+	Self ( hash := {};
 		self.hash = hash
 	)
 
