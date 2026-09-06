@@ -6,7 +6,7 @@
 git clone https://github.com/figgleforth/tape-lang.git
 cd tape-lang
 bundle install
-bundle exec bin/tape examples/hello.tape # => Hello, Tape!
+bundle exec bin/tape learn/examples/hello.tape # => Hello, Tape!
 ```
 
 ### Table of Contents

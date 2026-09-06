@@ -25,14 +25,15 @@ INSTRUCTIONS = <<~INST
         lex <code>            Show lexer tokens for code
         lexf <file>           Show lexer tokens for file
 
+		-p                    Print output created by program.
         -v | --version        Show version number
         -h | --help           Show help instructions
 
     EXAMPLES:
-        tape learn/hello_world.tape
-        tape lex "x = 5 + 3"
-        tape parsef learn/hello_world.tape
-        tape interp "4815"
+        tape learn/hello_world.tape -p
+        tape lex "x = 5 + 3" -p
+        tape parsef learn/hello_world.tape -p
+        tape interp "4815" -p
 INST
 
 if ARGV.empty?

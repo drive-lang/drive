@@ -1,6 +1,6 @@
 ###
 Reads todos.md and reports how many lines are still open (`+`) vs done (`-`). Run from the repo root:
-bin/tape examples/todo_stats.tape
+bin/tape learn/examples/todo_stats.tape
 ###
 
 Task_List_Stats <name: String, open: Array, done: Array, open_percent: Flo, done_percent: Flo>

@@ -1328,7 +1328,7 @@ module Tape
 				raise_missing_scope_operator_target! expr, expr.left.scope_operator.value
 			end
 
-			# For plain identifiers (no scope operator) inside an Instance/Type body, new declarations should go to that Instance/Type, not to an enclosing scope that happens to have the same identifier. This fixes a bug that prevented HTML Layout's `title` from capturing Title's `title` declaration in examples/basic_html_page.tape.
+			# For plain identifiers (no scope operator) inside an Instance/Type body, new declarations should go to that Instance/Type, not to an enclosing scope that happens to have the same identifier. This fixes a bug that prevented HTML Layout's `title` from capturing Title's `title` declaration in learn/examples/basic_html_page.tape.
 			if expr.left.is_a?(Tape::Identifier_Expr) && !expr.left.scope_operator
 				current_scope = stack.last
 
