@@ -25,11 +25,14 @@ require_relative 'runtime/func_signature'
 # External Ruby-backed built-ins (they depend on core scopes above)
 require_relative 'external/ruby/string'
 require_relative 'external/ruby/array'
+require_relative 'external/ruby/range'
+require_relative 'external/ruby/set'
 require_relative 'external/ruby/dictionary'
 require_relative 'external/ruby/number'
 require_relative 'external/ruby/file_system'
 require_relative 'external/ruby/temporal'
 require_relative 'external/ruby/struct'
+require_relative 'external/ruby/context'
 require_relative 'external/ruby/database'
 require_relative 'external/ruby/table'
 require_relative 'external/ruby/member'
@@ -42,7 +45,7 @@ require_relative 'runtime/repl'
 
 module Tape
 	ROOT_PATH             = File.expand_path('../', __dir__)
-	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'tapes', 'preload.tape')
+	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'tapes', 'global.tape')
 
 	extend Helpers
 

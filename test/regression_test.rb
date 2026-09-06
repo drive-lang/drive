@@ -23,53 +23,34 @@ class Regression_Test < Base_Test
 		end
 	end
 
-	def test_dot_slashes_regression
-		ds  = Tape.parse './abc'
-		dds = Tape.parse '../def'
-		assert_kind_of Tape::Identifier_Expr, ds.first
-		assert_kind_of Tape::Identifier_Expr, dds.first
-
-		assert_kind_of Tape::Identifier_Expr, ds.last
-		assert_equal './', ds.last.scope_operator.value
-		assert_equal 'abc', ds.last.value
-	end
-
-	def test_dot_slash_outside_instance_raises_regression
-		# Was silently shadowed by a second, unrelated method also named test_dot_slash_regression (see further down) -- Ruby just keeps the later definition, so this one never actually ran, and its assertion (`123`) was stale/wrong even before that: `./x := 123` at top level has always raised, not returned 123.
+	def test_self_scope_write_outside_instance_raises_regression
 		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
-			Tape.interp './x := 123'
+			Tape.interp 'self.x := 123'
+		end
+		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
+			Tape.interp 'Self.x := 123'
 		end
 	end
 
-	def test_look_up_tilde_slash_without_dot_slash_regression
+	def test_global_declared_then_read_bare_regression
 		out = Tape.interp '~/x := 456
 		x'
 		assert_equal 456, out
 	end
 
-	def test_look_up_tilde_slash_with_dot_slash_regression
+	def test_global_declared_then_read_with_operator_regression
 		out = Tape.interp '~/y := 789
 		~/y'
 		assert_equal 789, out
 	end
 
-	def test_dot_slash_within_infix_regression
-		out = Tape.parse './x? := 123'
-		assert_kind_of Tape::Infix_Expr, out.first
-		assert_equal ':=', out.first.operator.value
+	def test_self_scope_operator_survives_infix_lhs_regression
+		# `self.x,` (nil-init) desugars the identifier and tags it with the keyword; the tag must survive
+		# being the left side of the synthesized `=`.
+		out = Tape.parse 'self.x? ,'
+		assert_kind_of Tape::Nil_Init_Expr, out.first
+		assert_equal 'self', out.first.left.scope_operator.value
 		assert_equal 'x?', out.first.left.value
-		assert_kind_of Tape::Identifier_Expr, out.first.left
-		assert_equal './', out.first.left.scope_operator.value
-	end
-
-	def test_scope_operators_regression
-		out = Tape.parse './this_instance'
-		assert_kind_of Tape::Identifier_Expr, out.first
-		assert_equal 1, out.count
-
-		out = Tape.parse '../class_scope'
-		assert_kind_of Tape::Identifier_Expr, out.first
-		assert_equal 1, out.count
 	end
 
 	def test_assigning_false_value_regression
@@ -120,7 +101,7 @@ class Regression_Test < Base_Test
 		assert_equal 4, out
 	end
 
-	def test_dot_slash_regression
+	def test_self_member_assignment_in_constructor_regression
 		out = Tape.interp '
 		Box {
 			kind := "NONE"
@@ -652,7 +633,7 @@ class Regression_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    @load 'tapes/struct.tape'
 		    s := <name: String, age: Number>('Alice', 30)
-		    s.members.0.value.value
+		    s.@members.0.value.value
 		CODE
 		assert_equal 'Alice', out
 
@@ -701,8 +682,8 @@ class Regression_Test < Base_Test
 		result      = interpreter.run '[].push([1,2,3])'
 		assert_equal '[[1, 2, 3]]', interpreter.stringify_for_display(result)
 
-		# String had no to_s(;) at all until this fix -- an array of strings would have raised Undeclared_Identifier trying to call .to_s() on each element. Always double-quoted (not matching each literal's own quote char -- Array elements aren't wrapped with quotation_style at construction, see #interp_circumfix's `[]` case), so no longer indistinguishable from Symbols/identifiers in display.
-		assert_equal '["a", "b", "c"]', Tape.interp("['a',\"b\",'c'].to_s()")
+		# String had no to_s(;) at all until this fix -- an array of strings would have raised Undeclared_Identifier trying to call .to_s() on each element. Single-quoted (String#to_string), so no longer indistinguishable from Symbols/identifiers in display.
+		assert_equal "['a', 'b', 'c']", Tape.interp("['a',\"b\",'c'].to_s()")
 	end
 
 	def test_array_of_symbols_to_s_regression
@@ -768,19 +749,14 @@ class Regression_Test < Base_Test
 	end
 
 	def test_bare_scope_operator_does_not_corrupt_parsing_regression
-		%w(./ ../ ~/).each do |op|
-			# Not the last thing in the program -- this used to crash.
-			out = Tape.interp "x := #{op}\ny := 1\nx"
-			assert_nil out
+		assert_nil Tape.interp("x := ~/\ny := 1\nx")
 
-			# Bare, unassigned, not the last statement -- this used to silently vanish (harmless in
-			# itself, but confirms the newline it used to eat is no longer swallowed).
-			out = Tape.interp "#{op}\n5"
-			assert_equal 5, out
+		# Bare, unassigned, not the last statement -- this used to silently vanish (harmless in itself,
+		# but confirms the newline it used to eat is no longer swallowed).
+		assert_equal 5, Tape.interp("~/\n5")
 
-			# Still fine as the literal last token in the file (the case that always worked).
-			assert_nil Tape.interp(op)
-		end
+		# Still fine as the literal last token in the file (the case that always worked).
+		assert_nil Tape.interp('~/')
 	end
 
 	def test_labeled_call_arguments_regression
@@ -999,9 +975,9 @@ class Regression_Test < Base_Test
 	end
 
 	def test_member_to_s_on_unnamed_type_only_member_does_not_crash_regression
-		# `<String, Number>` (a schema-only struct with bare, unnamed type members) has `value == type` for its String member -- the bare String Type object itself, not an actual instance. `Member#to_s` unconditionally called `.pretty_print()` on it whenever `type.?name == 'String'`, assuming `value` was a real String instance -- raised `Cannot_Call_Instance_Member_On_Type` instead, since `pretty_print` is an instance-only method. `.?pretty_print()` (nil-safe) fixes it.
+		# `<String, Number>` (a schema-only struct with bare, unnamed type members) has `value == type` for its String member -- the bare String Type object itself, not an actual instance. `Member#to_s` unconditionally called `.to_string()` on it whenever `type.?name == 'String'`, assuming `value` was a real String instance -- raised `Cannot_Call_Instance_Member_On_Type` instead, since `to_string` is an instance-only method. `.?to_string()` (nil-safe) fixes it.
 		refute_raises Tape::Cannot_Call_Instance_Member_On_Type do
-			Tape.interp("<String, Number>.members.0.to_s()")
+			Tape.interp("<String, Number>.@members.0.to_s()")
 		end
 	end
 
@@ -1023,7 +999,7 @@ class Regression_Test < Base_Test
 		assert_equal true, Tape.interp(<<~CODE)
 		    Dictionary_Like\\<String, Number> {}
 		    z := Dictionary_Like\\<String, Number>()
-		    z.tag.types.length() == 2
+		    z.tag.@types.length() == 2
 		CODE
 
 		# A struct member's own default value can legitimately contain delimiters (`(`/`)`, `[`/`]`, nested `{`/`}`) before the real closing `>` -- must not be mistaken for the statement's own boundary.
@@ -1049,5 +1025,69 @@ class Regression_Test < Base_Test
 		refute_raises Tape::Invalid_Parameter_Name do
 			Tape.interp '(Number -> String;)'
 		end
+	end
+
+	def test_context_stringifies_as_a_struct_for_display_regression
+		# `@` is the Context bare-named struct (a Tape::Instance) whose `to_s` member is synthesized to a
+		# bodyless stand-in. #stringify_for_display used to run that empty body directly, so `@puts @` and
+		# `` `@` `` interpolation printed blank. Now display renders it the same shape every other struct
+		# prints as -- `Name <member: Type = value, ...>` over every member; an explicit `@.to_s()` call
+		# still goes through the stand-in and gives `@<name>`.
+		dump = Tape.interp('"`@`"')
+		assert_match(/\AContext <name: String = 'Global', /, dump)
+		assert_includes dump, "root_path: String = '"
+		assert_includes dump, 'to_s: ( -> String;)'
+		assert_includes dump, 'puts: (Args -> Args;)'
+
+		assert_equal '@Global', Tape.interp('@.to_s()')
+
+		# Only the members declared in tapes/context.tape show -- not the short-alias function stand-ins
+		# (`add_readable`, `readable`, ...) that #fill_context also puts on the instance.
+		refute_includes dump, 'readable: Any'
+		refute_includes dump, 'add_readable:'
+
+		# `@.types` is declared `Array\String`; a plain scope's composed types go in as an Array, not a
+		# Set (which mismatched the member's own type).
+		assert_includes dump, 'types: Array'
+		refute_includes dump, 'types: Array = Set{'
+
+		# Inside a Type body, `@` is that Type's own context.
+		assert_match(/\AContext <name: String = 'Foo', /, Tape.interp(<<~CODE))
+		    Foo { nm := 'f'  dump := "`@`" }
+		    Foo().dump
+		CODE
+
+		# A directly constructed `Context()` (a Struct composing `Context`, not the Ruby class) renders
+		# too, rather than crashing `Struct#to_s` on its func-signature members.
+		assert_match(/\AContext <name: String, /, Tape.interp('"`Context()`"'))
+		assert_match(/name: String = 'x'/, Tape.interp(%q("`Context(name := 'x')`")))
+	end
+
+	def test_struct_with_a_func_signature_member_stringifies_regression
+		# A `name: (sig)` struct member's `type` is a raw Func_Signature, not a Scope. Member#to_s did
+		# `type.?@display_name` on it -- but `.?` didn't catch Invalid_Dot_Infix_Left_Operand (raised for
+		# a non-Scope receiver), so `@puts` / interpolation of any such struct crashed. Now `.?` yields
+		# nil there and Member#to_s falls back to interpolating the signature itself.
+		assert_equal '<fn: ( -> String;), x: Number = 5>', Tape.interp(<<~CODE)
+		    S <fn: (-> String;), x: Number>
+		    "`S(nil, 5)`"
+		CODE
+
+		assert_equal '<fn: ( -> String;), x: Number>', Tape.interp(<<~CODE)
+		    S <fn: (-> String;), x: Number>
+		    "`S`"
+		CODE
+	end
+
+	def test_bare_dot_at_on_a_receiver_resolves_that_receivers_context_regression
+		# `X.@` (bare `@`, no member) runs #context_for mid dot-access, when `stack` is narrowed to just
+		# the receiver -- `find_in_stack 'Context'` couldn't see the stdlib `Context` declaration there,
+		# so the built context had no data members and wasn't even `=== Context`. Now it falls back to
+		# `global['Context']`.
+		assert_equal true, Tape.interp(<<~CODE)
+		    Duck { nm := 1 }
+		    c := Duck.@
+		    c === Context and c.name == 'Duck'
+		CODE
 	end
 end

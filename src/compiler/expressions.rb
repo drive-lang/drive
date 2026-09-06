@@ -49,7 +49,7 @@ module Tape
 	end
 
 	class Param_Expr < Expression
-		attr_accessor :name, :label, :type, :tag, :default, :add_to_readable, :add_to_writable
+		attr_accessor :name, :label, :type, :default, :add_to_readable, :add_to_writable, :variadic
 	end
 
 	class Func_Expr < Expression
@@ -80,9 +80,6 @@ module Tape
 		attr_accessor :signature, :params, :name
 	end
 
-	class Directive_Expr < Expression
-		attr_accessor :name, :expression, :message, :arguments
-	end
 
 	class Struct_Expr < Expression
 		attr_accessor :types, :names # names[i] is nil for unnamed members, e.g. `Type<String>` but has value for named members, e.g. `Type<str: String>`
@@ -163,7 +160,7 @@ module Tape
 	end
 
 	class Prefix_Expr < Expression
-		attr_accessor :operator, :expression, :requires_expression
+		attr_accessor :operator, :expression
 	end
 
 	class Postfix_Expr < Expression
@@ -197,7 +194,7 @@ module Tape
 	end
 
 	class Operator_Expr < Expression
-		attr_accessor :custom, :precedence
+		attr_accessor :precedence
 	end
 
 	class Operator_Overload_Expr < Expression
@@ -205,7 +202,7 @@ module Tape
 	end
 
 	class Identifier_Expr < Expression
-		attr_accessor :kind, :unpack, :scope_operator, :directive, :privacy, :binding, :tag, :member_default
+		attr_accessor :kind, :scope_operator, :prefixed_with_at, :privacy, :binding, :tag, :member_default
 	end
 
 	class Composition_Expr < Expression

@@ -1,6 +1,6 @@
 ### Introduction
 
-`tapes/database.tape` is not part of the default preload. You must `@load` it. `Sqlite` composes with the built-in `Database` type. `':memory:'` opens a database that lives only for this run. This database leaves no file on disk. `Self.memory (;)` is a static function. It is shorthand for `':memory:'`.
+`tapes/database.tape` is not part of the default global. You must `@load` it. `Sqlite` composes with the built-in `Database` type. `':memory:'` opens a database that lives only for this run. This database leaves no file on disk. `Self.memory (;)` is a static function. It is shorthand for `':memory:'`.
 ###
 @load 'tapes/database.tape'
 

@@ -68,7 +68,7 @@ module Tape
 			end
 			struct = Tape::Interpreter.current.build_struct columns.names, columns.type_names, columns.type_objects, values
 
-			if (schema_name = columns.get('name'))
+			if (schema_name = columns.name)
 				struct.name  = schema_name
 				struct.types = columns.types.dup
 			end

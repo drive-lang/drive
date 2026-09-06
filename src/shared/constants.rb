@@ -1,12 +1,19 @@
 module Tape
-	DOM_CONSTRUCTOR_PROP_NAMES    = %w(onclick key)
-	DOM_CONSTRUCTOR_PROP_PREFIXES = %w(html_ css_)
-	HTML_ATTRS                    = %w(id class href)
-	HTTP_VERBS                    = %w(get put patch post delete head options connect trace)
-	VOID_HTML_TAGS                = %w(area base br col command embed hr img input keygen link meta param source track wbr)
-	HTTP_VERB_SEPARATOR           = '://'
-
-	BUILTIN_OPERATOR                  = '@'
+	DOM_CONSTRUCTOR_PROP_NAMES        = %w(onclick key)
+	DOM_CONSTRUCTOR_PROP_PREFIXES     = %w(html_ css_)
+	HTML_ATTRS                        = %w(id class href)
+	HTTP_VERBS                        = %w(get put patch post delete head options connect trace)
+	VOID_HTML_TAGS                    = %w(area base br col command embed hr img input keygen link meta param source track wbr)
+	HTTP_VERB_SEPARATOR               = '://'
+	CONTEXT_FUNCTIONS                 = %w(to_s puts sleep assert refute connect start_server stop_server load push_scope pop_scope declare add_readable_scope add_writable_scope remove_readable_scope remove_writable_scope add_readable add_writable remove_readable remove_writable readable writable)
+	CONTEXT_STACK_FUNCTIONS           = %w(load push_scope pop_scope declare add_readable_scope add_writable_scope remove_readable_scope remove_writable_scope add_readable add_writable remove_readable remove_writable readable writable)
+	CONTEXT_SCOPE_FUNCTION_ALIASES    = {
+		                                    'readable'        => 'add_readable_scope', 'add_readable' => 'add_readable_scope',
+		                                    'writable'        => 'add_writable_scope', 'add_writable' => 'add_writable_scope',
+		                                    'remove_readable' => 'remove_readable_scope', 'remove_writable' => 'remove_writable_scope',
+	                                    }
+	CONTEXT_OPERATOR                  = '@'
+	CONTEXT_ARG_TERMINATORS           = %W( \n \r \) \} \] \, \; )
 	NIL_INIT_POSTFIX                  = ','
 	FUNCTION_DELIMITER                = ';'
 	PERCENT_LITERALS                  = %w(string symbol str Str STR sym Sym SYM)
@@ -17,25 +24,18 @@ module Tape
 	BLOCK_COMMENT_CHARS               = '###'
 	FENCE_CHARS                       = '```'
 	PREFIX                            = %w(! - + ~ not return)
-	INFIX                             = %w(
-		+ - ^ * ** / % ~ == === =!= =>= =<= =/= ? . .?
-		= := : ||= &&= **= <<= >>= += -= *= |= /= %= &= ^= =~ !~
-		&& || & | << >>
-
-		... >.. ..< >.<
-		!= <= >= < > <=> < >
-		and or
-	)
+	INFIX                             = %w( + - ^ * ** / % ~ == === =!= =>= =<= =/= ? . .? = := : ||= &&= **= <<= >>= += -= *= |= /= %= &= ^= =~ !~ && || & | << >>
+ ... >.. ..< >.< != <= >= < > <=> < > and or )
 	POSTFIX                           = %w() # note: ; can never be a postfix, it's reserved
 	CIRCUMFIX                         = %w( \( [ { | )
-	CIRCUMFIX_GROUPINGS               = { '(' => '()', '{' => '{}', '[' => '[]', '|' => '||' }.freeze
+	CIRCUMFIX_GROUPINGS               = { '(' => '()', '{' => '{}', '[' => '[]', '|' => '||' }
 	LOGICAL_OPERATORS                 = %w(&& & || | and or)
 	COMPOUND_OPERATORS                = %w(||= &&= **= <<= >>= += -= *= |= /= %= &= ^=)
 	COMPARISON_OPERATORS              = %w(<=> == === =!= =>= =<= =/= != <= >= < > =~ !~)
 	ANY_WILDCARD_COMPARISON_OPERATORS = %w(== != === =!= =>= =<= =/=)
 	INFIX_ARITHMETIC_OPERATORS        = %w(+ - * ** / % << >> ^ & |)
 	RANGE_OPERATORS                   = %w(... ..< >.. >.<)
-	SCOPE_OPERATORS                   = %w(~/ ./ ../)
+	SCOPE_OPERATORS                   = %w(~/)
 	SELF_KEYWORDS                     = %w(self Self)
 	DOT_ACCESS_OPERATORS              = %w(. .?)
 	TAG_OPERATOR                      = '\\'
@@ -45,10 +45,10 @@ module Tape
 	GSCOPE                            = :global
 	STARTING_PRECEDENCE               = 0
 	DEFAULT_OPERATOR_PRECEDENCE       = 500 # given to all custom operators at runtime unless
-	DELIMITERS                        = %W(, ; { } ( ) [ ] \n \r).freeze
-	ILLEGAL_OPERATOR_CHARS            = %w(` ' " { } ( ) [ ] , ; ).freeze
-	NEWLINES                          = %W(\r\n \n \r).freeze
-	WHITESPACES                       = %W(\t \s).freeze
+	DELIMITERS                        = %W(, ; { } ( ) [ ] \n \r)
+	ILLEGAL_OPERATOR_CHARS            = %w(` ' " { } ( ) [ ] , ; )
+	NEWLINES                          = %W(\r\n \n \r)
+	WHITESPACES                       = %W(\t \s)
 	NUMERIC_REGEX                     = /\A\d+\z/
 	ALPHA_REGEX                       = /\A\p{Alpha}+\z/
 	ALPHANUMERIC_REGEX                = /\A\p{Alnum}+\z/
@@ -57,25 +57,22 @@ module Tape
 	# It's been a while, but I believe this RESERVED list must be maintained. The other declarations above are helpers for comparisons while this contains every reserved symbols and identifiers.
 	RESERVED = %w(
 		[ { ( , _ . .? .. ) } ]
-		: ;
-		+ - * ** / % ~
+		: ; + - * ** / % ~
 		= := ||= &&= **= <<= >>= += -= *= |= /= %= &= ^=
 		== != <= >= < > === =!= =/= =<= =>=
 		! ? ?? !! && || & | << >>
 		... >.. ..< >.< <=>
-		@
-		~/ ./ ../
-		``` #
-		\
+		``` # \
+		@ ~/
 
-		for
 		if elif elsif else
 		while elwhile elswhile
 		unless until
-		true false nil
 		and or return
+		true false nil
 		skip stop
 		self Self
+		for
 	)
 
 	PRECEDENCES = {
@@ -142,5 +139,5 @@ module Tape
 		              # Keywords
 		              'return' => 70,
 		              'unless' => 60, 'if' => 60, 'while' => 60, 'until' => 60,
-	              }.freeze
+	              }
 end

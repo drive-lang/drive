@@ -66,13 +66,13 @@ class Error_Test < Base_Test
 	end
 
 	def test_cannot_call_value
-		assert_raises Tape::Cannot_Call_Value do
+		assert_raises Tape::Receiver_Is_Not_Callable do
 			Tape.interp 'x := 5, x()'
 		end
 	end
 
 	def test_cannot_call_value_when_a_dictionary_field_shadows_a_builtin_method_name
-		assert_raises Tape::Cannot_Call_Value do
+		assert_raises Tape::Receiver_Is_Not_Callable do
 			Tape.interp 'dict := {keys: 4}, dict.keys()'
 		end
 	end
@@ -98,14 +98,14 @@ class Error_Test < Base_Test
 
 	def test_invalid_start_directive_argument
 		# todo: Doesn't display code and location
-		assert_raises Tape::Invalid_Start_Directive_Argument do
+		assert_raises Tape::Invalid_Server_Argument do
 			Tape.interp '@start_server 5'
 		end
 	end
 
-	def test_invalid_directive_usage
-		# todo: Doesn't display code and location
-		assert_raises Tape::Invalid_Directive_Usage do
+	def test_unknown_context_word_raises
+		# `@unknown` isn't a Context member anywhere -- there's no "directive" concept to reject it as.
+		assert_raises Tape::Undeclared_Identifier do
 			Tape.interp '@unknown 123'
 		end
 	end

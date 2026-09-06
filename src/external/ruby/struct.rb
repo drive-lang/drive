@@ -1,36 +1,19 @@
 module Tape
-	# Represents a set of declarations which make up an object (including dictionaries and their keys)
-	#
-	#   name, type, value
-	#
-	# <TypeA, b: TypeB, c := "xyz">
 	class Struct < Instance
-		attr_accessor :names, :values, :type_names, :members
-		# The identifier text used at a `\`-tag reference site (`Array\String` -> "String"), when it was written as a bare identifier rather than `\<...>` -- see Interpreter#resolve_tag_reference/#tag_display_name. nil for an inline `\<...>` literal (regardless of how many members it has), so display can tell the two apart even when they'd otherwise produce an identically-shaped struct (`\<String>` vs `\String`).
-		attr_accessor :bare_reference_name
+		attr_accessor :names, :values, :type_names, :type_objects, :members, :bare_reference_name
 
 		def initialize names = [], type_names = [], types = [], values = []
 			super 'Struct'
-
-			@names      = names
-			@type_names = type_names
-			@values     = values
-
-			# Only ever set for a bare named struct (`Named <Struct>`, see #interp_type) -- nil for every other construction path, including the plain `<...>`/`ANY_IDENT := <struct>` forms, which stay anonymous (reachable only through whatever variable holds them).
-			declare 'name', nil
-			declare 'names', Tape::Array.new(names), 'Array'
-			declare 'values', Tape::Array.new(values), 'Array'
-			declare 'type_names', Tape::Array.new(type_names), 'Array'
-			declare 'types', Tape::Array.new(types), 'Array'
+			@name = nil
+			@names        = names
+			@type_names   = type_names
+			@type_objects = types || []
+			@values       = values
 
 			names.each_with_index do |name, i|
 				next unless name
 				declare name, values[i], type_names[i]
 			end
-		end
-
-		def type_objects
-			@declarations['types'].values
 		end
 
 		# Strict equality for declaration-time collision checks (does a variant with this *exact*

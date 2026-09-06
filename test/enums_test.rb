@@ -125,11 +125,11 @@ class Enums_Test < Base_Test
 		assert_equal 'DEF', out.first.expressions[1].left.value
 	end
 
-	# `Tape::Enum.new` (no name argument) used to bake "Instance" into @declarations['name'] at construction time; a later `.name =` (a plain Ruby attr write) never touched it, so an enum's own name was permanently wrong at the Tape level.
+	# `Tape::Enum.new` (no name argument) used to bake "Instance" into @declarations['name'] at construction time; a later `.name =` (a plain Ruby attr write) never touched it, so an enum's own name was permanently wrong. `name` is `@`-only now (`@.name`), read straight off the Ruby-level attr.
 	def test_enum_reports_its_own_name_not_the_ruby_default_regression
 		out = Tape.interp <<~CODE
 		    Task_Type [ TODO, BUG ]
-		    Task_Type.name
+		    Task_Type.@name
 		CODE
 		assert_equal 'Task_Type', out
 	end

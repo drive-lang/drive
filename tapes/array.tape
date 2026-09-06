@@ -115,7 +115,7 @@ Array {
 
 	to_s (;
 		pieces := values.map((it; if it === String
-			it.pretty_print()
+			it.to_string()
 		else
 			"`it`"
 		end ))
@@ -142,3 +142,7 @@ Array {
 		true
 	)
 }
+
+# What a variadic param binds (`rest...` / `rest: Arguments`)
+Arguments | Array {}
+Args := Arguments

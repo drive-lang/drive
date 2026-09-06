@@ -22,3 +22,9 @@ Statement {
 
 	to_s (; @ruby )
 }
+
+###
+
+Modifying .memoize or .use_caller_scope directly on an existing Statement instance introduces mutable state side-effects. If a single Statement reference is passed to multiple components and one toggles .memoize = true, it mutates it for everyone. Toggling these via a builder pattern or immutable copy (e.g., stmt.memoized()) would keep shared statements safe.
+
+###

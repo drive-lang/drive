@@ -18,11 +18,8 @@ module Tape
 
 		NUMERIC_FAMILY = %w[Number Integer Float Decimal].freeze
 
-		# Two type names are compatible if equal, or if both are in the numeric family and at least one
-		# side is the family base `Number` -- so `x: Number = 4` (Number vs Integer) passes, while
-		# `x: Integer = 4.5` (Integer vs Float) is still flagged.
-		def numeric_compatible? declared, inferred
-			return true if declared == inferred
+		def types_compatible? declared, inferred
+			return true if declared == 'Any' || declared == inferred
 			return false unless NUMERIC_FAMILY.include?(declared) && NUMERIC_FAMILY.include?(inferred)
 			declared == 'Number' || inferred == 'Number'
 		end
@@ -62,6 +59,7 @@ module Tape
 		def register_func expr
 			return unless expr.name
 			return unless expr.parameters.any?(&:type)
+			return if expr.parameters.any?(&:variadic) # variadic arity / element typing isn't statically modeled
 
 			param_types = expr.parameters.map { |p| p.type&.value unless p.type.is_a?(Tape::Struct_Expr) } # structural params aren't checked statically
 			declare :funcs, expr.name.value, param_types
@@ -87,7 +85,7 @@ module Tape
 				next nil unless expected
 				inferred = infer_type arg
 				next nil if inferred.nil?
-				next nil if numeric_compatible? expected, inferred
+				next nil if types_compatible? expected, inferred
 				Type_Mismatch.new arg, expected, inferred
 			end
 		end
@@ -112,7 +110,7 @@ module Tape
 			inferred = infer_type expr.right # e.g. "Integer" or nil
 
 			return nil if inferred.nil?
-			return nil if numeric_compatible? declared, inferred
+			return nil if types_compatible? declared, inferred
 
 			Type_Mismatch.new expr, declared, inferred
 		end
@@ -159,11 +157,12 @@ module Tape
 
 		def check_param expr
 			return nil unless expr.type && expr.default
+			return nil if expr.variadic # `x: Args` is a variadic marker, not a real element type
 			return nil if expr.type.is_a? Tape::Struct_Expr # structural annotations aren't checked statically
 			declared = expr.type.value
 			inferred = infer_type expr.default
 			return nil if inferred.nil?
-			return nil if numeric_compatible? declared, inferred
+			return nil if types_compatible? declared, inferred
 
 			Type_Mismatch.new expr, declared, inferred
 		end
@@ -178,8 +177,6 @@ module Tape
 			when Tape::Param_Expr
 				check_param expr
 
-			when Tape::Directive_Expr
-				check expr.expression
 			when Tape::Prefix_Expr
 				check expr.expression
 			when Tape::Postfix_Expr

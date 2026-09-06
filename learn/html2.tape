@@ -1,6 +1,6 @@
 ### Introduction
 
-`tapes/html2.tape` isn't part of the default preload -- it needs an explicit `@load`. Same spirit as `tapes/css.tape` (`learn/css.tape`): markup is one plain struct (`Element`), and a single `Html_Formatter_Visitor` walks whatever tree you built and turns it into an HTML string. This coexists with `tapes/html.tape` (`learn/html.tape`) -- a Div/P/H1/... per-tag Type with `html_*`/`css_*` declarations -- rather than replacing it; this one only builds a string, it doesn't hook into the server's live-render pipeline.
+`tapes/html2.tape` isn't loaded by default -- it needs an explicit `@load`. Same spirit as `tapes/css.tape` (`learn/css.tape`): markup is one plain struct (`Element`), and a single `Html_Formatter_Visitor` walks whatever tree you built and turns it into an HTML string. This coexists with `tapes/html.tape` (`learn/html.tape`) -- a Div/P/H1/... per-tag Type with `html_*`/`css_*` declarations -- rather than replacing it; this one only builds a string, it doesn't hook into the server's live-render pipeline.
 ###
 @load 'tapes/html2.tape'
 

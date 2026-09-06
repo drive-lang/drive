@@ -158,4 +158,18 @@ class Hot_Reload_Test < Base_Test
 		assert Tape::Interpreter.cached_expressions_by_filepath.key?(stdlib), 'stdlib entry should survive a targeted reset'
 		refute Tape::Interpreter.cached_expressions_by_filepath.key?(fixture), 'the named path should be dropped'
 	end
+
+	# These boot a real WEBrick server (~2s total). CI runs them; locally they're removed outright so
+	# the IDE runner doesn't expand a skip block per test -- `CI=1 rake test` includes them.
+	CI_ONLY = %i[
+		test_serve_in_foreground_false_makes_run_return_instead_of_blocking
+		test_shutdown_all_servers_stops_every_server_and_empties_the_list
+		test_live_reload_endpoint_streams_the_interpreter_token
+		test_live_reload_endpoint_is_absent_when_disabled
+		test_client_script_is_injected_only_under_live_reload
+	].freeze
+
+	unless ENV['CI']
+		CI_ONLY.each { |m| remove_method m } # I don't even want to know it's skipped when running locally.
+	end
 end

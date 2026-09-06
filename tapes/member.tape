@@ -13,9 +13,15 @@ Member {
 		# A member can genuinely hold `false` as its value (`done := false`), which is falsy in Tape -- same as `nil` under a plain truthy check (`if value`), even though only `nil` actually means "no value was ever set". Every branch below checks presence via `has_value` instead, so a real `false` value still prints as one rather than looking unset.
 		has_value := value != nil
 
-		# `.?pretty_print()` -- for an unnamed schema-only member (`<String, Number>`), `value` is the bare String Type object itself, not an actual instance, so a plain `.pretty_print()` would raise Cannot_Call_Instance_Member_On_Type. Falls back to `value` itself (its own to_s -- the type's name) when that's the case.
-		displayed_value := if has_value and type.?name == 'String'
-			value.?pretty_print() or value
+		# A func-signature member's `type` is a raw Func_Signature, not a Type -- it has no `@display_name`
+		# (`.?` yields nil), so fall back to interpolating it directly (its own `to_s` -- `( -> String;)`).
+		type_label := if type
+			type.?@display_name or "`type`"
+		end
+
+		# `.?to_string()` -- for an unnamed schema-only member (`<String, Number>`), `value` is the bare String Type object itself, not an actual instance, so a plain `.to_string()` would raise Cannot_Call_Instance_Member_On_Type. Falls back to `value` itself (its own to_s -- the type's name) when that's the case.
+		displayed_value := if has_value and type.?@name == 'String'
+			value.?to_string() or value
 		else
 			value
 		end
@@ -32,9 +38,9 @@ Member {
 
 		if name
 			if type and has_value
-				"`name`: `type.?display_name` = `displayed_value`"
+				"`name`: `type_label` = `displayed_value`"
 			elif type and not has_value
-				"`name`: `type.?display_name`"
+				"`name`: `type_label`"
 			elif has_value and not type
 				"`name` := `displayed_value`"
 			else
@@ -44,7 +50,7 @@ Member {
 			if has_value
 				"`displayed_value`"
 			elif type
-				"`type.?display_name`"
+				"`type_label`"
 			else
 				"Any"
 			end

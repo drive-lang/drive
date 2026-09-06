@@ -230,16 +230,15 @@ module Tape
 			it = ::String.new
 			while chars? && symbol?
 				# Don't append `.` onto a trailing `>` unless it's forming a genuine range operator (`>..`, `>.<`). Otherwise `Type<Struct>.member` would lex `>.` as one bogus operator token, swallowing the `>` that's supposed to close the struct's member list on its own.
+
 				break if it == '>' && curr == '.' && !%w(. <).include?(peek)
-
-				# Same idea for `\` immediately followed by `<` -- `Type\<Struct>` would otherwise glue into one bogus token.
 				break if it == Tape::TAG_OPERATOR && curr == '<'
-
-				# `<` immediately followed by `>` (empty struct literal `<>`) isn't a real operator either, unlike `<=`/`<=>`.
+				break if it == Tape::CONTEXT_OPERATOR && curr == '.'
 				break if it == '<' && curr == '>'
 
 				it << eat
 				break if Tape::SCOPE_OPERATORS.include? it
+				break if Tape::RANGE_OPERATORS.include? it
 				break if Tape::ILLEGAL_OPERATOR_CHARS.include? it
 				break if Tape::ILLEGAL_OPERATOR_CHARS.include? curr
 			end

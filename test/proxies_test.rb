@@ -4,7 +4,7 @@ require_relative 'base_test'
 
 class ProxiesTest < Base_Test
 	def test_invalid_proxy_directive_usage
-		assert_raises Tape::Invalid_Ruby_Proxy_Directive_Usage do
+		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
 			Tape.interp '@ruby'
 		end
 	end
@@ -219,6 +219,113 @@ class ProxiesTest < Base_Test
 
 		out = Tape.interp "{x: 1}.merge({y: 2, z: 3})"
 		assert_equal({ x: 1, y: 2, z: 3 }, out.hash)
+	end
+
+	# Range is an Instance wrapping a Ruby ::Range now (not a ::Range subclass) -- it has real Tape
+	# methods, type identity, and satisfies a `: Range` contract, none of which worked before.
+	def test_range_proxies
+		assert_equal 2, Tape.interp("(2...4).start()")
+		assert_equal 4, Tape.interp("(2...4).finish()")
+		assert_equal 3, Tape.interp("(2>..4).start()") # `>..` bumps the start
+		assert Tape.interp("(1..<5).excludes_end?()")
+		refute Tape.interp("(1...5).excludes_end?()")
+
+		assert_equal 5, Tape.interp("(1...5).length()")
+		assert_equal 0, Tape.interp("(0>.<0).length()")
+		assert Tape.interp("(0>.<0).empty?()")
+
+		assert Tape.interp("(1...5).include?(3)")
+		refute Tape.interp("(1...5).include?(9)")
+
+		assert_equal [1, 2, 3, 4, 5], Tape.interp("(1...5).to_a()").values
+		assert_equal 15, Tape.interp("(1...5).sum()")
+		assert_equal 1, Tape.interp("(1...5).min()")
+		assert_equal 5, Tape.interp("(1...5).max()")
+		assert_equal '1..<5', Tape.interp("(1..<5).to_s()")
+
+		# tape-level higher-order methods iterate the range directly (`for self`)
+		assert_equal [1, 4, 9], Tape.interp("(1...3).map((n; n * n))").values
+		assert_equal [2, 4], Tape.interp("(1...5).filter((n; n % 2 == 0))").values
+		assert_equal 15, Tape.interp("(1...5).reduce(0, (acc, n; acc + n))")
+		assert Tape.interp("(1...5).any?((n; n == 3))")
+		refute Tape.interp("(1...5).all?((n; n > 3))")
+
+		# type identity + contract, both broken while it was a ::Range subclass
+		assert Tape.interp("(1...5) === Range")
+		assert Tape.interp("(1...5) =>= Range")
+		assert_equal 5, Tape.interp("x: Range = 1...5\nx.length()")
+	end
+
+	# Set has no literal syntax and no Ruby-stdlib behavior worth re-verifying here -- these cover
+	# only the seams our layer adds: `@ruby` proxy dispatch, `Set(...)` construction + dedup,
+	# operator dispatch (#interp_logical_infix / #interp_arithmetic_infix) with #maybe_instance
+	# re-linking the result, `for` iteration, and the tape-level methods in tapes/set.tape.
+	def test_set_proxies
+		# construction dedups; values() is an Array snapshot
+		assert_equal [1, 2, 3], Tape.interp("Set([1, 2, 2, 3, 1]).values()").values
+		assert_equal [1, 2, 3], Tape.interp("Set(1...3).values()").values
+		assert_equal [1, 2], Tape.interp("Set(Set([1, 2, 2])).values()").values
+
+		assert_equal 3, Tape.interp("Set([1, 2, 3]).length()")
+		assert Tape.interp("Set([]).empty?()")
+		refute Tape.interp("Set([1]).empty?()")
+
+		assert Tape.interp("Set([1, 2, 3]).include?(2)")
+		refute Tape.interp("Set([1, 2, 3]).include?(9)")
+
+		# add/delete/merge/clear mutate in place
+		assert_equal [1, 2, 3], Tape.interp("s := Set([1, 2]), s.add(2), s.add(3), s.values()").values
+		assert_equal [1, 3], Tape.interp("s := Set([1, 2, 3]), s.delete(2), s.values()").values
+		assert_equal [1, 2, 3], Tape.interp("s := Set([1]), s.merge([2, 2, 3]), s.values()").values
+		assert Tape.interp("s := Set([1, 2, 3]), s.clear(), s.empty?()")
+
+		# operator dispatch + chaining a method off the (re-linked) result
+		assert_equal [1, 2, 3, 4], Tape.interp("(Set([1, 2, 3]) | Set([3, 4])).values()").values
+		assert_equal [2, 3], Tape.interp("(Set([1, 2, 3]) & Set([2, 3, 4])).values()").values
+		assert_equal [1], Tape.interp("(Set([1, 2, 3]) - Set([2, 3, 4])).values()").values
+		assert_equal [1, 4], Tape.interp("(Set([1, 2, 3]) ^ Set([2, 3, 4])).values()").values.sort
+		assert_equal [2, 3, 4, 5], Tape.interp("Set([1, 2, 3]).union([4, 5]).difference([1]).values()").values
+
+		assert Tape.interp("Set([1, 2]).subset?(Set([1, 2, 3]))")
+		assert Tape.interp("Set([1, 2, 3]).superset?(Set([1, 2]))")
+		assert Tape.interp("Set([1, 2]).disjoint?(Set([3, 4]))")
+		refute Tape.interp("Set([1, 2]).disjoint?(Set([2, 3]))")
+
+		# for-loop iterates the members
+		assert_equal 60, Tape.interp("t := 0\nfor Set([10, 20, 30, 10])\n\tt += it\nend\nt")
+
+		# tape-level higher-order methods
+		assert_equal [2, 4, 6], Tape.interp("Set([1, 2, 3]).map((n; n * 2))").values
+		assert_equal [2, 4], Tape.interp("Set([1, 2, 3, 4]).filter((n; n % 2 == 0)).values()").values
+		assert Tape.interp("Set([1, 2, 3]).any?((n; n > 2))")
+		refute Tape.interp("Set([1, 2, 3]).all?((n; n > 2))")
+	end
+
+	# `@operator ==` in tapes/set.tape compares elements through the interpreter, so a custom
+	# element type's own `==` overload is honored (a bare Ruby Set#== would miss it).
+	def test_set_equality_respects_custom_equality_overload
+		src = <<~CODE
+		    Point {
+		    	x,
+		    	y,
+
+		    	Self ( x, y;
+		    		self.x = x
+		    		self.y = y
+		    	)
+
+		    	@operator == @infix 500 ( left, right;
+		    		left.x == right.x and left.y == right.y
+		    	)
+		    }
+
+		    a := Set([Point(1, 2), Point(3, 4)])
+		    (a.include?(Point(1, 2)), a == Set([Point(1, 2), Point(3, 4)]), a == Set([Point(1, 2)]))
+		CODE
+		out = Tape.interp src
+		assert_equal true, out.values[0]
+		assert_equal true, out.values[1]
+		assert_equal false, out.values[2]
 	end
 
 	def test_number_proxies

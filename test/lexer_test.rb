@@ -207,13 +207,13 @@ class Lexer_Test < Base_Test
 		assert_equal %I(number operator number delimiter number operator number delimiter number operator number delimiter number operator number), out.map(&:type)
 		assert_equal 15, out.count
 
-		out = Tape.lex './this_instance'
+		out = Tape.lex '~/global'
 		assert_equal %I(operator identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Tape.lex '../class_scope'
-		assert_equal %I(operator identifier), out.map(&:type)
-		assert_equal 2, out.count
+		out = Tape.lex 'Self.class_scope'
+		assert_equal %I(Identifier operator identifier), out.map(&:type)
+		assert_equal 3, out.count
 	end
 
 	def test_declaration_operators
@@ -412,7 +412,7 @@ class Lexer_Test < Base_Test
 	def test_unpack_prefix
 		out = Tape.lex '@instance_to_unpack'
 		assert_equal :operator, out.first.type
-		assert_equal Tape::BUILTIN_OPERATOR, out.first.value
+		assert_equal Tape::CONTEXT_OPERATOR, out.first.value
 		assert_equal :identifier, out.last.type
 		assert_equal 'instance_to_unpack', out.last.value
 	end

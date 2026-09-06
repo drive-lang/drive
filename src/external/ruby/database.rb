@@ -14,12 +14,12 @@ module Tape
 		end
 
 		def table_name_for struct
-			Tape.assert struct.get('name'), "table_name_for expects a named struct, got an anonymous one"
-			pluralize(underscore(struct.get('name'))).to_sym
+			Tape.assert struct.name, "table_name_for expects a named struct, got an anonymous one"
+			pluralize(underscore(struct.name)).to_sym
 		end
 
 		def proxy_find_or_create_table struct
-			Tape.assert struct.get('name')
+			Tape.assert struct.name
 
 			table = if proxy_table_exists? table_name_for(struct)
 				proxy_find_table struct
@@ -36,7 +36,7 @@ module Tape
 		# @return [Tape::Table] table
 		def proxy_create_table struct
 			Tape.assert struct.is_a? Tape::Struct
-			Tape.assert struct.get('name')
+			Tape.assert struct.name
 
 			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Tape::Table
 			connection.create_table table_name_for(struct) do
@@ -106,7 +106,7 @@ module Tape
 		end
 
 		def find_table_struct struct
-			Tape.assert struct.get('name'), "#find_table_struct expects the given struct to be declared with a name."
+			Tape.assert struct.name, "#find_table_struct expects the given struct to be declared with a name."
 			table         = find_table_named table_name_for(struct).to_s
 			table.columns = struct
 			table

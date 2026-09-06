@@ -1,0 +1,75 @@
+### Introduction
+
+A tuple is a lightweight, ordered group of values written with parentheses: `(a, b, c)`. Unlike an
+Array it isn't a collection you grow or map over -- it's a fixed little bundle, mostly used to
+return several values at once or to pull a few apart together.
+###
+point := (3, 4)
+@assert "`point`" == '(3, 4)', 'a tuple displays as (values, ...)'
+
+
+### One value in parentheses is just grouping
+
+`(...)` is also how you group a sub-expression, so a single value in parens is that value, not a
+one-element tuple. A trailing comma doesn't change that.
+###
+@assert (1 + 2) * 3 == 9, 'parentheses around one expression are plain grouping'
+@assert (7) == 7, 'a single value in parens is just the value'
+@assert (7,) == 7, 'a trailing comma on a single value is still just grouping'
+
+
+### Reading a value out by position
+
+`.0`, `.1`, `.2`, ... index into a tuple positionally, same `.N` syntax Arrays, Strings and Structs
+use. Negative indices count from the end.
+###
+pair := (10, 20)
+@assert pair.0 == 10, '.0 is the first value'
+@assert pair.1 == 20, '.1 is the second'
+@assert pair.-1 == 20, '.-1 is the last'
+
+
+### `.values` gives the underlying list
+
+`.values` (a property, no parentheses) hands back the plain list behind the tuple.
+###
+@assert (1, 2, 3).values == [1, 2, 3].values, '.values is the tuple as an ordinary list'
+
+
+### Tuples can nest
+
+A tuple value can itself be a tuple -- chain the positional access to reach inside.
+###
+nested := (1, (2, 3), 4)
+@assert nested.1.0 == 2, 'nested.1 is the inner tuple, .0 reads its first value'
+
+
+### Iterating
+
+`for` walks a tuple's values just like any other collection -- `it` is each value, `at` its index.
+###
+total := 0
+for (5, 10, 15)
+	total += it
+end
+@assert total == 30, 'for over a tuple visits each value in order'
+
+
+### Destructuring -- the main event
+
+`(targets) := source` pulls a tuple apart positionally into fresh locals in one line. This is how
+you consume a function that returns several things. See learn/structs.tape for the full rules
+(shared with Structs) -- the short version: extra values on the right are discarded, asking for
+more targets than there are values raises `Tape::Destructuring_Arity_Mismatch`.
+###
+(x, y) := (100, 200)
+@assert x == 100 && y == 200, 'destructuring binds each target to the matching position'
+
+(a, b) := (1, 2, 3, 4)
+@assert a == 1 && b == 2, 'taking fewer values than the tuple has is fine -- the rest are dropped'
+
+divmod ( n, d;
+	(n / d, n % d)
+)
+(quotient, remainder) := divmod(17, 5)
+@assert quotient == 3 && remainder == 2, 'returning a tuple + destructuring it is how you return several values'

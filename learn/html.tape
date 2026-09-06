@@ -1,6 +1,6 @@
 ### Introduction
 
-`tapes/html.tape` isn't part of the default preload -- it needs an explicit `@load`. It declares one generic `Dom` type plus a predefined element for each common tag (`Div`, `P`, `H1`, `A`, ...), each just `Dom` composed with its own `html_element` tag name. Calling `.to_s()` renders an element (and its `children`) straight to an HTML string.
+`tapes/html.tape` isn't loaded by default -- it needs an explicit `@load`. It declares one generic `Dom` type plus a predefined element for each common tag (`Div`, `P`, `H1`, `A`, ...), each just `Dom` composed with its own `html_element` tag name. Calling `.to_s()` renders an element (and its `children`) straight to an HTML string.
 ###
 @load 'tapes/html.tape'
 

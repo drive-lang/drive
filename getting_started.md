@@ -59,7 +59,7 @@ Two files, independently optional — pure-Tape types skip #2, rare Ruby-only ty
 1. **`tapes/foo.tape`** — the Tape-level declaration (`Foo { ... }`). A method that defers to Ruby is just `some_method (; @ruby )`.
 2. **`src/external/ruby/foo.rb`** — `class Foo < Tape::Instance` (or `< Tape::Type`), inside `module Tape`. `extend Ruby_Proxies` + `proxy :method_name` for 1:1 delegation ([`ruby_proxies.rb`](src/shared/ruby_proxies.rb)), or hand-write `def proxy_method_name(...)` for custom logic. `@ruby` calls `proxy_#{method_name}` on the backing instance.
 3. **Register the Ruby file** — `require_relative 'external/ruby/foo'` in [`src/tape.rb`](src/tape.rb)'s "External Ruby-backed built-ins" block (after `runtime/scopes`).
-4. **Load the Tape file** — `@load 'tapes/foo.tape'` in [`tapes/preload.tape`](tapes/preload.tape) for always-on, or leave opt-in for the user's own program to `@load` (e.g. `tapes/database.tape`).
+4. **Load the Tape file** — `@load 'tapes/foo.tape'` in [`tapes/global.tape`](tapes/global.tape) for always-on, or leave opt-in for the user's own program to `@load` (e.g. `tapes/database.tape`).
 5. Nothing else — matching Tape type ↔ Ruby class is by name, dynamic at construction time (next section).
 
 #### Linking an instance to its runtime type
@@ -94,5 +94,5 @@ Two files, independently optional — pure-Tape types skip #2, rare Ruby-only ty
 | Runtime errors | [`src/runtime/errors.rb`](src/runtime/errors.rb) |
 | Ruby-backed built-in types | [`src/external/ruby/`](src/external/ruby) |
 | `proxy`/`proxy_delegate` helpers | [`src/shared/ruby_proxies.rb`](src/shared/ruby_proxies.rb) |
-| Standard library (`.tape` side of built-ins) | [`tapes/`](tape), auto-loaded via [`tapes/preload.tape`](tapes/preload.tape) |
+| Standard library (`.tape` side of built-ins) | [`tapes/`](tape), auto-loaded via [`tapes/global.tape`](tapes/global.tape) |
 | Entry points (`Tape.lex`/`.parse`/`.interp`, `+_file` variants) | [`src/tape.rb`](src/tape.rb) |

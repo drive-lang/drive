@@ -41,13 +41,19 @@ module Tape
 			if expression.is_a? Tape::Struct_Expr
 				name      = expression.name.is_a?(Tape::Lexeme) ? expression.name.value : expression.name
 				structure = expression.to_s
+			elsif expression.respond_to?(:struct_body) && expression.struct_body && !expression.tag
+				# `Name <...>` / `Name | Other <...>` where `Name` is already a declared type -- a
+				# bare named struct can't reuse the name (rename it, the way tapes/expressions.tape's
+				# `Structure` sidesteps the built-in `Struct`).
+				name = expression.name
+				return "#{Ascii.bold name} is already a declared type — a struct declared as `#{Ascii.bold "#{name} <...>"}` needs a name that isn't taken"
 			else
 				name      = expression.name
 				structure = expression.tag.to_s
 			end
 
 			expected_structured_type = "#{name}\\#{structure} {}"
-			"#{Ascii.bold name} structured with #{Ascii.bold structure} not found:\n\n\t#{Ascii.bold expected_structured_type}"
+			"#{Ascii.bold name} tagged with #{Ascii.bold structure} is not declared:\n\n\t#{Ascii.bold expected_structured_type}"
 		end
 	end
 
@@ -91,7 +97,7 @@ module Tape
 	class Cannot_Assign_Undeclared_Identifier < Error
 	end
 
-	class Cannot_Call_Value < Error
+	class Receiver_Is_Not_Callable < Error
 	end
 
 	class Invalid_Dictionary_Key < Error
@@ -176,7 +182,7 @@ module Tape
 	class Invalid_Http_Directive_Handler < Error
 	end
 
-	class Invalid_Start_Directive_Argument < Error
+	class Invalid_Server_Argument < Error
 	end
 
 	class Interpret_Expr_Not_Implemented < Error
@@ -216,11 +222,27 @@ module Tape
 	class Cannot_Call_Private_Static_Member_On_Type < Error
 	end
 
-	class Invalid_Directive_Usage < Error
+	class Invalid_Context_Function_Usage < Error
 		# todo: This is not printing anything to stdouts
 	end
 
-	class Invalid_Scope_Directive_Argument < Error
+	# `@x := ...` outside a Type body -- Context members can only be declared on a Type.
+	class Context_Declaration_Outside_Type < Error
+		def detail_message
+			'`@` members can only be declared inside a Type body'
+		end
+	end
+
+	# `@name := ...` where `name` is a built-in Context accessor (`name`, `types`, `object_id`, ...).
+	class Cannot_Override_Context_Member < Error
+		def detail_message
+			target = expression.respond_to?(:left) ? expression.left : expression
+			name   = target.respond_to?(:right) ? target.right&.value : target&.value
+			"#{Ascii.bold "@#{name}"} is a built-in Context member and can't be redeclared"
+		end
+	end
+
+	class Invalid_Scope_Function_Argument < Error
 	end
 
 	class Missing_Ruby_Proxy_Declaration < Error
@@ -237,7 +259,7 @@ module Tape
 		end
 	end
 
-	class Invalid_Ruby_Proxy_Directive_Usage < Error
+	class Invalid_Ruby_Proxy_Usage < Error
 		# @ruby directive only supports function and variable declarations in the body of a Type declaration
 	end
 
@@ -354,6 +376,9 @@ module Tape
 	end
 
 	class Invalid_Composition_With_A_Non_Scope_type < Error
+	end
+
+	class Invalid_Composition_With_A_Non_Struct_type < Error
 	end
 
 	class Invalid_Composition_Operator < Error

@@ -28,7 +28,7 @@ Sqlite | Database {
 
 	Self.local (named filename := 'demo.db';
 		filename += '.db' unless filename.end_with?('.db')
-		path := "`@root`/temp/`filename`"
+		path := "`@root_path`/temp/`filename`"
 		Sqlite(path)
 	)
 

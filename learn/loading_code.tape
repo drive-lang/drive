@@ -1,6 +1,6 @@
 ### Introduction
 
-`@load 'file'` reads another `.tape` file and merges its top-level declarations directly into the current scope, as ordinary members of whatever scope you load it into. `tapes/preload.tape` (the standard library) uses this same mechanism, but with a twist: the interpreter's own bootstrap loads it into a separate scope, then adds *that* to Global's readable scope, rather than merging it into Global directly -- so `String`/`Array`/etc. are reachable but aren't Global's own declarations (see learn/scopes.tape). An ordinary bare `@load` you write yourself, like the one below, still merges straight into the current scope, no special-casing:
+`@load 'file'` reads another `.tape` file and merges its top-level declarations directly into the current scope, as ordinary members of whatever scope you load it into. `tapes/global.tape` (the standard library) uses this same mechanism, but with a twist: the interpreter's own bootstrap loads it into a separate scope, then adds *that* to Global's readable scope, rather than merging it into Global directly -- so `String`/`Array`/etc. are reachable but aren't Global's own declarations (see learn/scopes.tape). An ordinary bare `@load` you write yourself, like the one below, still merges straight into the current scope, no special-casing:
 
 You may omit .tape from filenames, they're added automatically upon file lookup.
 ###

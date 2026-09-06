@@ -39,7 +39,7 @@ class Structs_Test < Base_Test
 
 		result = Tape.interp "Abc {}
 		Abc\\<Number> {}
-		Abc\\<1+2+3/123>.tag.types.first()"
+		Abc\\<1+2+3/123>.tag.@types.first()"
 		assert_equal 3, result
 	end
 
@@ -58,7 +58,7 @@ class Structs_Test < Base_Test
 		# As a struct member annotation, the surrounding named struct still registers -- the misparse this
 		# guards against used to leave `\` and `123` as two extra nil-named members, which silently
 		# stopped `Thing` from being declared at all.
-		names = Tape.interp "Abc\\9 {}\nThing <id: Abc\\9, text: String>\nThing.names"
+		names = Tape.interp "Abc\\9 {}\nThing <id: Abc\\9, text: String>\nThing.@names"
 		assert_equal %w(id text), names.values
 	end
 
@@ -77,7 +77,7 @@ class Structs_Test < Base_Test
 
 	def test_struct_instance_types_accessible_from_tape
 		out = Tape.interp "g := <String, Number>
-		g.types"
+		g.@types"
 		assert_equal 'String', out.values[0].name
 		assert_equal 'Number', out.values[1].name
 	end
@@ -85,7 +85,7 @@ class Structs_Test < Base_Test
 	def test_bare_struct_assignable_and_storable
 		# A bare annotation alone on its own line (no `=` on the same expression) is undeclared, same as any other annotation (`x: Number` alone behaves identically) — combine the annotation and assignment into one expression, which is how self-declaring annotations actually work today.
 		out = Tape.interp 'thing: <String, Number> = <String, Number>
-		thing.types.count'
+		thing.@types.count'
 		assert_equal 2, out
 	end
 
@@ -139,7 +139,7 @@ class Structs_Test < Base_Test
 		    Abc\\<String> {}
 		    x := Abc\\<Number>
 		    y := Abc\\<String>
-		    (x.tag.types.first(), y.tag.types.first())
+		    (x.tag.@types.first(), y.tag.@types.first())
 		CODE
 		assert_equal 'Number', out.values[0].name
 		assert_equal 'String', out.values[1].name
@@ -179,7 +179,7 @@ class Structs_Test < Base_Test
 		    }
 		    z := Abc\\<4815>
 		    zz := z()
-		    zz.tag.types.first()
+		    zz.tag.@types.first()
 		CODE
 		assert_equal 4815, out
 	end
@@ -296,15 +296,84 @@ class Structs_Test < Base_Test
 		# `Ident<...>` with a base name that's never been declared as anything at all (no bare Type, no tagged variant, no alias) isn't an error -- it's a bare named struct, same shape as `<...>` but with `.name` set from the identifier. Only collides with something else declared -- a real Type with a mismatched tag, or an alias to a non-Type value -- does it still raise (see test_reference_to_mismatched_declared_tag_raises).
 		out = Tape.interp <<~CODE
 		    n := Named\\<Number>
-		    n.name
+		    n.@name
 		CODE
 		assert_equal 'Named', out
 
 		out = Tape.interp <<~CODE
 		    n := Named\\<Number>
-		    n.types.values.map((it; it.name)).join(', ')
+		    n.@types.values.map((it; it.@name)).join(', ')
 		CODE
 		assert_equal 'Number', out
+	end
+
+	# A bare named struct whose own member references the struct's own name used to raise
+	# Undeclared_Identifier -- the name wasn't declared until after every member was resolved.
+	# Now an empty stand-in is declared first (like a bare Type before its body runs), and
+	# #register_bare_named_struct swaps the finished struct in.
+	def test_bare_named_struct_can_reference_itself
+		out = Tape.interp <<~CODE
+		    Node <
+		    	name: String
+		    	parent: Node
+		    >
+		    n := Node
+		    (n.@type_names, n.@types.get(1) == Node)
+		CODE
+		assert_equal %w(String Node), out.values[0].values
+		assert_equal true, out.values[1] # the `parent` slot points at the finished Node, not the stand-in
+	end
+
+	# The forward-declaration machinery already hoists a `Struct_Expr`, so the self-referencing
+	# stand-in also unblocks two structs that reference each other.
+	def test_mutually_referential_bare_named_structs
+		out = Tape.interp <<~CODE
+		    A <partner: B>
+		    B <partner: A>
+		    (A.@type_names, B.@type_names)
+		CODE
+		assert_equal %w(B), out.values[0].values
+		assert_equal %w(A), out.values[1].values
+	end
+
+	# An empty `Name <>` is a forward declaration -- a later `Name <...>` fills it in rather than
+	# raising the different-shape error (which still applies to two genuinely non-empty shapes). This
+	# is the spelling that lets `enclosing_scope: Scope` resolve inside `tapes/scopes.tape` without
+	# the one-shot self-reference above.
+	def test_empty_bare_named_struct_is_a_forward_declaration
+		out = Tape.interp <<~CODE
+		    Scope <>
+		    Scope <
+		    	name: String
+		    	parent: Scope
+		    >
+		    s := Scope
+		    (s.@type_names, s.@types.get(1) == Scope)
+		CODE
+		assert_equal %w(String Scope), out.values[0].values
+		assert_equal true, out.values[1]
+	end
+
+	# `Empty <>` on its own (never filled in) is just an empty struct, not an Undeclared_Identifier.
+	def test_empty_bare_named_struct_on_its_own
+		out = Tape.interp <<~CODE
+		    Empty <>
+		    (Empty.@name, Empty.@names)
+		CODE
+		assert_equal 'Empty', out.values[0]
+		assert_equal [], out.values[1].values
+	end
+
+	# Filling in a forward declaration and *then* trying a third, different shape still raises --
+	# only the empty placeholder is special, not every prior shape.
+	def test_forward_declared_struct_still_rejects_a_later_shape_change
+		assert_raises Tape::Undeclared_Tagged_Type do
+			Tape.interp <<~CODE
+			    N <>
+			    N <a: Number>
+			    N <a: String>
+			CODE
+		end
 	end
 
 	# Re-declaring the exact same bare named struct a second time used to raise Undeclared_Type_Structure -- `aliased` (the struct from the first declaration) being non-nil blocked the bare-named-struct fallback, even though the shape hadn't actually changed.
@@ -319,7 +388,7 @@ class Structs_Test < Base_Test
 			    	id: Number
 			    	done := false
 			    >
-			    Task.name
+			    Task.@name
 			CODE
 			assert_equal 'Task', out
 		end
@@ -340,7 +409,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Task <id: Number, done: Bool>
 		    Task <done: Bool, id: Number>
-		    Task.name
+		    Task.@name
 		CODE
 		assert_equal 'Task', out
 	end
@@ -350,7 +419,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    before := Task <id: Number, done: Bool>
 		    after := Task <done: Bool, id: Number>
-		    (before.names, before.type_names, after.names, after.type_names)
+		    (before.@names, before.@type_names, after.@names, after.@type_names)
 		CODE
 		before_members = out.values[0].values.zip(out.values[1].values).sort
 		after_members  = out.values[2].values.zip(out.values[3].values).sort
@@ -489,7 +558,7 @@ class Structs_Test < Base_Test
 		    db := Data_Conn('primary')
 
 		    t := Table\\<columns := cols, database := db>
-		    (t.tag.columns.names, t.tag.database.name)
+		    (t.tag.columns.@names, t.tag.database.name)
 		CODE
 		assert_equal %w(name age), out.values[0].values
 		assert_equal 'primary', out.values[1]
@@ -578,7 +647,7 @@ class Structs_Test < Base_Test
 		    }
 		    z := Abc\\<{x=1}>
 		    zz := z()
-		    zz.tag.members
+		    zz.tag.@members
 		CODE
 		assert_equal 1, out.values.length
 		assert_equal 'dict', out.values.first.name
@@ -588,7 +657,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    @load 'tapes/struct.tape'
 		    s := <name: String, Number>('Alice', 42)
-		    s.members
+		    s.@members
 		CODE
 		assert_equal 2, out.values.length
 		assert_equal 'name', out.values[0].name
@@ -647,6 +716,24 @@ class Structs_Test < Base_Test
 		out = Tape.interp 'cols := <name: String>
 			<columns := cols>'
 		assert_kind_of Tape::Struct, out.values.first
+	end
+
+	# A struct member's type can be a func signature (`to_s: (-> String;)`) -- looks like a function
+	# declaration but is strictly struct syntax; it's a named member whose type is a Func_Signature.
+	def test_struct_member_can_be_typed_with_a_func_signature
+		out = Tape.parse 'Api <name: String, run: (Number -> Number;), reset: (;)>'
+		assert_equal %w(name run reset), out.first.names
+		assert_kind_of Tape::Func_Signature_Expr, out.first.types[1]
+		assert_kind_of Tape::Func_Signature_Expr, out.first.types[2] # no return type, still a signature via the `:` form
+
+		# The member is a real, named slot -- nil until assigned, name reflected.
+		out = Tape.interp <<~CODE
+		    Api <name: String, run: (Number -> Number;)>
+		    api := Api
+		    (api.@names.values, api.run)
+		CODE
+		assert_equal %w(name run), out.values[0]
+		assert_nil out.values[1]
 	end
 
 	def test_struct_typed_param_parses
@@ -723,13 +810,13 @@ class Structs_Test < Base_Test
 		end
 	end
 
-	# `x: Abc\<Number>` (a named type plus a tag) parses the same way it already does for plain identifiers/variables.
+	# `x: Abc\<Number>` (a named type plus a tag) parses the same way it already does for plain identifiers/variables -- reachable as param.type.tag, same as any other type annotation (no separate Param_Expr#tag; that duplicated what param.type.tag already gives you).
 	def test_named_type_plus_struct_param_parses
 		out   = Tape.parse 'f ( x: Abc\\<Number>; x )'
 		param = out.first.parameters.first
 		assert_equal 'Abc', param.type.value
-		assert_kind_of Tape::Struct_Expr, param.tag
-		assert_equal 'Abc', param.tag.name
+		assert_kind_of Tape::Struct_Expr, param.type.tag
+		assert_equal 'Abc', param.type.tag.name
 	end
 
 	# --- `<>` immediately followed by `;`/`,` (no space) -- lexer regression ---
@@ -766,7 +853,7 @@ class Structs_Test < Base_Test
 		    Task_Schema <a: Number, b: String>
 		    Array\\Task_Schema {}
 		    x := Array\\Task_Schema
-		    x.tag.names
+		    x.tag.@names
 		CODE
 		assert_equal ['a', 'b'], out.values
 	end
@@ -787,7 +874,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Array\\String {}
 		    x := Array\\String
-		    x.tag.types.first().name
+		    x.tag.@types.first().@name
 		CODE
 		assert_equal 'String', out
 	end
@@ -800,7 +887,7 @@ class Structs_Test < Base_Test
 		    Connection <db: Number, name: String>
 		    Container\\<Connection> {}
 		    x := Container\\<Connection>
-		    x.tag.names
+		    x.tag.@names
 		CODE
 		assert_equal ['db', 'name'], out.values
 	end
@@ -812,7 +899,7 @@ class Structs_Test < Base_Test
 		    Connection <db: Number, name: String>
 		    Container\\<Connection> {}
 		    Tasks | Container\\<Connection> {}
-		    Tasks.tag.names
+		    Tasks.tag.@names
 		CODE
 		assert_equal ['db', 'name'], out.values
 	end
@@ -828,7 +915,7 @@ class Structs_Test < Base_Test
 
 		    Combo | This | That | There\\Info | Here\\<> {}
 		    x := Combo()
-		    (x.a, x.b, Combo.tag.names)
+		    (x.a, x.b, Combo.tag.@names)
 		CODE
 		a, b, tag_names = out.values
 		assert_equal 1, a
@@ -843,7 +930,7 @@ class Structs_Test < Base_Test
 		    Container\\<conn: Connection> {}
 		    Container\\<Connection> {}
 		    x := Container\\<Connection>
-		    x.tag.names
+		    x.tag.@names
 		CODE
 		assert_equal ['conn'], out.values
 	end
@@ -897,8 +984,8 @@ class Structs_Test < Base_Test
 	def test_struct_member_type_annotation_resolves_named_reference_tag_regression
 		out = Tape.interp <<~CODE
 		    s := <id: Array\\String>
-		    m := s.members.first()
-		    (m.type.display_name, m.type.tag.type_names.first())
+		    m := s.@members.first()
+		    (m.type.@display_name, m.type.tag.@type_names.first())
 		CODE
 		assert_equal %w(Array\\String String), out.values
 	end
@@ -908,8 +995,8 @@ class Structs_Test < Base_Test
 	def test_struct_member_type_annotation_resolves_inline_literal_tag_regression
 		out = Tape.interp <<~CODE
 		    s := <id: Array\\<String>>
-		    m := s.members.first()
-		    (m.type.display_name, m.type.tag.type_names.first())
+		    m := s.@members.first()
+		    (m.type.@display_name, m.type.tag.@type_names.first())
 		CODE
 		assert_equal ['Array\\<String>', 'String'], out.values
 	end
@@ -926,7 +1013,7 @@ class Structs_Test < Base_Test
 		out = refute_raises Tape::Out_Of_Tokens do
 			Tape.interp <<~CODE
 			    s := <id: Array\\<String>>
-			    s.members.first().type.tag.type_names.first()
+			    s.@members.first().type.tag.@type_names.first()
 			CODE
 		end
 		assert_equal 'String', out
@@ -936,7 +1023,7 @@ class Structs_Test < Base_Test
 	def test_triple_nested_struct_closing_angles_parse_regression
 		out = Tape.interp <<~CODE
 		    s := <a: Array\\<b: Array\\<String>>>
-		    s.members.first().type.tag.members.first().type.tag.type_names.first()
+		    s.@members.first().type.tag.@members.first().type.tag.@type_names.first()
 		CODE
 		assert_equal 'String', out
 	end
@@ -958,7 +1045,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    a := Array\\String
 		    b := Array\\<String>
-		    (a.display_name, b.display_name)
+		    (a.@display_name, b.@display_name)
 		CODE
 		assert_equal ['Array\\String', 'Array\\<String>'], out.values
 	end
@@ -968,7 +1055,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    Named_Struct <a: Number>
 		    Container\\Named_Struct {}
-		    Container\\Named_Struct.display_name
+		    Container\\Named_Struct.@display_name
 		CODE
 		assert_equal 'Container\\Named_Struct', out
 	end
@@ -986,7 +1073,7 @@ class Structs_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    A {} B {} C {}
 		    Thing\\A\\B\\C {
-		        probe (; [self.tag.type_names.0, self.tag.tag.type_names.0, self.tag.tag.tag.type_names.0] )
+		        probe (; [self.tag.@type_names.0, self.tag.tag.@type_names.0, self.tag.tag.tag.@type_names.0] )
 		    }
 		    Thing\\A\\B\\C().probe()
 		CODE
@@ -1012,7 +1099,7 @@ class Structs_Test < Base_Test
 		    Thing\\Base {}
 		    z := Thing\\Base()
 		    z.tag = Sub
-		    z.tag.type_names.0
+		    z.tag.@type_names.0
 		CODE
 		assert_equal 'Sub', out
 	end
@@ -1088,6 +1175,28 @@ class Structs_Test < Base_Test
 		assert_equal [1, 'yo'], out.values
 	end
 
+	# A member whose *name* collides with a reflective struct key (`types`, `names`, `type_names`,
+	# `values`) used to make `Struct#type_objects` return nil -- it read `@declarations['types']`,
+	# which the member's own declaration had overwritten -- and struct composition then crashed on
+	# `own.type_objects[i]`. Per-member data is now a plain ivar, immune to the name shadowing.
+	def test_struct_with_a_member_named_like_a_reflective_key
+		out = Tape.interp <<~CODE
+		    Schema <types: Array, names: Array, declared_name: String>
+		    s := Schema
+		    s.@type_names
+		CODE
+		assert_equal %w(Array Array String), out.values
+	end
+
+	def test_struct_composition_with_a_member_named_like_a_reflective_key
+		out = Tape.interp <<~CODE
+		    Node <lexemes: Array>
+		    Schema | Node <types: Array, names: Array>
+		    Schema.@type_names
+		CODE
+		assert_equal %w(Array Array Array), out.values
+	end
+
 	def test_struct_composition_union_leftmost_operand_wins_a_name_collision
 		out = Tape.interp <<~CODE
 		    Abc <abc: Int, shared: String>
@@ -1149,13 +1258,13 @@ class Structs_Test < Base_Test
 		    Def <def: String>
 		    Both | Abc | Def <>
 		    b := Both(1, 'hi')
-		    (b === Both, Both.name)
+		    (b === Both, Both.@name)
 		CODE
 		assert_equal [true, 'Both'], out.values
 	end
 
 	def test_struct_composition_operand_that_is_not_a_struct_raises
-		assert_raises Tape::Invalid_Composition_With_A_Non_Scope_type do
+		assert_raises Tape::Invalid_Composition_With_A_Non_Struct_type do
 			Tape.interp <<~CODE
 			    Abc <abc: Int>
 			    Real_Type {}
@@ -1172,7 +1281,7 @@ class Structs_Test < Base_Test
 			    Def <def: String>
 			    Both | Abc | Def <>
 			    Both | Abc | Def <>
-			    Both.name
+			    Both.@name
 			CODE
 			assert_equal 'Both', out
 		end

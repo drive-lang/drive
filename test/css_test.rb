@@ -270,6 +270,33 @@ class Css_Test < Base_Test
 		assert_equal ["Duplicate property 'color'"], out.values
 	end
 
+	# A running keyframe animation on `transform` overrides a `:hover { transform }` every frame --
+	# only checked at Stylesheet level, where both the @keyframes and the rules are visible.
+	def test_lint_flags_hover_transform_overridden_by_running_animation
+		out = Tape.interp <<~CODE
+		    #{CSS}
+		    kf := At_Rule('keyframes', 'float', [Keyframe(['0%'], [Property('transform', 'translateY(0)')]), Keyframe(['100%'], [Property('transform', 'translateY(-10px)')])])
+		    base := Style_Rule(['.card'], [Property('animation', 'float 3s infinite')])
+		    hover := Style_Rule(['.card:hover'], [Property('transform', 'scale(1.05)')])
+		    Css_Lint_Visitor().lint(Stylesheet([kf, base, hover]))
+		CODE
+		assert_equal(
+			[".card:hover sets transform, but .card runs a keyframe animation on transform -- the animation overrides it every frame"],
+			out.values
+		)
+	end
+
+	def test_lint_no_clash_when_keyframes_do_not_touch_transform
+		out = Tape.interp <<~CODE
+		    #{CSS}
+		    kf := At_Rule('keyframes', 'fade', [Keyframe(['0%'], [Property('opacity', '0')]), Keyframe(['100%'], [Property('opacity', '1')])])
+		    base := Style_Rule(['.card'], [Property('animation', 'fade 3s infinite')])
+		    hover := Style_Rule(['.card:hover'], [Property('transform', 'scale(1.05)')])
+		    Css_Lint_Visitor().lint(Stylesheet([kf, base, hover]))
+		CODE
+		assert_equal [], out.values
+	end
+
 	# `lint` resets `warnings` at the start, same as Html_Lint_Visitor's own `lint` -- reusing one
 	# instance across calls does not accumulate.
 	def test_lint_resets_between_calls_on_the_same_instance

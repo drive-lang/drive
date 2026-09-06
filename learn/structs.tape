@@ -5,8 +5,8 @@ Sometimes you want to attach a small bundle of typed data to something without d
 This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see learn/tagged_types.tape for that.
 ###
 pair := <String, Number>
-type_names := pair.types.values.map((it;
-	it.name
+type_names := pair.@types.values.map((it;
+	it.@name
 )).join(', ')
 @assert type_names == 'String, Number', "a struct's member types should list each declared type"
 
@@ -14,7 +14,7 @@ type_names := pair.types.values.map((it;
 ### Two layers, don't confuse them
 
 - Tape::Member/Tape::Struct (Ruby, src/external/ruby/struct.rb + member.rb) -- the low-level engine behind every `<...>` literal above. Always present, no load required.
-- Member/Struct (Tape, tapes/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`tapes/preload.tape` -- `@load 'tapes/struct.tape'` here is redundant, just explicit). Gives you a proper Tape-level Struct type with a real `.members` array, `has?`/`include?`, and custom `==`/`+` operators, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
+- Member/Struct (Tape, tapes/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`tapes/global.tape` -- `@load 'tapes/struct.tape'` here is redundant, just explicit). Gives you a proper Tape-level Struct type with a real `@.members` array, `has?`/`include?`, and a custom `==` operator, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
 ###
 @load 'tapes/struct.tape'
 
@@ -36,8 +36,8 @@ f2 := Member('name', nil, String)
 ###
 s := <name: String, age: Number>('Alice', 30)
 @assert s.to_s() == "<name: String = 'Alice', age: Number = 30>", "instantiating a struct should fill in each member's real value"
-@assert s.members.0.to_s() == "name: String = 'Alice'", '.members should hold each real Member instance'
-@assert s.members.1.to_s() == 'age: Number = 30', '.members should hold each real Member instance'
+@assert s.@members.0.to_s() == "name: String = 'Alice'", '@.members should hold each real Member instance'
+@assert s.@members.1.to_s() == 'age: Number = 30', '@.members should hold each real Member instance'
 
 
 ### Equality
@@ -56,7 +56,7 @@ c := Member('id', 5, Number)
 
 ### Struct equality
 
-Struct's `==`/`===` just delegate to its `.members` array, comparing element-wise with the exact same rules as above -- `==` needs every member's value to match too, `===` only needs the same members to exist with the same types:
+Struct's `==` delegates to its `@.members` array, comparing element-wise with the same rules as Member's own `==` above -- every member's name, type, AND value has to match. (`===` is the separate type-comparison operator -- same members and types, value ignored.)
 ###
 sa := <name: String, age: Number>('Alice', 30)
 sb := <name: String, age: Number>('Alice', 30)
@@ -70,14 +70,14 @@ sc := <name: String, age: Number>('Alice', 99)
 
 ### Bare named structs
 
-Putting an identifier right in front of `<...>` (`Ident<...>`) isn't an error, as long as nothing is already declared under that name -- it builds a plain Struct, exactly like `<...>` alone, except with `.name` set from the identifier. A struct built with no name in front has a `nil` `.name`, only reachable through whatever variable holds it:
+Putting an identifier right in front of `<...>` (`Ident<...>`) isn't an error, as long as nothing is already declared under that name -- it builds a plain Struct, exactly like `<...>` alone, except with `@.name` set from the identifier. A struct built with no name in front has a `nil` `@.name`, only reachable through whatever variable holds it:
 ###
 Anonymous := <String, Number>
-@assert Anonymous.name == nil, 'a struct built with no name in front has no .name of its own'
+@assert Anonymous.@name == nil, 'a struct built with no name in front has no name of its own'
 
 Named <String, Number>
 n := Named <String, Number>
-@assert n.name == 'Named', 'Ident<...> builds a real struct with .name taken from Ident'
+@assert n.@name == 'Named', 'Ident<...> builds a real struct with a name taken from Ident'
 
 
 ### Type lookup always wins
@@ -100,9 +100,9 @@ quad     := <1, id := 2, ix: Number, String>(4, 8, 1, 'five')
 @assert "`num_pair`" == '(1, 2)', 'a Tuple should display as (values, ...)'
 @assert "`trio`" == '<1, 2, 3>', 'a Struct should display as <values, ...>'
 @assert "`quad`" == "<4, id: Number = 8, ix: Number = 1, 'five'>", 'a named Struct should display each member with its name/type'
-@assert num_pair.values == [1, 2].values, '.values should give the underlying Ruby-side values'
-@assert trio.values == [1, 2, 3].values, '.values should give the underlying Ruby-side values'
-@assert quad.values == [4, 8, 1, 'five'].values, '.values should give the underlying Ruby-side values, named or not'
+@assert num_pair.values == [1, 2].values, "a Tuple's .values gives the underlying Ruby-side values"
+@assert trio.@values == [1, 2, 3], "a Struct's @.values gives the underlying values"
+@assert quad.@values == [4, 8, 1, 'five'], "@.values works named or not"
 
 
 ### Same destructuring syntax, either source

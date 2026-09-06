@@ -38,7 +38,7 @@ Abc\<Number> {
 }
 z  := Abc\<4815>
 zz := z()
-@assert zz.tag.types.first() == 4815, '.tag should carry the value the reference was tagged with'
+@assert zz.tag.@types.first() == 4815, '.tag should carry the value the reference was tagged with'
 
 
 ### Reusing a struct: the spread rule
@@ -69,6 +69,6 @@ Widget\Options {}
 widget_a := Widget\<opts: Options>()   # named reference, matches the declared "opts: Options" variant -- works
 widget_b := Widget\<Options>()         # bare reference -- Options treated as one opaque value, NOT spread -- also works
 widget_c := Widget\Options()
-@assert widget_a.tag.names == ['opts'], 'a named reference should still carry the member name from the matched variant'
-@assert widget_b.tag.types.first() == Options, 'a bare reference should hold Options as one opaque value, not spread'
-@assert widget_c.tag.types.first() == String, 'the first type inside this tag is a: String'
+@assert widget_a.tag.@names == ['opts'], 'a named reference should still carry the member name from the matched variant'
+@assert widget_b.tag.@types.first() == Options, 'a bare reference should hold Options as one opaque value, not spread'
+@assert widget_c.tag.@types.first() == String, 'the first type inside this tag is a: String'

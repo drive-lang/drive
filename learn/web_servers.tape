@@ -1,6 +1,6 @@
 ### Introduction
 
-`tapes/server.tape` isn't part of the default preload -- it needs an explicit `@load`. Compose a type with `Server` and give it a `port`; a route is a lowercase HTTP method followed by `://` and a path, and its body runs on every request to that path.
+`tapes/server.tape` isn't loaded by default -- it needs an explicit `@load`. Compose a type with `Server` and give it a `port`; a route is a lowercase HTTP method followed by `://` and a path, and its body runs on every request to that path.
 ###
 @load 'tapes/server.tape'
 

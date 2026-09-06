@@ -15,7 +15,7 @@ survivor.name = 'Jack'      # fine -- name already exists
 
 ### Self-declaring with self is legitimate -- but only during construction
 
-`self.member := value` inside a type's own method self-declares a brand new member, same as writing `member := value` in the class body directly. That's allowed in the class body itself and inside `Self(;)` (and anything `Self(;)` calls) -- while the instance is still being built. (`self` is keyword sugar for the `./` scope operator -- see learn/types.tape.)
+`self.member := value` inside a type's own method self-declares a brand new member, same as writing `member := value` in the class body directly. That's allowed in the class body itself and inside `Self(;)` (and anything `Self(;)` calls) -- while the instance is still being built.
 ###
 Raft {
 	Self (; self.planks := 6 )

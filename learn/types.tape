@@ -44,9 +44,9 @@ Hatch().enter()
 
 ### Scope operators
 
-Three operators reach into a specific scope explicitly, rather than searching outward through everything in reach: `self` is the current instance only, `Self` is the current type (static members) only, `~/` is the global scope only. All three skip the normal "search everything in reach" fallback a bare identifier gets -- each looks in exactly one place, so a name collision elsewhere can't quietly shadow the one you meant.
+Three forms reach into a specific scope explicitly, rather than searching outward through everything in reach: `self` is the current instance only, `Self` is the current type (static members) only, `~/` is the global scope only. Each looks in exactly one place, so a name collision elsewhere can't quietly shadow the one you meant.
 
-`self`/`Self` are keyword sugar for the older `./`/`../` scope operators -- `self.x` and `./x` are exactly the same thing, just spelled differently. `./`/`../` still work (and `Self` alone even calls the type as a constructor, `Self() === Type_Name()`), but `self`/`Self` read better and are the preferred spelling now.
+`Self` alone also calls the type as a constructor -- `Self() === Type_Name()`.
 ###
 ISLAND := 'The Island'
 

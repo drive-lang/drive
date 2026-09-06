@@ -279,13 +279,18 @@ class Parser_Test < Base_Test
 	end
 
 	def test_scope_operators
-		out = Tape.parse './this_instance'
-		assert_kind_of Tape::Identifier_Expr, out.first
-		assert_equal './', out.first.scope_operator.value
-
+		# `~/` is the only symbolic scope operator; instance/type scope is `self`/`Self`.
 		out = Tape.parse '~/global_scope'
 		assert_kind_of Tape::Identifier_Expr, out.first
 		assert_equal '~/', out.first.scope_operator.value
+
+		# `self.`/`Self.` read as a plain `.` dot access off the bare keyword.
+		assert_kind_of Tape::Infix_Expr, Tape.parse('self.this_instance').first
+
+		# The nil-init and func-name forms desugar, tagging the identifier with the keyword itself.
+		nil_init = Tape.parse('self.x,').first
+		assert_equal 'self', nil_init.left.scope_operator.value
+		assert_equal 'Self', Tape.parse('Self.f (;)').first.name.scope_operator.value
 	end
 
 	def test_functions
@@ -834,13 +839,17 @@ class Parser_Test < Base_Test
 	end
 
 	def test_directive_identifier
+		# `@word` with nothing after it is a bare Context read (routed by `.prefixed_with_at` at interpret
+		# time), not a generic operand-grabbing directive -- there's no reserved-word list anymore.
 		out = Tape.parse '@whatever'
-		refute_instance_of Tape::Directive_Expr, out.first
+		assert_instance_of Tape::Identifier_Expr, out.first
+		assert out.first.prefixed_with_at
 
+		# A trailing `(...)` is an ordinary call on that read.
 		out = Tape.parse '@whatever(a, b)'
-		assert_instance_of Tape::Directive_Expr, out.first
-		assert_instance_of Tape::Identifier_Expr, out.first.name
-		assert_instance_of Tape::Circumfix_Expr, out.first.expression
+		assert_instance_of Tape::Call_Expr, out.first
+		assert_instance_of Tape::Identifier_Expr, out.first.receiver
+		assert out.first.receiver.prefixed_with_at
 	end
 
 	def test_all_http_methods
@@ -859,10 +868,10 @@ class Parser_Test < Base_Test
 		end
 
 		out = Tape.parse '@whatever "endpoint" (;)'
-		assert_equal 2, out.count
 		refute_instance_of Tape::Route_Expr, out.first
-		assert_instance_of Tape::Directive_Expr, out[0]
-		assert_instance_of Tape::Func_Expr, out[1]
+		assert_instance_of Tape::Identifier_Expr, out[0] # bare `@whatever` Identity read
+		assert out[0].prefixed_with_at
+		assert_instance_of Tape::Func_Expr, out.last
 	end
 
 	def test_empty_html_element_expression

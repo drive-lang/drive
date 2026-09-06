@@ -659,6 +659,31 @@ dict.merge({a: 1})
 dict.fetch(:missing, 'default')
 ```
 
+## Sets
+
+1. An unordered collection of unique items -- no literal, build one with `Set(...)`
+2. Seed it from an array, a range, or another set
+
+```tape
+s := Set([1, 2, 2, 3])   # {1, 2, 3} -- dedups
+s.add(4)                  # mutating methods return self, so they chain
+s.include?(2)             # true
+s.length()                # 4
+s.values()                # [1, 2, 3, 4] -- a fresh array snapshot
+
+Set([1, 2, 3]) | Set([3, 4])    # union          -> {1, 2, 3, 4}
+Set([1, 2, 3]) & Set([2, 3, 4]) # intersection   -> {2, 3}
+Set([1, 2, 3]) - Set([2, 3, 4]) # difference     -> {1}
+Set([1, 2, 3]) ^ Set([2, 3, 4]) # symmetric diff -> {1, 4}
+
+Set([1, 2]).subset?(Set([1, 2, 3]))   # true
+Set([1, 2, 3]).map(n; n * 10)          # [10, 20, 30]
+
+for Set([1, 2, 3])
+    @puts it
+end
+```
+
 ## Strings
 
 ```tape
@@ -797,6 +822,35 @@ for 1...10
 end
 ```
 
+A range is a real value with its own methods:
+
+```tape
+r := 1...5
+r.start()          # 1
+r.finish()         # 5
+r.length()         # 5
+r.include?(3)      # true
+r.to_a()           # [1, 2, 3, 4, 5]
+r.sum()            # 15
+r.map(n; n * n)             # [1, 4, 9, 16, 25]
+r.filter(n; n % 2 == 0)     # [2, 4]
+
+x: Range = 1...5   # a `: Range` contract holds
+1...5 === Range    # true
+```
+
+A range also works as an Array or String subscript — each operator keeps its own end/start rule, so `[1...3]` is one element longer than `[1..<3]`. Endless and beginless forms slice too; a negative endpoint counts from the end:
+
+```tape
+xs := [10, 20, 30, 40, 50]
+xs[1...3]    # [20, 30, 40]      inclusive
+xs[1..<3]    # [20, 30]          exclusive end
+xs[2...]     # [30, 40, 50]      endless
+xs[...3]     # [10, 20, 30, 40]  beginless
+xs[...-1]    # [10, 20, 30, 40, 50]   -1 is the last index
+"abcdef"[0..<2]   # 'ab'
+```
+
 ## File I/O
 
 ```tape
@@ -806,7 +860,74 @@ content := File_System.read('./file.txt')
 File_System.write_string_to_file('./out.txt', 'Hello!')
 ```
 
-## @load Directive
+## The Context (`@`)
+
+`@` is the current scope's *context* — a struct the interpreter fills with facts about wherever it's written, plus a set of built-in functions. Every scope has one: Global, a Type, an instance, a function body. There's no separate "directive" concept — `@word` is just `@.word`.
+
+```tape
+@ === Context      # true
+@.name             # 'Global' at the top level
+@.to_s()           # '@Global'
+```
+
+`@word` is shorthand for `@.word` — `@name` is `@.name`, and `@puts x` / `@load 'f'` call a function member.
+
+### Reflective vitals
+
+Read-only facts about the scope, snapshotted the first time `@` is reached:
+
+```tape
+Flying { airborne := true }
+Duck | Flying {}
+
+Duck.@name              # 'Duck'
+Duck.@composed_types    # Set{'Duck', 'Flying'} — own name plus every |/&/~/^ type
+Duck.@object_id         # the plain Ruby number
+
+[1, 2, 3].@type         # 'Array' — @type / @types read on any value
+nil.@type               # 'Nil'
+```
+
+Reflection lives on `@` only. Plain `.` is reserved for a scope's own members, so a struct member named `name` or `types` never collides with the reflective accessor of the same name:
+
+```tape
+Row <name: String, types: Number>
+r := Row('cooper', 3)
+
+r.name         # 'cooper'        — the member
+r.@name        # 'Row'           — the struct's identifier
+r.@type_names  # ['String', 'Number']
+r.@names       # ['name', 'types']
+```
+
+### Function members
+
+`@puts`, `@assert`, `@refute`, `@sleep`, `@load`, `@declare`, `@push_scope` / `@pop_scope`, `@connect`, `@start_server` / `@stop_server`, and the readable/writable-scope functions all live on the context. A bare `@puts` (no call) is the function itself, so it can be captured:
+
+```tape
+kept := @puts('logged')   # prints 'logged', returns it unchanged (a passthrough)
+p := @puts
+p('again')                # 'again'
+```
+
+### Your own `@` members on a Type
+
+Inside a `Type { }` body you can hang your own members off the type's context. They show up under `@`, never in plain `.` access, so they can't collide with the type's real members. A built-in name (`@name`, `@types`, ...) is reserved and raises.
+
+```tape
+Widget {
+    @version := 2
+    @author: String = 'me'
+
+    stamp (; "widget v`@version` by `@author`" )
+}
+
+Widget.@version   # 2
+w := Widget()
+w.@version        # 2 — an instance reads through to its type's context
+```
+
+## @load
 
 1. Imports another Tape file
 2. A file is only run once per scope it's loaded into — loading the same file into the same scope again returns the first run's result instead of re-running it
@@ -822,7 +943,7 @@ my_mod.Some_Type()
 @load './my_module.tape'   # already loaded into this scope -- returns the same result again, doesn't re-run
 ```
 
-## @puts Directive
+## @puts
 
 ```tape
 @puts 'Hello, World!'
@@ -855,12 +976,12 @@ Point {
     x := 1
     greet (; 'hi' )
 }
-@puts Point()   # #<Tape::Instance name="Point" declarations=["name", "types", "x", "greet"]>
+@puts Point()   # #<Tape::Instance name="Point" declarations=["x", "greet"]>
 ```
 
 Nothing enforces a bracket convention for your own types, but picking one that doesn't collide with the built-ins above keeps output easy to scan.
 
-## @declare Directive
+## @declare
 
 1. Declares an identifier on the current scope from a runtime String name, rather than a literal identifier written in the source (what `:=` needs)
 2. `@declare name` declares `nil`; `@declare name, value` and `@declare name, value, type` add a value and, optionally, a type
@@ -879,7 +1000,7 @@ supplies := <water: Number = 40, wood: Number = 12>
 
 1. Compose with `Server` type
 2. Define routes with HTTP method syntax
-3. Start with `@start` directive
+3. Boot with `@start_server` (background thread; `@stop_server` to shut one down)
 
 ```tape
 @load 'tapes/server.tape'
@@ -898,7 +1019,7 @@ App | Server {
     )
 }
 
-@start App()
+@start_server App()
 ```
 
 ## Routes
@@ -1049,7 +1170,7 @@ page := Html([
 1. `@load 'tapes/css.tape'` -- CSS is plain data: `Property`/`Style_Rule`/`At_Rule`/`Scope_Rule`/`Custom_Property_Rule`/`Layer_Order`/`Keyframe`/`Variable_Declaration`/`Css_Function`/`Color` are all bare structs, no parser involved
 2. `Css_Formatter_Visitor` walks a tree of those structs and turns it into a real CSS string -- pretty by default, `minify := true` for one line
 3. A rule nested inside another rule's own `rules` gets a synthesized `&` prefix (real CSS nesting); a rule merely sitting inside an `At_Rule`/`Scope_Rule` body does not, since there's no parent selector for `&` to refer to there
-4. `Css_Lint_Visitor` walks the same kind of tree checking for duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` -> `0`) instead of formatting it
+4. `Css_Lint_Visitor` walks the same kind of tree checking for duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` -> `0`) instead of formatting it. Handed a whole `Stylesheet`, it also warns when a state rule (`.card:hover`, `:focus`, ...) sets `transform` while the base selector runs a keyframe `animation` that also animates `transform` — the running animation recomputes it every frame, so the hover value never shows
 
 ```tape
 @load 'tapes/css.tape'
@@ -1144,6 +1265,16 @@ Abc === Abc                     # true  — neither side tagged
 String === Any    # true
 4 == Any          # true
 nil == Any        # false — the one exception
+```
+
+A String compares equal (`==`/`!=` only) to a bare Type whose `@name` it spells — so a collection of type-name strings can be scanned with a real type:
+
+```tape
+Flying { can_fly := true }
+Duck | Flying {}
+
+"Flying" == Flying                       # true
+Duck.@composed_types.include?(Flying)    # true — the set holds the string 'Flying'
 ```
 
 ### Logical
@@ -1296,10 +1427,11 @@ lying(5)   # raises Tape::Type_Contract_Violation — declared Number, actually 
 1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type), `Primary_Key\4815` (a bare integer, a "version tag")
 2. `\` chains: `Thing\One\Two {}` tags `Thing` with `One`, which is itself tagged with `Two`. `.tag` is `One`, `.tag.tag` is `Two`
 3. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `Self`/methods, and `Thing\One\Two` and `Thing\One\Three` are distinct too
-4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Tape::Undeclared_Type_Structure`
+4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Tape::Undeclared_Tagged_Type`
 5. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `Self(;)` runs, never forwarded as constructor args
 6. `x.tag = new_tag` re-tags at runtime, but only on a value whose type was declared with a tag, and only when `new_tag` composes at least everything the current tag does, at every chain link (`=>=`) — otherwise `Tape::Tag_Signature_Violation`
 7. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
+8. A bare named struct's member can be annotated with the struct's own name (`Node <name: String, parent: Node>`) — and two structs can reference each other. An empty `Name <>` is a forward declaration a later `Name <...>` fills in; redeclaring an already-filled struct with a *different* shape raises `Tape::Undeclared_Tagged_Type`
 
 ```tape
 String\<dict: Dictionary> {
@@ -1314,13 +1446,19 @@ String\<5>().to_s()       # "number: 5"
 
 Format_A {} Format_B {} Format_C {}
 Payload\Format_A\Format_B\Format_C {
-    trace (; [self.tag.type_names.0, self.tag.tag.type_names.0, self.tag.tag.tag.type_names.0] )
+    trace (; [self.tag.@type_names.0, self.tag.tag.@type_names.0, self.tag.tag.tag.@type_names.0] )
 }
 Payload\Format_A\Format_B\Format_C().trace()   # ['Format_A', 'Format_B', 'Format_C']
 
-Thing := <String, Number>   # anonymous struct -- .name is nil
+Thing := <String, Number>   # anonymous struct -- @.name is nil
 n := Named<String, Number>  # bare <...>, no `\` -- Named is undeclared, so this builds a plain named struct instead
-n.name                      # 'Named'
+n.@name                     # 'Named'
+
+Tree <
+    value: Number
+    children: Array
+    parent: Tree             # a member typed with the struct's own name
+>
 ```
 
 ## Enums (not finalized — don't rely on yet)

@@ -1,6 +1,6 @@
 ### Introduction
 
-`tapes/css.tape` isn't part of the default preload -- it needs an explicit `@load`. CSS is plain data here: a handful of structs (`Property`, `Style_Rule`, `At_Rule`, ...) build a small AST by hand, and a single `Css_Formatter_Visitor` walks whatever tree you built and turns it into a real CSS string. No parser -- you construct the tree directly.
+`tapes/css.tape` isn't loaded by default -- it needs an explicit `@load`. CSS is plain data here: a handful of structs (`Property`, `Style_Rule`, `At_Rule`, ...) build a small AST by hand, and a single `Css_Formatter_Visitor` walks whatever tree you built and turns it into a real CSS string. No parser -- you construct the tree directly.
 ###
 @load 'tapes/css.tape'
 

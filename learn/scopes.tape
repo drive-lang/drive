@@ -84,7 +84,6 @@ ration_report (;
 	)
 
 	summarize()
-
 )
 
 @assert ration_report() == '12 survivors, 40 units of water', 'a nested function should still see the readable scope'
@@ -109,7 +108,7 @@ w.y = 6
 
 ### The standard library works this way too
 
-`String`/`Array`/etc. are reachable through Global's own readable scope, not declared on Global directly -- see learn/load_directives.tape. Reassigning a built-in name shadows it for the rest of your program without ever touching the real one; if what you reassign it to still composes the original, everything keeps working, and every literal of that type picks up whatever else you added too:
+`String`/`Array`/etc. are reachable through Global's own readable scope, not declared on Global directly -- see learn/loading_code.tape. Reassigning a built-in name shadows it for the rest of your program without ever touching the real one; if what you reassign it to still composes the original, everything keeps working, and every literal of that type picks up whatever else you added too:
 ###
 Mine | Array { extra := true }
 Array = Mine
@@ -266,7 +265,7 @@ Button {
 }
 
 @push_scope Button
-	css_filter := 'invert()'
+css_filter := 'invert()'
 @pop_scope Button
 
 b := Button()
@@ -289,7 +288,7 @@ button_c := Button()
 button_d := Button()
 
 @push_scope button_c
-	onclick := 'clicked'
+onclick := 'clicked'
 @pop_scope button_c
 
 @assert button_c.onclick == 'clicked', 'the reopened instance should have the new member'

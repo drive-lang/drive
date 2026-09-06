@@ -94,7 +94,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pop_scope_without_target_raises_invalid_directive_usage
-		assert_raises Tape::Invalid_Directive_Usage do
+		assert_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp <<-CODE
 				#{SHARED_VEC2}
 				@push_scope Vec2
@@ -257,35 +257,35 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_add_readable_and_writable_scope_with_non_scope_argument_wraps_arg_with_maybe_instance
-		refute_raises Tape::Invalid_Scope_Directive_Argument do
+		refute_raises Tape::Invalid_Scope_Function_Argument do
 			Tape.interp '@add_readable_scope 4'
 		end
 
-		refute_raises Tape::Invalid_Scope_Directive_Argument do
+		refute_raises Tape::Invalid_Scope_Function_Argument do
 			Tape.interp "@add_writable_scope 'eight'"
 		end
 	end
 
 	def test_add_readable_scope_with_nil_argument_is_silently_accepted
 		# Gap in the falsy-guard: maybe_instance(nil) -> a Tape::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
-		refute_raises Tape::Invalid_Directive_Usage do
+		refute_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp '@add_readable_scope nil'
 		end
 	end
 
 	def test_add_readable_scope_with_false_argument_is_silently_accepted
 		# Same gap, for false -- maybe_instance(false) => Bool::FALSE, also Ruby-truthy.
-		refute_raises Tape::Invalid_Directive_Usage do
+		refute_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp '@add_readable_scope false'
 		end
 	end
 
 	def test_add_writable_scope_with_nil_and_false_arguments_are_silently_accepted
-		refute_raises Tape::Invalid_Directive_Usage do
+		refute_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp '@add_writable_scope nil'
 		end
 
-		refute_raises Tape::Invalid_Directive_Usage do
+		refute_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp '@add_writable_scope false'
 		end
 	end
@@ -328,6 +328,22 @@ class Scopes_Test < Base_Test
 			r.length
 		CODE
 		assert_equal 99, out
+	end
+
+	# `@push_scope` / `@pop_scope` / `@declare` are ordinary Context function calls now -- the paren
+	# form works the same as the space form, and both run in the caller's scope frame.
+	def test_scope_functions_accept_paren_call_syntax
+		out = Tape.interp <<-CODE
+			#{SHARED_VEC2}
+			@push_scope(Vec2)
+			ZERO := Vec2(0, 0)
+			@pop_scope(Vec2)
+			Vec2.ZERO.x
+		CODE
+		assert_equal 0, out
+
+		out = Tape.interp "@declare('answer', 42)\nanswer"
+		assert_equal 42, out
 	end
 
 	def test_standard_library_is_reachable_but_not_a_global_own_declaration
@@ -442,7 +458,7 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_function_is_rejected_at_push_time
 		# Used to succeed silently, then fail confusingly on pop -- Func is duped on every lookup (#rebind_func_to_scope), so identity can never match. Now rejected immediately, on push.
-		assert_raises Tape::Invalid_Scope_Directive_Argument do
+		assert_raises Tape::Invalid_Scope_Function_Argument do
 			Tape.interp <<-CODE
 				funk (; 1 )
 				@push_scope funk
@@ -452,14 +468,14 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_bare_literal_is_rejected_at_push_time
 		# Number passes the Func-rejecting Type check, but maybe_instance builds a fresh object every call -- identity can never match. Target must now be a bare identifier naming something already bound.
-		assert_raises Tape::Invalid_Scope_Directive_Argument do
+		assert_raises Tape::Invalid_Scope_Function_Argument do
 			Tape.interp '@push_scope 4'
 		end
 	end
 
 	def test_push_scope_an_explicit_constructor_call_is_rejected_at_push_time
 		# Same fix, different freshness source: a constructor call builds a new instance every run too.
-		assert_raises Tape::Invalid_Scope_Directive_Argument do
+		assert_raises Tape::Invalid_Scope_Function_Argument do
 			Tape.interp '@push_scope Number(4)'
 		end
 	end

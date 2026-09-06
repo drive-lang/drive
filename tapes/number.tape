@@ -59,3 +59,4 @@ Decimal | Number {}
 Int := Integer
 Flo := Float
 Dec := Decimal
+Num := Number

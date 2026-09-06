@@ -72,7 +72,9 @@ class Html2_Test < Base_Test
 		    node := div('x', [], Style_Rule(['.x'], [Property('color', 'red')]))
 		    Html_Format.render(node)
 		CODE
-		assert_equal "<div>\nx\n  <style>.x {\n  color: red;\n}</style>\n</div>", out
+		# A multi-line text child (the formatted CSS) expands to block layout, indented one level
+		# past its <style> tag -- so the embedded stylesheet lines up with the rest of the page.
+		assert_equal "<div>\nx\n  <style>\n    .x {\n      color: red;\n    }\n  </style>\n</div>", out
 	end
 
 	def test_render_scope_rule_css_nests_correctly

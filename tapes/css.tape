@@ -28,12 +28,6 @@ Css_Formatter_Visitor {
 		self.minify = minify
 	)
 
-	# `nested_in_rule` is only ever passed (true) from #format_style_rule's own recursive call over
-	# `rule.rules` -- real CSS nesting, where a synthesized `&` prefix (#format_nested_selector) makes
-	# sense because there genuinely is a parent selector to combine with. Every other caller (a
-	# Stylesheet's top-level rules, an At_Rule's or Scope_Rule's own body) leaves it false, even
-	# though those also increment `depth` -- `depth > 0` alone can't tell "really nested inside
-	# another selector" apart from "just indented because something else wraps it".
 	format ( node, depth := 0, nested_in_rule := false;
 		if node === Stylesheet
 			format_stylesheet(node, depth)
@@ -77,8 +71,6 @@ Css_Formatter_Visitor {
 	format_style_rule ( rule, depth, nested_in_rule := false;
 		pad := indent_str(depth)
 
-		# Only a selector genuinely nested inside another Style_Rule gets the synthesized `&` --
-		# not merely being at some `depth` because an At_Rule/Scope_Rule wraps it (see `format`'s note).
 		formatted_selectors := for rule.selectors map
 			if nested_in_rule format_nested_selector(it) else it end
 		end
@@ -259,13 +251,19 @@ Css_Formatter_Visitor {
 	)
 }
 
-# Duplicate properties, hardcoded vendor prefixes, and redundant zero-units (e.g. "0px" -> "0").
+# Duplicate properties, hardcoded vendor prefixes, redundant zero-units (e.g. "0px" -> "0"), and a
+# state rule's `transform` being overridden by a running keyframe animation on the same selector.
 Css_Lint_Visitor | Warnings_Visitor {
 	VENDOR_PREFIXES := %string(-webkit- -moz- -ms- -o-)
 	ZERO_UNITS := %string(px em rem % vh vw pt)
+	STATE_PSEUDOS := %string(hover focus active focus-visible focus-within visited target)
 
 	lint ( node;
 		self.warnings = []
+		# Needs the whole stylesheet -- @keyframes plus every rule -- so it only fires at that level.
+		if node === Stylesheet
+			check_animation_transform_clash(node)
+		end
 		visit(node)
 		self.warnings
 	)
@@ -322,5 +320,88 @@ Css_Lint_Visitor | Warnings_Visitor {
 				end
 			end
 		end
+	)
+
+	# A `@keyframes` block whose steps animate `transform` beats a plain `.card:hover { transform }` declaration in the cascade. The running animation re-computes `transform` every frame, so the hover shift/scale never shows. Warn when both are present for the same base selector.
+	check_animation_transform_clash ( stylesheet;
+		transform_animations := []
+		for stylesheet.rules
+			at := it
+			if at === At_Rule and at.name == "keyframes" and keyframes_animate_transform?(at)
+				transform_animations.push(at.prelude)
+			end
+		end
+		if transform_animations.empty?()
+			return nil
+		end
+
+		for stylesheet.rules
+			rule := it
+			if rule === Style_Rule and rule_declares?(rule, "transform")
+				for rule.selectors
+					sel  := it
+					base := base_selector(sel)
+					if base != sel and runs_transform_animation?(stylesheet, base, transform_animations)
+						warn("`sel` sets transform, but `base` runs a keyframe animation on transform -- the animation overrides it every frame")
+					end
+				end
+			end
+		end
+	)
+
+	keyframes_animate_transform? ( at_rule;
+		found := false
+		if at_rule.body === Array
+			for at_rule.body
+				kf := it
+				if kf === Keyframe and kf.declarations.any?(d; d === Property and d.name == "transform")
+					found = true
+				end
+			end
+		end
+		found
+	)
+
+	rule_declares? ( rule, prop_name;
+		rule.declarations.any?(d; d === Property and d.name == prop_name)
+	)
+
+	base_selector ( sel;
+		for self.STATE_PSEUDOS
+			marker := ":`it`"
+			if sel.include?(marker)
+				return sel.split(marker).0
+			end
+		end
+		sel
+	)
+
+	runs_transform_animation? ( stylesheet, base, transform_animations;
+		result := false
+		for stylesheet.rules
+			rule := it
+			if rule === Style_Rule and rule.selectors.include?(base)
+				name := animation_name_of(rule)
+				if name != nil and transform_animations.include?(name)
+					result = true
+				end
+			end
+		end
+		result
+	)
+
+	animation_name_of ( rule;
+		name := nil
+		for rule.declarations
+			prop := it
+			if prop === Property and prop.value === String
+				if prop.name == "animation-name"
+					name = prop.value.trim()
+				elif prop.name == "animation"
+					name = prop.value.trim().split(" ").0
+				end
+			end
+		end
+		name
 	)
 }

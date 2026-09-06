@@ -29,9 +29,9 @@ INSTRUCTIONS = <<~INST
         -h | --help           Show help instructions
 
     EXAMPLES:
-        tape examples/hello.tape
+        tape learn/hello_world.tape
         tape lex "x = 5 + 3"
-        tape parsef examples/hello.tape
+        tape parsef learn/hello_world.tape
         tape interp "4815"
 INST
 

@@ -28,7 +28,7 @@ Element <tag: String, attributes: Array\Attribute = [], css: Css = nil, children
 
 # -----------------------------------------------------------------------------
 # 2. Formatter (render + minify + pretty-print, same "one type, a mode flag" shape as
-#    tapes/css.tape's Css_Formatter_Visitor)
+#	 tapes/css.tape's Css_Formatter_Visitor)
 # -----------------------------------------------------------------------------
 
 Html_Formatter_Visitor {
@@ -54,6 +54,13 @@ Html_Formatter_Visitor {
 		end
 	)
 
+	# Prefixes every line of a block of text with `depth`'s padding -- used to line an embedded
+	# stylesheet's formatted CSS up inside a pretty-printed page.
+	indent_block ( text, depth;
+		pad := indent_str(depth)
+		text.split("\n").map(line; "`pad``line`").join("\n")
+	)
+
 	render_element ( el, depth;
 		pad := indent_str(depth)
 		attrs := render_attributes(el)
@@ -63,13 +70,29 @@ Html_Formatter_Visitor {
 		# note; `.concat` mutates its receiver (Ruby's own destructive Array#concat, under the hood) --
 		# `el.children` is the struct's own array, so `.concat` would silently and permanently corrupt
 		# it (double-appending the css child on a second render). `.flatten()` builds a fresh array instead.
-		full_children := if el.css == nil el.children else [el.children, [css_child(el.css)]].flatten() end
+		full_children := if el.css == nil
+			el.children
+		elif el.tag == "style"
+			# css set directly on a <style> -- format it in place, no second <style> wrapper
+			[Css_Formatter_Visitor(indent_size := self.indent_size, minify := self.minify).format(el.css)]
+		else
+			[el.children, [css_child(el.css)]].flatten()
+		end
 
 		if self.VOID_TAGS.include?(el.tag)
 			if self.minify "<`el.tag``attrs`>" else "`pad`<`el.tag``attrs`>" end
 		elif self.minify
 			inner := full_children.map(c; render(c)).join("")
 			"<`el.tag``attrs`>`inner`</`el.tag`>"
+		elif el.tag == "style" and full_children.length() == 1 and !(full_children.0 === Element)
+			# An embedded stylesheet -- block layout, its formatted CSS indented one level past the tag.
+			# The lone child is either already-formatted CSS text or a raw css.tape node to format now.
+			css_text := if full_children.0 === String
+				full_children.0
+			else
+				Css_Formatter_Visitor(indent_size := self.indent_size, minify := self.minify).format(full_children.0)
+			end
+			"`pad`<style`attrs`>\n`indent_block(css_text, depth + 1)`\n`pad`</style>"
 		elif full_children.length() == 1 and !(full_children.0 === Element)
 			# A single bare-text child stays on one line ("<p>Hello</p>"), rather than always
 			# expanding to block style -- keeps the common "leaf text element" case readable.
@@ -204,9 +227,9 @@ Html_Sanitizer_Visitor {
 
 # -----------------------------------------------------------------------------
 # 2d. Lint (void element given children, <img> missing alt, empty containers, duplicate
-#     attribute names -- attributes are now an ordered Array\Attribute, not a Dictionary, so a
-#     duplicate name is a real possibility here now, same as Css_Lint_Visitor's duplicate-property
-#     check on an Array\Property)
+#	  attribute names -- attributes are now an ordered Array\Attribute, not a Dictionary, so a
+#	  duplicate name is a real possibility here now, same as Css_Lint_Visitor's duplicate-property
+#	  check on an Array\Property)
 # -----------------------------------------------------------------------------
 
 Html_Lint_Visitor | Warnings_Visitor {

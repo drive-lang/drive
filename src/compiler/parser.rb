@@ -425,7 +425,8 @@ module Tape
 			end
 
 			# note; A bare `identifier: ( ... ;)` (no type between the colon and the paren) is the new self-declaring signature form (`double: (Number -> Number;)`) of a function. parse_identifier_expr only consumes the colon itself when it's followed by an actual `: Type`/`: <...>` (or Struct)
-			eat ':' if curr? ':'
+			signature_colon = curr? ':'
+			eat ':' if signature_colon
 
 			func.lexeme = func.name&.lexeme
 			eat '('
@@ -442,7 +443,7 @@ module Tape
 
 				param = Tape::Param_Expr.new
 
-				if curr? Tape::BUILTIN_OPERATOR
+				if curr? Tape::CONTEXT_OPERATOR
 					identifier = parse_identifier_expr
 					case identifier&.value
 					when 'add_readable_scope', 'add_readable', 'readable'
@@ -470,10 +471,15 @@ module Tape
 					# note; something in the if/else below depends on param.name being present
 					param.name = param.lexeme
 
+					if curr?('...') and eat('...') # f (x...; ...) -- same as f (x: Arguments; ...)
+						param.variadic = true
+						param.type     ||= Tape::Identifier_Expr.new('Arguments')
+					end
+
 					if curr?(':', TYPE_IDENTIFIER)
 						eat ':'
-						param.type = parse_identifier_expr # picks up a trailing `\<...>`/`\Name` itself, see #parse_identifier_expr
-						param.tag  = param.type.tag
+						param.type     = parse_identifier_expr # picks up a trailing `\<...>`/`\Name` itself (readable as param.type.tag), see #parse_identifier_expr
+						param.variadic = true if %w(Arguments Args).include? param.type&.value
 					elsif curr?(':', '<')
 						eat ':'
 						param.type = parse_struct # bare struct annotation, e.g. `right: <name: String, type: Any, value: Any>` -- structural rather than nominal, see #check_struct_type_contract
@@ -514,8 +520,7 @@ module Tape
 
 			has_real_body = func.expressions.any?
 
-			# A declared return type with no real body (just params) is a signature-only declaration — either self-declaring under a name (`double: (Number -> Number;)`) or anonymous (`(Number, Number -> Number;)`). Every param slot in a signature must carry a type (there's no name to fall back on at call sites), so a named-but-untyped param here (`(a -> Number;)`) is malformed.
-			if func.type && !has_real_body
+			if (func.type || signature_colon) && !has_real_body
 				untyped_param = func.parameters.find { |param| param.type.nil? }
 				raise Tape::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
 
@@ -601,7 +606,10 @@ module Tape
 					split_glued_close_angles!
 					break if curr? '>'
 
-					element = if curr?(ANY_IDENTIFIER, ',')
+					element = if curr?(:identifier, ':', '(') && func_declaration_follows?
+						# Like `to_s: (-> String;)`
+						parse_func
+					elsif curr?(ANY_IDENTIFIER, ',')
 						parse_identifier_expr
 					else
 						parse_expression(precedence_for('<'))
@@ -620,10 +628,10 @@ module Tape
 					raise Tape::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
 
 					it.types << element
-					it.names << if element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
+					it.names << if element.is_a?(Tape::Func_Signature_Expr)
+						element.name&.value || element.value
+					elsif element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
 						element.value
-					else
-						nil
 					end
 
 					eat if curr? ','
@@ -774,8 +782,8 @@ module Tape
 
 		# `x := |Compo` / `y := |This ^ That` -- a composition chain with no left operand, used as a value. Same Type_Expr shape #parse_type_decl builds for `Base | Compo`, just with `.name` left nil. Only reachable from `:=`'s own RHS parsing.
 		def parse_bare_composition_chain
-			start = curr_lexeme
-			it    = Tape::Type_Expr.new
+			start                    = curr_lexeme
+			it                       = Tape::Type_Expr.new
 			it.anonymous_composition = true
 			it.expressions           = []
 
@@ -796,10 +804,19 @@ module Tape
 			start = curr_lexeme
 			expr  = Tape::Identifier_Expr.new
 
-			if curr? BUILTIN_OPERATOR and eat BUILTIN_OPERATOR
-				expr.directive = true
+			if curr? CONTEXT_OPERATOR
+				at_lexeme = eat CONTEXT_OPERATOR
+				if curr? ANY_IDENTIFIER
+					expr.prefixed_with_at = true # @word -- an @-prefixed identifier
+				else
+					# bare `@`
+					expr.lexeme  = at_lexeme
+					expr.privacy = :public
+					expr.kind    = :identifier
+					return copy_location expr, start
+				end
 			elsif curr? SCOPE_OPERATORS
-				expr.scope_operator = parse_scope_operator
+				expr.scope_operator = eat
 			end
 
 			expr.lexeme  = eat
@@ -832,25 +849,13 @@ module Tape
 			copy_location expr, start
 		end
 
-		# `self.identifier`/`Self.identifier` -- keyword sugar for `./identifier`/`../identifier` (see SELF_KEYWORDS), desugared right here by synthesizing the equivalent scope_operator lexeme, so every downstream scope-operator-aware check (static-declaration tracking, per-instance re-run skipping, ...) treats it identically with no interpreter-side special-casing. Shared by function names (`self.funk (;)`) and nil-init targets (`self.x,`).
 		def parse_self_prefixed_identifier
 			keyword = eat
 			eat '.'
 
 			expr                = parse_identifier_expr
-			expr.scope_operator = Tape::Lexeme.new(:operator, keyword.value == 'Self' ? '../' : './')
+			expr.scope_operator = Tape::Lexeme.new(:operator, keyword.value)
 			expr
-		end
-
-		def parse_scope_operator
-			scope = eat
-
-			if curr? SCOPE_OPERATORS
-				# There should not be any more scope operators at this point. We've implicitly handled . and ..
-				raise Tape::Invalid_Scope_Syntax.new curr_lexeme
-			end
-
-			scope
 		end
 
 		def parse_symbol_expr
@@ -981,11 +986,39 @@ module Tape
 			lexeme.l1    = right.lexeme.l1
 			lexeme.c1    = right.lexeme.c1
 
-			merged = Tape::Identifier_Expr.new lexeme
+			merged               = Tape::Identifier_Expr.new lexeme
 			merged.l0, merged.c0 = left.l0, left.c0
 			merged.l1, merged.c1 = right.l1, right.c1
 			merged.source_file   = left.source_file
 			merged
+		end
+
+		def parse_beginless_range_expr
+			Tape::Infix_Expr.new.tap do |it|
+				it.left     = nil
+				it.operator = eat
+				it.right    = parse_expression precedence_for(it.operator.value)
+				it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
+
+				copy_location it, it.operator # Typically I store `start = curr_lexeme` but here I know that it.operator was the first eaten lexeme here.
+			end
+		end
+
+		def parse_endless_range_expr left_side_expr
+			Tape::Infix_Expr.new.tap do |it|
+				it.left     = left_side_expr
+				it.operator = eat
+
+				# [2...], an endless range: the operator with nothing after it
+				if !lexemes? || (curr?(:delimiter) && ["]", ")", "}", ",", ";", "\n", "\r"].include?(curr_lexeme.value))
+					it.right = nil
+				else
+					it.right = parse_expression
+					it.right = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
+				end
+
+				copy_location it, left_side_expr
+			end
 		end
 
 		def parse_operator_expr
@@ -1079,7 +1112,7 @@ module Tape
 			elsif curr? %w(if while unless until)
 				parse_conditional_expr
 
-			elsif curr?(:identifier, ':', :Identifier) || curr?(ANY_IDENTIFIER) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER) || curr?(BUILTIN_OPERATOR, :identifier) || curr?(BUILTIN_OPERATOR, :Identifier) || curr?(BUILTIN_OPERATOR, :IDENTIFIER)
+			elsif curr?(:identifier, ':', :Identifier) || curr?(ANY_IDENTIFIER) || curr?(SCOPE_OPERATORS, ANY_IDENTIFIER) || curr?(CONTEXT_OPERATOR)
 				parse_identifier_expr
 
 			elsif curr?(%w( [ \( { |)) && curr?(:delimiter)
@@ -1094,6 +1127,9 @@ module Tape
 
 			elsif curr? '`'
 				parse_statement_expr
+
+			elsif curr?(%w(... ..<)) && curr?(:operator)
+				parse_beginless_range_expr
 
 			elsif curr? :operator
 				parse_operator_expr
@@ -1114,13 +1150,12 @@ module Tape
 				eat and nil
 
 			elsif curr? FUNCTION_DELIMITER
-				# This is reserved for function declarations
 				raise Tape::Reserved_Function_Delimiter.new curr_lexeme
 
 			elsif curr?(:delimiter) && NEWLINES.include?(curr_lexeme.value)
 				reduce_newlines and nil
 
-			elsif curr? :html # This is a subtype of Tape::Fence_Expr
+			elsif curr? :html
 				parse_html_expr
 
 			elsif curr? :fence
@@ -1145,79 +1180,93 @@ module Tape
 			#
 
 			expression = begin_expression precedence, member_rhs: member_rhs
-			complete_expression expression, precedence
+			complete_expression expression, precedence, member_rhs: member_rhs
+		end
+
+		def parse_context_call context_ident, precedence
+			member          = Tape::Infix_Expr.new
+			member.operator = Tape::Lexeme.new(:operator, '.')
+			member.left     = Tape::Identifier_Expr.new(Tape::CONTEXT_OPERATOR)
+			member.right    = Tape::Identifier_Expr.new(context_ident.value)
+			copy_location member, context_ident
+
+			paren    = curr?('(') && lexeme_adjacent?(context_ident.lexeme, curr_lexeme)
+			bare_arg = lexemes? && !paren && !(curr?(:delimiter) && CONTEXT_ARG_TERMINATORS.include?(curr_lexeme.value))
+
+			# note; A stack function (`@push_scope`, `@load`, ...) is never a capturable reference.
+			bare_ref = !paren && !bare_arg && !Tape::CONTEXT_STACK_FUNCTIONS.include?(context_ident.value)
+			return complete_expression member, precedence if bare_ref
+
+			call           = Tape::Call_Expr.new
+			call.receiver  = member
+			call.arguments = if paren and eat '('
+				args = []
+				reduce_newlines
+				until curr? ')'
+					args << parse_expression
+					eat if curr? ','
+					reduce_newlines
+				end
+				eat ')'
+				args
+			elsif bare_arg
+				args = [parse_expression]
+				args << parse_expression while curr? ',' and eat ','
+				args
+			else
+				[] # bare `@pop_scope` etc -- a 0-arg call
+			end
+			copy_location call, context_ident
+			complete_expression call, precedence
+		end
+
+		# `@operator <op> @infix <precedence> ( left, right; ... )` -- a genuine declaration form, not a
+		# call. `op_ident` is the just-parsed `@operator`. Returns an Operator_Overload_Expr.
+		def parse_operator_overload op_ident, precedence
+			op_lexeme     = eat # the operator symbol/identifier itself -- not via parse_expression (custom fixity would misparse it)
+			unless %i(operator identifier).include? op_lexeme.type
+				raise "An operator can only be an :operator or :identifier. Your `#{op_lexeme.value}` is :#{op_lexeme.type}. Maybe it's reserved. todo; Better message!"
+			end
+			operator_expr = Tape::Operator_Expr.new op_lexeme
+			copy_location operator_expr, op_lexeme
+
+			next_expr = begin_expression
+			if next_expr.is_a?(Tape::Identifier_Expr) && next_expr.prefixed_with_at && %w(prefix infix postfix circumfix).include?(next_expr.value)
+				prec = if curr? '('
+					precedence_for(operator_expr.value)
+				else
+					# A bare primitive parse -- the precedence is immediately followed by the overload's own func body `(left, right; ...)`, and parse_expression's call-continuation would swallow that `(`.
+					Tape.assert curr? :number
+					parse_number_expr.value
+				end
+				unless prec.is_a? ::Numeric
+					raise "an operator overload requires the following form:\n\n\t@operator <operator> @infix <precedence> (left, right; ...)\twhere <precedence> is optional."
+				end
+
+				overload            = Tape::Operator_Overload_Expr.new operator_expr.lexeme
+				overload.fixity     = next_expr.lexeme
+				overload.precedence = prec
+				overload.func_expr  = parse_func
+				overload.value      = operator_expr.lexeme.value
+				return complete_expression overload, precedence
+			end
+
+			complete_expression next_expr, precedence
 		end
 
 		# todo: Factor out the various branches of code in here?
-		def complete_expression expr, precedence = STARTING_PRECEDENCE
+		def complete_expression expr, precedence = STARTING_PRECEDENCE, member_rhs: false
 			return expr unless expr && lexemes?
 
-			if expr.is_a?(Tape::Identifier_Expr) && expr.directive && expr.value != 'ruby'
-				# note: I'm intentionally skipping `ruby` here because a Directive_Expr assumes an expression will follow it. But in the case of @ruby, I want it to be a standalone expression. Maybe this warrants rewriting how directives work? Or maybe this can just stay as an implementation detail. For now it's fine.
-				directive      = Tape::Directive_Expr.new
-				directive.name = expr
-				copy_location directive, expr
+			if !member_rhs && expr.is_a?(Tape::Identifier_Expr) && expr.prefixed_with_at
+				# `@name: T` / `@name := v` / `@name = v`
+				context_member_decl = !%w(operator ruby).include?(expr.value) &&
+				                      (expr.type || curr?('=') || curr?(':='))
 
-				# Here I'm intercepting when an @operator directive is found, so that I can prebuild a special expression for operator overloads. Just FYI, this massive if body ends with a return statement,
-				if expr.value == 'operator'
-					op_lexeme            = eat # Eat the :operator or :identifier token directly. Going through parse_expression would apply custom fixity rules that are pre-registered and would misparse the operator in its own declaration.
-					unless %i(operator identifier).include? op_lexeme.type
-						raise "An operator can only by an :operator or :identifier. Your `#{op_lexeme.value}` is :#{op_lexeme.type}. Maybe it's reserved. todo; Better message!"
-					end
-					operator_expr        = Tape::Operator_Expr.new op_lexeme
-					directive.expression = operator_expr
-					copy_location operator_expr, op_lexeme
-
-					# If @operator <Op_Expr> is followed by @infix <Num_Expr> then we have a complete operator overload expression
-					next_expr = begin_expression
-					if next_expr.is_a?(Tape::Identifier_Expr) && next_expr.directive
-						if %w(prefix infix postfix circumfix).include? next_expr.value
-							subdirective      = Tape::Directive_Expr.new
-							subdirective.name = next_expr
-							copy_location subdirective, next_expr
-
-							subdirective.expression = if curr? '('
-								precedence_for(directive.expression.value)
-							else
-								# A bare primitive parse, not #parse_expression -- the precedence is always immediately followed by the overload's own func body (`(left, right; ...)`), and #parse_expression's own call-continuation (`curr?('(') && precedence_for('(') > precedence`) would otherwise swallow that `(` as a call on the precedence number itself, now that funcs and calls share the same delimiter.
-								Tape.assert curr? :number
-								parse_number_expr.value
-							end
-
-							unless subdirective.expression.is_a? ::Numeric
-								raise "an operator overload requires the following form:\n\n\t@operator <operator> @infix <precedence> (left, right; ...)\twhere <precedence> is optional."
-							end
-
-							# If you can't wrap your mind around this. At this point we know `@operator + @infix 90` so all that's left to parse is the function
-							overload            = Tape::Operator_Overload_Expr.new operator_expr.lexeme
-							overload.fixity     = subdirective.name.lexeme
-							overload.precedence = subdirective.expression
-							overload.func_expr  = parse_func
-							overload.value      = operator_expr.lexeme.value
-
-							return complete_expression overload, precedence
-						end
-					else
-						return complete_expression next_expr, precedence
-					end
-				else
-					directive.expression = parse_expression
-
-					# note; Only `@assert cond, "message"` gets a trailing `, <expr>` parsed as part of the same directive (see Tape::Interpreter#interp_directive). This can't be generic across all directives: some fixtures chain unrelated directives on one line via `@load 'a', @load 'b'`, relying on a stray `,` here being silently discarded and the next statement.
-					if expr.value == 'assert' && curr?(',')
-						eat
-						directive.message = parse_expression
-					elsif expr.value == 'declare'
-						# note; `@declare "ident", value, Type`
-						directive.arguments = [directive.expression]
-						while curr? ','
-							eat
-							directive.arguments << parse_expression
-						end
-					end
+				unless context_member_decl
+					return parse_operator_overload(expr, precedence) if expr.value == 'operator'
+					return parse_context_call(expr, precedence) if Tape::CONTEXT_FUNCTIONS.include?(expr.value)
 				end
-
-				return complete_expression directive, precedence
 			end
 
 			if SCOPE_OPERATORS.any? { |it| expr.is it } && !expr.is_a?(Tape::Nil_Init_Expr)
@@ -1259,13 +1308,7 @@ module Tape
 					copy_location it, expr
 					return complete_expression it, precedence
 				elsif RANGE_OPERATORS.include? curr_lexeme.value
-					it          = Tape::Infix_Expr.new
-					it.left     = expr
-					it.operator = eat
-					it.right    = parse_expression
-					it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
-
-					copy_location it, expr
+					it = parse_endless_range_expr expr
 					return complete_expression it, precedence
 				else
 					while (INFIX.include?(curr_lexeme.value) || @custom_infix.include?(curr_lexeme.value)) && curr?(:operator)

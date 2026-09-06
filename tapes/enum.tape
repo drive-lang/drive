@@ -1,17 +1,11 @@
 Enum {
-	type,
-	keys := []
-	values := []
-	types := []
-	count := 0
-
 	@operator == @infix ( left, right;
-		left.keys == right.keys and left.values == right.values and left.types == right.types
+		left.@keys == right.@keys and left.@values == right.@values and left.@types == right.@types
 	)
 
 	to_s (;
-		str := "`name || type` [ "
-		for keys
+		str := "`self.@name or self.@type` [ "
+		for self.@keys
 			str += "`it` "
 		end
 		str += ']'

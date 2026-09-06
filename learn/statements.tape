@@ -44,9 +44,9 @@ z := `5 * 5`
 @assert z(999, 'ignored') == 25, 'extra call arguments should be ignored'
 
 
-### A practical use: deferring a directive
+### A practical use: deferring a `@load`
 
-Directives like `@load` are ordinary expressions too, so wrapping one in backticks defers it the same way -- build the Statement now, run the load later.
+A context call like `@load` is an ordinary expression too, so wrapping one in backticks defers it the same way -- build the Statement now, run the load later.
 ###
 loader := `@load 'tapes/string'`
 loader()

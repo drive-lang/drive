@@ -21,7 +21,7 @@ Dictionary {
 		pieces := ks.map(( key, at;
 			v := vs.get(at)
 			displayed := if v === String
-				v.pretty_print()
+				v.to_string()
 			else
 				"`v`"
 			end
@@ -30,3 +30,7 @@ Dictionary {
 		"{`pieces.join(', ')`}"
 	)
 }
+
+Hash := Dictionary
+Dict := Dictionary
+Map  := Dictionary

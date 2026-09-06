@@ -84,12 +84,20 @@ module Tape
 			end
 		end
 
-		# @param [Tape::Directive_Expr] expr
+		# `@load 'file'` -- a Call_Expr on `@.load` (Parser#parse_context_call).
+		def load_call? expr
+			r = expr.receiver
+			r.is_a?(Infix_Expr) && r.operator&.value == '.' &&
+				r.left.is_a?(Identifier_Expr) && r.left.value == Tape::CONTEXT_OPERATOR &&
+				r.right.is_a?(Identifier_Expr) && r.right.value == 'load'
+		end
+
 		# @return [Hash{::String => Tape::Declaration}, nil]
 		def declarations_for_load expr
-			return nil unless expr.expression.is_a? String_Expr
+			path_expr = expr.arguments&.first
+			return nil unless path_expr.is_a? String_Expr
 
-			loaded = cached_declarations_for_load expr.expression.value
+			loaded = cached_declarations_for_load path_expr.value
 
 			# Every name this @load brings in gets rebound to point at *this* @load directive
 			# itself, not the isolated node #cached_declarations_for_load found it on in the other
@@ -143,10 +151,6 @@ module Tape
 				if expr.name
 					Declaration[expr.name.value, declare_all(expr.params), expr]
 				end
-			when Directive_Expr
-				if expr.name.value == 'load'
-					declarations_for_load expr
-				end
 			when Struct_Expr
 				if expr.name
 					to_decl expr
@@ -185,7 +189,10 @@ module Tape
 				when_false = expr.when_false.is_a?(Conditional_Expr) ? [expr.when_false] : expr.when_false
 				declare_all [*expr.when_true, *when_false]
 			when Call_Expr
-				# arguments can themselves use `:=` for named-argument passing (`add(a := 1)`), which looks identical to a real declaration but isn't one -- skip rather than risk misreporting call-site argument names as declared identifiers
+				# `@load 'file'` parses as a call on `@.load` -- still forward-declares the loaded file.
+				declarations_for_load(expr) if load_call?(expr)
+				# every other call: arguments can themselves use `:=` for named-argument passing
+				# (`add(a := 1)`), which looks identical to a real declaration but isn't one -- skip.
 			when Subscript_Expr
 				# `receiver[expression]` access is never a declaration
 			when Array_Index_Expr

@@ -5,9 +5,9 @@ require_relative 'base_test'
 # These tests are mostly in chronological order. I may have inserted some at times. It would be great to preserve this order.
 
 class Interpreter_Test < Base_Test
-	def test_preload_dot_air
+	def test_global_tape
 		refute_raises RuntimeError do
-			Tape.interp_file './tapes/preload.tape'
+			Tape.interp_file './tapes/global.tape'
 		end
 	end
 
@@ -232,10 +232,12 @@ class Interpreter_Test < Base_Test
 		assert_equal 8, out
 	end
 
+	# Tape::Range is now an Instance wrapping a Ruby ::Range (`.range`), not a ::Range subclass -- so
+	# the raw-Range comparison is against `out.range`; `out.include?` still works via Enumerable.
 	def test_inclusive_range
 		out = Tape.interp '4...42'
 		assert_instance_of Tape::Range, out
-		assert_equal 4..42, out
+		assert_equal 4..42, out.range
 		assert out.include? 4
 		assert out.include? 23
 		assert out.include? 42
@@ -244,7 +246,7 @@ class Interpreter_Test < Base_Test
 	def test_right_exclusive_range
 		out = Tape.interp '4..<42'
 		assert_instance_of Tape::Range, out
-		assert_equal 4...42, out
+		assert_equal 4...42, out.range
 		assert out.include? 4
 		assert out.include? 41
 		refute out.include? 42
@@ -253,7 +255,7 @@ class Interpreter_Test < Base_Test
 	def test_left_exclusive_range
 		out = Tape.interp '4>..42'
 		assert_instance_of Tape::Range, out
-		assert_equal 5..42, out
+		assert_equal 5..42, out.range
 		refute out.include? 4
 		assert out.include? 5
 		assert out.include? 42
@@ -262,7 +264,7 @@ class Interpreter_Test < Base_Test
 	def test_left_and_right_exclusive_range
 		out = Tape.interp '4>.<42'
 		assert_instance_of Tape::Range, out
-		assert_equal 5...42, out
+		assert_equal 5...42, out.range
 		refute out.include? 4
 		assert out.include? 5
 		assert out.include? 41
@@ -271,7 +273,7 @@ class Interpreter_Test < Base_Test
 
 	def test_empty_left_and_right_exclusive_range
 		out = Tape.interp '0>.<0'
-		assert_equal 1...0, out
+		assert_equal 1...0, out.range
 		refute out.include? -1
 		refute out.include? 0
 		refute out.include? 1
@@ -490,6 +492,54 @@ class Interpreter_Test < Base_Test
 	end
 
 	# Tape::Array had no `[]=` of its own, so `a[i] = value` fell through to the generic declarations-hash write every other Scope uses, silently declaring a bogus member instead of writing into `.values`.
+	# A Tape::Range subscript slices an Array -- each of the four range operators keeps its own
+	# inclusive/exclusive end behavior (`...` inclusive, `..<` exclusive end, `>..` exclusive start).
+	def test_array_range_subscript
+		assert_equal [20, 30, 40], Tape.interp('[10, 20, 30, 40, 50][1...3]').values
+		assert_equal [20, 30],     Tape.interp('[10, 20, 30, 40, 50][1..<3]').values
+		assert_equal [30, 40],     Tape.interp('[10, 20, 30, 40, 50][1>..3]').values
+		assert_equal [30],         Tape.interp('[10, 20, 30, 40, 50][1>.<3]').values
+
+		# the result is a real, linked Array -- methods chain off it
+		assert_equal [21, 31, 41], Tape.interp('[10, 20, 30, 40, 50][1...3].map((x; x + 1))').values
+
+		# a range held in a variable works too
+		assert_equal [20, 30, 40], Tape.interp("r := 1...3\n[10, 20, 30, 40, 50][r]").values
+
+		# an out-of-bounds start yields nil, same as Ruby
+		assert_nil Tape.interp('[1, 2, 3][5...9]')
+	end
+
+	# `xs[2...]` -- an endless range (the operator with nothing after it): from the start index to the end.
+	def test_endless_range_subscript
+		assert_equal [30, 40, 50], Tape.interp('[10, 20, 30, 40, 50][2...]').values
+		assert_equal [40, 50],     Tape.interp('[10, 20, 30, 40, 50][2>..]').values # exclusive start
+		assert_equal 'world',      Tape.interp('"hello world"[6...]')
+		assert_equal 5,            Tape.interp('[1, 2, 3, 4, 5][0...].length()')
+		assert_equal [3, 4, 5],    Tape.interp("r := 2...\n[1, 2, 3, 4, 5][r]").values
+		assert_nil Tape.interp('[1, 2, 3][10...]')
+	end
+
+	# `xs[...3]` -- a beginless range (the operator with no left operand): from the start up to the end
+	# index. Negative end indices count from the end (`...-1` is the whole thing, `...-2` all but last).
+	def test_beginless_range_subscript
+		assert_equal [10, 20, 30],         Tape.interp('[10, 20, 30, 40, 50][...2]').values
+		assert_equal [10, 20],             Tape.interp('[10, 20, 30, 40, 50][..<2]').values # exclusive end
+		assert_equal [10, 20, 30, 40, 50], Tape.interp('[10, 20, 30, 40, 50][...-1]').values
+		assert_equal [10, 20, 30, 40],     Tape.interp('[10, 20, 30, 40, 50][...-2]').values
+		assert_equal [10, 20, 30, 40],     Tape.interp('[10, 20, 30, 40, 50][..<-1]').values
+		assert_equal 'hello worl',         Tape.interp('"hello world"[...-2]')
+
+		# `...` glued to a following `-` used to lex as one bogus `...-` token
+		assert_equal [20, 30, 40, 50], Tape.interp('[10, 20, 30, 40, 50][1...-1]').values
+	end
+
+	def test_string_range_subscript
+		assert_equal 'bcd', Tape.interp('"abcdef"[1...3]')  # inclusive
+		assert_equal 'bc',  Tape.interp('"abcdef"[1..<3]')  # exclusive end
+		assert_equal 'WORLD', Tape.interp('"hello world"[6...11].upcase()')
+	end
+
 	def test_array_subscript_assignment_mutates_in_place
 		out = Tape.interp "a := [1, 2, 3]
 		a[1] = 99
@@ -688,33 +738,33 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp 'Vector2 { x := 0, y := 1 }
 		pos := Vector2()'
 		assert_instance_of Tape::Instance, out
-		data = { 'x' => 0, 'y' => 1, 'name' => 'Vector2', 'display_name' => 'Vector2', 'types' => Tape::Array.new(['Vector2']) }
+		data = { 'x' => 0, 'y' => 1 }
 		assert_equal data, out.declarations
 	end
 
-	# `.name =`/`.types =` (set during construction) are plain Ruby attr writes; when the backing Ruby class is shared with a *composed* type (`Tasks | Table {}` resolves to Tape::Table, a Ruby-backed builtin), that class's own Type#initialize already baked its own name ("Table") into @declarations['name'] at construction, which an Tape-level `instance.name` dot-read used to stay stuck on instead of the real composed type's name.
+	# `.name`/`.types` are `@`-only (`@.name`/`@.composed_types`), stored as plain Ruby attrs; when the backing Ruby class is shared with a *composed* type (`Tasks | Table {}` resolves to Tape::Table, a Ruby-backed builtin), that class's own Type#initialize baked its own name ("Table") into the attr at construction, which `build_instance_of_type` must overwrite with the real composed type's name.
 	def test_composed_instance_reports_its_own_name_not_the_backing_ruby_class_regression
 		out = Tape.interp "@load 'tapes/table'
 			Tasks | Table {}
 			t := Tasks()
-			(t.name, t.types)"
+			(t.@name, t.@composed_types)"
 		assert_equal 'Tasks', out.values.first
-		assert_equal %w(Tasks Table), out.values.last.values
+		assert_equal %w(Tasks Table), out.values.last.set.to_a
 	end
 
-	def test_dot_slash
+	def test_self_scope_write_outside_instance
 		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
-			Tape.interp './x := 123'
+			Tape.interp 'self.x := 123'
 		end
 	end
 
-	def test_look_up_dot_slash_without_dot_slash
+	def test_type_scope_write_outside_type
 		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
-			Tape.interp '../x := 123'
+			Tape.interp 'Self.x := 123'
 		end
 	end
 
-	def test_look_up_dot_slash_with_dot_slash
+	def test_global_scope_operator_lookup
 		out = Tape.interp '~/y := 543
 		~/y'
 		assert_equal 543, out
@@ -806,6 +856,201 @@ class Interpreter_Test < Base_Test
 		    send(to: 'Alice', subject := 'bye')
 		CODE
 		assert_equal 'Alice: bye', out
+	end
+
+	def test_variadic_parameter_collects_the_positional_tail
+		out = Tape.interp <<~CODE
+		    sum ( nums...;
+		    	acc := 0
+		    	for nums
+		    		acc += it
+		    	end
+		    	acc
+		    )
+		    (sum(1, 2, 3, 4), sum())
+		CODE
+		assert_equal [10, 0], out.values
+	end
+
+	def test_variadic_after_a_fixed_parameter
+		out = Tape.interp <<~CODE
+		    f ( a, rest...; (a, rest) )
+		    f(1, 2, 3)
+		CODE
+		assert_equal 1, out.values[0]
+		assert_equal [2, 3], out.values[1].values
+	end
+
+	def test_args_annotation_is_the_same_as_the_ellipsis_form
+		out = Tape.interp <<~CODE
+		    g ( xs: Args; (xs, xs === Arguments) )
+		    g(9, 8, 7)
+		CODE
+		assert_equal [9, 8, 7], out.values[0].values
+		assert_equal true, out.values[1]
+	end
+
+	# A variadic param binds an `Arguments` (an Array subtype).
+	def test_variadic_parameter_is_an_arguments_instance
+		out = Tape.interp <<~CODE
+		    f ( xs...; (xs === Arguments, xs =>= Array) )
+		    f(1)
+		CODE
+		assert_equal [true, true], out.values
+	end
+
+	# `rest := <value>` at the call site: an Array spreads, anything else is a type error.
+	def test_variadic_named_argument_spreads_an_array_and_rejects_a_scalar
+		out = Tape.interp <<~CODE
+		    f ( a, rest...; rest )
+		    f(1, rest := [9, 8])
+		CODE
+		assert_equal [9, 8], out.values
+
+		assert_raises Tape::Type_Contract_Violation do
+			Tape.interp <<~CODE
+			    f ( a, rest...; rest )
+			    f(1, rest := 99)
+			CODE
+		end
+	end
+
+	# With a variadic param, an unknown named arg binds by its own name instead of raising.
+	def test_variadic_function_binds_unknown_named_arguments_by_name
+		out = Tape.interp <<~CODE
+		    h ( args...; value )
+		    h(value := 42)
+		CODE
+		assert_equal 42, out
+	end
+
+	def test_variadic_is_the_only_parameter
+		out = Tape.interp <<~CODE
+		    f ( xs...; (xs.length(), xs) )
+		    f()
+		CODE
+		assert_equal 0, out.values[0]
+		assert_equal [], out.values[1].values
+	end
+
+	def test_variadic_arguments_instance_has_array_methods
+		out = Tape.interp <<~CODE
+		    f ( xs...; xs.map(( n; n * 2 )) )
+		    f(1, 2, 3)
+		CODE
+		assert_equal [2, 4, 6], out.values
+	end
+
+	# A param after a variadic is keyword-only -- it can't be filled positionally.
+	def test_parameter_after_a_variadic_is_keyword_only
+		out = Tape.interp <<~CODE
+		    f ( a, mid..., z; (a, mid, z) )
+		    f(1, 2, 3, z := 9)
+		CODE
+		assert_equal 1, out.values[0]
+		assert_equal [2, 3], out.values[1].values
+		assert_equal 9, out.values[2]
+
+		assert_raises Tape::Missing_Argument do
+			Tape.interp <<~CODE
+			    f ( a, mid..., z; z )
+			    f(1, 2, 3)
+			CODE
+		end
+	end
+
+	# A real param declared after a variadic still takes its default / named value.
+	def test_defaulted_parameter_after_a_variadic
+		out = Tape.interp <<~CODE
+		    f ( args..., flag := 5; (args, flag) )
+		    (f(1, 2).1, f(1, 2, flag := 8).1)
+		CODE
+		assert_equal [5, 8], out.values
+	end
+
+	# Naming the variadic param itself (`rest := ...`) goes through the spread/reject path, never
+	# the by-name nicety -- regression for a bug where it silently overwrote `rest` with a scalar.
+	def test_naming_the_variadic_parameter_does_not_bypass_the_spread_check
+		assert_raises Tape::Type_Contract_Violation do
+			Tape.interp <<~CODE
+			    f ( a, rest...; rest )
+			    f(1, rest := 99)
+			CODE
+		end
+	end
+
+	def test_variadic_keeps_the_positional_before_named_ordering_rules
+		assert_raises Tape::Positional_Argument_After_Named do
+			Tape.interp <<~CODE
+			    f ( a, rest...; a )
+			    f(a := 1, 2)
+			CODE
+		end
+
+		assert_raises Tape::Argument_Given_By_Name_And_Position do
+			Tape.interp <<~CODE
+			    f ( a, rest...; a )
+			    f(1, a := 2)
+			CODE
+		end
+
+		assert_raises Tape::Duplicate_Named_Argument do
+			Tape.interp <<~CODE
+			    f ( args...; x )
+			    f(x := 1, x := 2)
+			CODE
+		end
+	end
+
+	def test_labeled_argument_with_a_variadic_tail
+		out = Tape.interp <<~CODE
+		    f ( to a, rest...; (a, rest) )
+		    f(to: 1, 2, 3)
+		CODE
+		assert_equal 1, out.values[0]
+		assert_equal [2, 3], out.values[1].values
+	end
+
+	# A call site with typed fixed params + a variadic doesn't trip the static Type_Checker.
+	def test_variadic_call_site_is_not_statically_type_checked
+		refute_raises do
+			Tape.interp <<~CODE
+			    f ( a: Number, rest...; a )
+			    f(1, "two", :three, [4])
+			CODE
+		end
+	end
+
+	def test_variadic_parameter_in_a_constructor
+		out = Tape.interp <<~CODE
+		    Bag {
+		    	items,
+		    	Self ( things...; self.items = things )
+		    }
+		    Bag(1, 2, 3).items
+		CODE
+		assert_equal [1, 2, 3], out.values
+	end
+
+	# Reopening `Arguments` to restrict what a variadic accepts.
+	def test_arguments_push_can_be_overridden_for_a_typed_variadic
+		src = <<~CODE
+		    Arguments | Array {
+		    	push ( item;
+		    		unless item =>= Number
+		    			return nil
+		    		end
+		    		self.append(item)
+		    	)
+		    }
+		    collect ( nums...; nums )
+		    r := collect()
+		    r.push(1)
+		    r.push("nope")
+		    r.push(2)
+		    r
+		CODE
+		assert_equal [1, 2], Tape.interp(src).values
 	end
 
 	def test_compound_operator
@@ -1302,7 +1547,8 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_loading_external_source_files
-		out = Tape.interp "@load 'tapes/preload.tape', (Bool, Bool())"
+		out = Tape.interp "@load 'tapes/global.tape'
+		(Bool, Bool())"
 
 		assert_instance_of Tape::Type, out.values[0]
 		assert_kind_of Tape::Instance, out.values[1]
@@ -1957,19 +2203,7 @@ class Interpreter_Test < Base_Test
 		end
 
 		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
-			Tape.interp "../whatever"
-		end
-
-		assert_raises Tape::Invalid_Scope_Syntax do
-			Tape.interp "../123"
-		end
-
-		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "Type { ../whatever }"
-		end
-
-		assert_raises Tape::Invalid_Scope_Syntax do
-			x Tape.interp "Type { ../123 }"
+			Tape.interp "Self.whatever"
 		end
 	end
 
@@ -1992,15 +2226,15 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp "'WALT!'.downcase()"
 		assert_equal "walt!", out
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Directive_Usage do
+		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
 			Tape.interp "@ruby whatever"
 		end
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Directive_Usage do
+		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
 			Tape.interp "@ruby 123"
 		end
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Directive_Usage do
+		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
 			Tape.interp "Type { @ruby 123, }"
 		end
 	end
@@ -2244,18 +2478,167 @@ class Interpreter_Test < Base_Test
 		assert_equal true, out
 	end
 
-	def test_puts_directive
-		output          = StringIO.new
-		original_stdout = $stdout
-		$stdout         = output
+	def capture_stdout
+		out, $stdout = $stdout, StringIO.new
+		yield
+		$stdout.string
+	ensure
+		$stdout = out
+	end
 
-		begin
-			result = Tape.interp "@puts 'Walt!'"
-			assert_equal 'Walt!', result
-			# @puts now reflects the argument's own quote char when it's a literal.
-			assert_equal "'Walt!'\n", output.string
-		ensure
-			$stdout = original_stdout
+	def test_puts_directive
+		printed = nil
+		result  = nil
+		printed = capture_stdout { result = Tape.interp "@puts 'Walt!'" }
+		assert_equal 'Walt!', result
+		assert_equal "'Walt!'\n", printed # strings always display single-quoted
+	end
+
+	# `@puts` is a Context method now (tapes/context.tape) -- multiple args, parens optional, and
+	# it can be captured / aliased.
+	def test_puts_takes_multiple_args_and_returns_them
+		printed = nil
+		result  = nil
+		printed = capture_stdout { result = Tape.interp '@puts 1, 2, 3' }
+		assert_equal "1\n2\n3\n", printed
+		assert_equal [1, 2, 3], result.values
+
+		capture_stdout { result = Tape.interp('@puts(7)') } # explicit parens, single arg -> passthrough
+		assert_equal 7, result
+	end
+
+	def test_puts_can_be_captured_and_wrapped
+		printed = capture_stdout do
+			out = Tape.interp <<~CODE
+			    shout ( x; @puts(x.upcase()) )
+			    shout('hey')
+			CODE
+			assert_equal 'HEY', out
+		end
+		assert_equal "'HEY'\n", printed
+	end
+
+	def test_puts_is_a_passthrough_inline
+		result = nil
+		capture_stdout { result = Tape.interp("double ( n; n * 2 )\ndouble(@puts 21)") }
+		assert_equal 42, result
+	end
+
+	# `@root_path` is a no-arg Context property (moved from a directive).
+	def test_root_is_the_project_path
+		assert_equal Tape::ROOT_PATH, Tape.interp('@root_path')
+		assert_equal Tape::ROOT_PATH, Tape.interp('@.root_path')
+		assert_equal "at #{Tape::ROOT_PATH}", Tape.interp('"at `@root_path`"')
+	end
+
+	# `@` is a struct (tapes/context.tape) the interpreter fills -- reflective vitals as computed
+	# values, the function members (`to_s`/`puts`/...) as synthesized callable stand-ins.
+	def test_context_is_a_filled_struct
+		assert_kind_of Tape::Context, Tape.interp('@')
+		assert_equal '@Global', Tape.interp('@.to_s()')
+		assert_equal 'Point', Tape.interp("Point { x, }\nPoint.@name")
+		assert_equal '@Point', Tape.interp("Point { x, }\nPoint().@to_s()")
+		# a function member is callable; a data member resolves to its value
+		assert_equal 'hi', Tape.interp("shout := @puts\nshout('hi')")
+	end
+
+	# `@.type` / `@.types` work on any value, not just a Type/Instance (plain `.type`/`.types` stays
+	# user-space). Falls out of #context_for working on any Scope + #maybe_instance wrapping every value.
+	def test_context_type_reads_on_a_plain_value
+		assert_equal 'Array',   Tape.interp('[1, 2, 3].@type')
+		assert_equal 'Integer', Tape.interp('4.@type')
+		assert_equal 'String',  Tape.interp('"hi".@type')
+		assert_equal 'Range',   Tape.interp('(1...5).@type')
+		assert_equal 'Nil',     Tape.interp('nil.@type')          # #maybe_instance's nil now goes through #adopt_type
+		assert Tape.interp("4.@types.include?('Number')")
+	end
+
+	# `@sleep n` is a Context method; passes through to Ruby's sleep (returns seconds slept).
+	def test_sleep_intrinsic
+		assert_equal 0, Tape.interp('@sleep 0.00001')
+		assert_equal 0, Tape.interp('nap := @sleep, nap(0.00001)')
+	end
+
+	def test_assert_and_refute_intrinsics
+		assert_equal true, Tape.interp('@assert 1 == 1')
+		assert_equal false, Tape.interp('@refute 1 == 2')
+
+		err = assert_raises(Tape::Assert_Triggered) { Tape.interp "@assert 1 == 2, 'nope'" }
+		assert_equal 'nope', err.assertion_message
+
+		assert_raises(Tape::Refute_Triggered) { Tape.interp '@refute true' }
+
+		# a parenthesized condition followed by more of the expression, then the message
+		refute_raises { Tape.interp "@assert (1 == 1) == true, 'grouped condition'" }
+	end
+
+	# --- user-declarable `@` members on a Type ---
+
+	def test_context_member_declared_on_a_type_is_readable
+		out = Tape.interp <<~CODE
+		    Thing {
+		    	@label: String = "widget"
+		    	@meta := 42
+		    }
+		    (Thing.@label, Thing.@meta)
+		CODE
+		assert_equal ['widget', 42], out.values
+	end
+
+	def test_context_member_is_visible_through_an_instance
+		out = Tape.interp <<~CODE
+		    Thing { @label: String = "widget" }
+		    Thing().@label
+		CODE
+		assert_equal 'widget', out
+	end
+
+	def test_context_annotation_without_a_value_is_nil
+		assert_nil Tape.interp("Thing { @rank: Number }\nThing.@rank")
+	end
+
+	def test_context_member_is_readable_bare_inside_the_type_body
+		out = Tape.interp <<~CODE
+		    Thing {
+		    	@label := "w"
+		    	describe (; @label )
+		    }
+		    Thing().describe()
+		CODE
+		assert_equal 'w', out
+	end
+
+	def test_context_member_can_be_overwritten_but_must_already_exist
+		out = Tape.interp <<~CODE
+		    Thing { @label: String = "widget" }
+		    Thing.@label = "gadget"
+		    Thing.@label
+		CODE
+		assert_equal 'gadget', out
+
+		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+			Tape.interp "Thing { @a := 1 }\nThing.@b = 2"
+		end
+	end
+
+	def test_context_declaration_outside_a_type_raises
+		assert_raises Tape::Context_Declaration_Outside_Type do
+			Tape.interp '@x := 1'
+		end
+	end
+
+	def test_context_declaration_cannot_shadow_a_builtin_member
+		assert_raises Tape::Cannot_Override_Context_Member do
+			Tape.interp 'Thing { @name := "x" }'
+		end
+		assert_raises Tape::Cannot_Override_Context_Member do
+			Tape.interp 'Thing { @types := "x" }'
+		end
+	end
+
+	def test_context_member_does_not_leak_into_plain_dot_access
+		assert_raises Tape::Undeclared_Identifier do
+			Tape.interp "Thing { @label := \"w\" }\nThing.label"
 		end
 	end
 
@@ -2656,12 +3039,12 @@ class Interpreter_Test < Base_Test
 
 	def test_type_comparison_operators
 		shared = <<~CODE
-		    Num {}
+		    Base {}
 		CODE
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
-		    Right | Num {}
+		    Left | Base {}
+		    Right | Base {}
 			l := Left()
 			r := Right()
 			(Left === Right, Left === Left, l === r, l === l)
@@ -2670,19 +3053,19 @@ class Interpreter_Test < Base_Test
 
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
-		    Right | Num {}
+		    Left | Base {}
+		    Right | Base {}
 			l := Left()
 			r := Right()
 			(Left =!= Right, Right =!= Right, l =!= r, r =!= r)
 		CODE
 		assert_equal [true, false, true, false], out.values
 
-		# Siblings that only share a common composed base (Num) are NOT comparable via =/= -- neither one's types are a subset of theother's, even though they overlap. This is what distinguishes =/= from a plain "do these share any composed type" check.
+		# Siblings that only share a common composed base (Base) are NOT comparable via =/= -- neither one's types are a subset of theother's, even though they overlap. This is what distinguishes =/= from a plain "do these share any composed type" check.
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
-		    Right | Num {}
+		    Left | Base {}
+		    Right | Base {}
 			l := Left()
 			r := Right()
 			(Left =>= Right, Right =>= Left, l =>= r, r =>= l)
@@ -2691,51 +3074,51 @@ class Interpreter_Test < Base_Test
 
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
-		    Right | Num {}
+		    Left | Base {}
+		    Right | Base {}
 			l := Left()
 			r := Right()
 			(Left =<= Right, Right =<= Left, l =<= r, r =<= l)
 		CODE
 		assert_equal [false, false, false, false], out.values
 
-		# `A =>= B` is true when A's composed types are a superset of B's -- i.e. A composes with at least everything B does. Left composes Num, so Left has "at least" Num, but not the other way around.
+		# `A =>= B` is true when A's composed types are a superset of B's -- i.e. A composes with at least everything B does. Left composes Base, so Left has "at least" Base, but not the other way around.
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
+		    Left | Base {}
 			l := Left()
-			n := Num()
-			(Left =>= Num, Num =>= Left, Left =>= Left, l =>= n, n =>= l)
+			n := Base()
+			(Left =>= Base, Base =>= Left, Left =>= Left, l =>= n, n =>= l)
 		CODE
 		assert_equal [true, false, true, true, false], out.values
 
 		# =<= mirrors =>= with the operands' roles reversed.
 		out = Tape.interp <<~CODE
 			#{shared}
-		    Left | Num {}
+		    Left | Base {}
 			l := Left()
-			n := Num()
-			(Num =<= Left, Left =<= Num, Left =<= Left, n =<= l, l =<= n)
+			n := Base()
+			(Base =<= Left, Left =<= Base, Left =<= Left, n =<= l, l =<= n)
 		CODE
 		assert_equal [true, false, true, true, false], out.values
 
-		# `A =/= B` is true when A and B share no composed types at all. A/B share nothing. Left/Right both compose Num, so they're not disjoint even though neither composes the other. Left/Num aren't disjoint either, since Left composes Num directly.
+		# `A =/= B` is true when A and B share no composed types at all. A/B share nothing. Left/Right both compose Base, so they're not disjoint even though neither composes the other. Left/Base aren't disjoint either, since Left composes Base directly.
 		out = Tape.interp <<~CODE
 			#{shared}
 		    Aa {}
 		    Bb {}
-		    Left | Num {}
-		    Right | Num {}
+		    Left | Base {}
+		    Right | Base {}
 			a := Aa()
 			b := Bb()
 			l := Left()
 			r := Right()
-			(Aa =/= Bb, Aa =/= Aa, Left =/= Right, Left =/= Num, a =/= b, l =/= r, l =/= Num)
+			(Aa =/= Bb, Aa =/= Aa, Left =/= Right, Left =/= Base, a =/= b, l =/= r, l =/= Base)
 		CODE
 		assert_equal [true, false, false, false, true, false, false], out.values
 	end
 
-	# `Any` (tapes/preload.tape) is a universal wildcard -- everything except nil counts as Any via `==`/`===`, with no composition required (`Thing | Any {}` isn't needed).
+	# `Any` (tapes/global.tape) is a universal wildcard -- everything except nil counts as Any via `==`/`===`, with no composition required (`Thing | Any {}` isn't needed).
 	def test_any_type_is_universally_equal_via_double_and_triple_equals
 		out = Tape.interp <<~CODE
 		    Thing { x := 1 }
@@ -2759,6 +3142,29 @@ class Interpreter_Test < Base_Test
 	end
 
 	# != / =!= are the natural negation, kept consistent with == / === above rather than falling through to identity-based comparison.
+	# `"Flying" == Flying` -- a String equals a bare Type (either operand order) when it spells the
+	# type's own name. `==`/`!=` only. This is what makes `set.include?(SomeType)` work against a Set
+	# that stores only type-name strings (`@.composed_types`).
+	def test_string_equals_a_bare_type_by_name
+		out = Tape.interp <<~CODE
+		    Flying { airborne := true }
+		    ('Flying' == Flying, Flying == 'Flying', 'Swimming' == Flying, 'Flying' != Flying)
+		CODE
+		assert_equal [true, true, false, false], out.values
+
+		# an instance is not a bare type -- ordinary comparison applies
+		assert_equal false, Tape.interp("Flying { x, }\n'Flying' == Flying()")
+
+		# the point of it: include? against a Set / Array of type names
+		out = Tape.interp <<~CODE
+		    Flying { airborne := true }
+		    Swimming { submerged := true }
+		    Duck | Flying { name := 'duck' }
+		    (Duck.@composed_types.include?(Flying), Duck.@composed_types.include?(Swimming))
+		CODE
+		assert_equal [true, false], out.values
+	end
+
 	def test_any_type_negated_comparisons_stay_consistent
 		out = Tape.interp '(String != Any, Any != String, String =!= Any, Any =!= String)'
 		assert_equal [false, false, false, false], out.values
@@ -2833,6 +3239,16 @@ class Interpreter_Test < Base_Test
 		# Bare as a top-level expression, not just as the RHS of :=.
 		out = Tape.interp '(Number -> String;)'
 		assert_kind_of Tape::Func_Signature, out
+
+		# `name: (...)` with no return type is still a signature (the colon form opts in) -- a bare
+		# `foo (;)` without the colon stays a real empty function.
+		out = Tape.interp 'takes_a_number: (Number;)'
+		assert_kind_of Tape::Func_Signature, out
+		assert_equal ['Number'], out.param_types
+		assert_nil out.return_type
+
+		assert_kind_of Tape::Func_Signature, Tape.interp('does_nothing: (;)')
+		assert_kind_of Tape::Func, Tape.interp('empty (;)') # no colon -> a real function, not a signature
 
 		# Regression: an ordinary Type declaration with a method must still parse as a real type — now unambiguous, since a signature literal never starts with a Capitalized type name anymore.
 		out = Tape.interp <<~CODE
@@ -2927,9 +3343,9 @@ class Interpreter_Test < Base_Test
 		    Table {}
 		    Task | Table {}
 		    make ( -> Table; Task() )
-		    make().types
+		    make().@composed_types
 		CODE
-		assert_equal %w(Task Table), out.values
+		assert_equal %w(Task Table), out.set.to_a
 
 		error = assert_raises Tape::Type_Contract_Violation do
 			Tape.interp <<~CODE
@@ -3109,20 +3525,16 @@ class Interpreter_Test < Base_Test
 		assert_equal 'String', error.actual
 	end
 
+	# String values always display single-quoted (String#to_string), regardless of the source literal.
 	def test_struct_member_display_regression
-		out = Tape.interp <<~CODE
-		    @load 'tapes/struct.tape'
-		    quad := <1, id := 2, ix: Number, String>(4, 8, 1, "five")
-		    quad.to_s()
-		CODE
-		assert_equal '<4, id: Number = 8, ix: Number = 1, "five">', out
-
-		out = Tape.interp <<~CODE
-		    @load 'tapes/struct.tape'
-		    quad := <1, id := 2, ix: Number, String>(4, 8, 1, 'five')
-		    quad.to_s()
-		CODE
-		assert_equal "<4, id: Number = 8, ix: Number = 1, 'five'>", out
+		%w(" ').each do |q|
+			out = Tape.interp <<~CODE
+			    @load 'tapes/struct.tape'
+			    quad := <1, id := 2, ix: Number, String>(4, 8, 1, #{q}five#{q})
+			    quad.to_s()
+			CODE
+			assert_equal "<4, id: Number = 8, ix: Number = 1, 'five'>", out
+		end
 	end
 
 	def test_string_equality_regression
@@ -3130,7 +3542,7 @@ class Interpreter_Test < Base_Test
 		out = Tape.interp <<~CODE
 		    @load 'tapes/struct.tape'
 		    s := <name: String>("Alice")
-		    s.members.0.value == "Alice"
+		    s.@members.0.value == "Alice"
 		CODE
 		assert out
 	end
@@ -3256,7 +3668,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_declare_too_many_arguments_raises
-		assert_raises Tape::Invalid_Directive_Usage do
+		assert_raises Tape::Invalid_Context_Function_Usage do
 			Tape.interp '@declare "foo", 42, Number, "extra"'
 		end
 	end
@@ -3630,17 +4042,6 @@ class Interpreter_Test < Base_Test
 		assert_equal 0, out
 	end
 
-	# #rebind_func_to_scope rebinds a just-found instance method's enclosing_scope to the
-	# specific Instance it was found on, so sibling methods/static members stay reachable from
-	# inside it -- but that must happen only the *first* time (while it's still pointing at the
-	# bare declaring Type). Tape::Instance < Tape::Type in Ruby, so a naive `is_a?(Tape::Type)`
-	# guard also matches an *already*-bound Instance, and re-rebinds a stored method reference to
-	# whatever unrelated scope its *container* (a plain variable, here) was found through instead
-	# -- losing the original binding and, with it, access to any sibling method it calls internally.
-	# `.N` positional dot-index on a String, indexing by character -- mirrors the same syntax
-	# already supported on Array/Tuple/Struct (#interp_dot_string, a narrower sibling of
-	# #interp_dot_array_or_tuple so String doesn't also pick up its `.each` shorthand branch, which
-	# Ruby's own String has no #each for #interp_each_loop to call).
 	def test_string_positional_dot_index
 		assert_equal 'a', Tape.interp('"abc".0')
 		assert_equal 'c', Tape.interp('"abc".2')
