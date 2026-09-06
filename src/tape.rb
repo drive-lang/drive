@@ -43,6 +43,8 @@ require_relative 'runtime/return'
 require_relative 'runtime/interpreter'
 require_relative 'runtime/repl'
 
+require_relative 'cli'
+
 module Tape
 	ROOT_PATH             = File.expand_path('../', __dir__)
 	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'tapes', 'global.tape')

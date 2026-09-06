@@ -18,8 +18,8 @@ bundle exec bin/tape learn/examples/hello.tape # => Hello, Tape!
 
 - [`src/readme`](src/readme.md) details the architecture and contains instructions for running your own programs
 - [`learn`](learn) contains more useful code examples
-- [`examples`](examples) contains code examples written in Tape
-- [`tape`](tape) contains code for the Tape standard library
+- [`examples`](learn/examples) contains code examples written in Tape
+- [`tapes`](tapes) contains code for the Tape standard library
 - [`src`](src) contains code implementing Tape
     - [Lexer](src/compiler/lexer.rb) – Source code to Lexemes
     - [Parser](src/compiler/parser.rb) – Lexemes to Expressions
