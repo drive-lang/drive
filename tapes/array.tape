@@ -43,6 +43,7 @@ Array {
 	empty? (; @ruby )
 	get ( index; @ruby )
 	index ( item; @ruby ) # index of the first matching element, or nil if not found
+	insert ( index, things; @ruby )
 
 	find ( func;
 		for values

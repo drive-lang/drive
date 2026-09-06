@@ -44,6 +44,11 @@ module Tape
 			Tape::Array.new ruby_array.flatten depth
 		end
 
+		def proxy_insert index, *things
+			values.insert(index, *things)
+			wrap_if_array values
+		end
+
 		# first/last/slice can return either a single element or a raw Ruby Array (with a count/range argument) -- only wrap the latter, so `it.first` (no arg) still returns a scalar
 		def proxy_first * args
 			wrap_if_array values.first(*args)
