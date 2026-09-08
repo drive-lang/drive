@@ -15,7 +15,7 @@ Statement {
 		from(literal)
 	)
 
-	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Tape-level declaration).
+	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Drive-level declaration).
 	from ( other: Statement;
 		@ruby
 	)

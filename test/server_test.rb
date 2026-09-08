@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 require 'net/http'
 require 'uri'
@@ -17,7 +17,7 @@ class Server_Test < Base_Test
 		    server := Server()
 		TAPE
 
-		result = Tape.interp code
+		result = Drive.interp code
 		assert_instance_of Tape::Server, result
 		assert_equal 3000, result[:port]
 	end
@@ -40,7 +40,7 @@ class Server_Test < Base_Test
 		    app := Web_App()
 		TAPE
 
-		result = Tape.interp code
+		result = Drive.interp code
 		assert_instance_of Tape::Server, result
 		assert_equal 3001, result[:port]
 	end
@@ -67,7 +67,7 @@ class Server_Test < Base_Test
 		    app := Web_App()
 		TAPE
 
-		interpreter = Tape::Interpreter.new
+		interpreter = Drive::Interpreter.new
 		interpreter.run code
 
 		assert_equal 2, interpreter.route_functions_by_route_name.count
@@ -84,7 +84,7 @@ class Server_Test < Base_Test
 		    app := Server()
 		TAPE
 
-		interpreter     = Tape::Interpreter.new
+		interpreter     = Drive::Interpreter.new
 		server_instance = interpreter.run code
 
 		server_instance.port = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
@@ -114,7 +114,7 @@ class Server_Test < Base_Test
 		    app := Web_App()
 		TAPE
 
-		interpreter = Tape::Interpreter.new
+		interpreter = Drive::Interpreter.new
 		interpreter.run code
 
 		assert_equal 2, interpreter.route_functions_by_route_name.count
@@ -142,7 +142,7 @@ class Server_Test < Base_Test
 		    app := Web_App()
 		TAPE
 
-		interpreter     = Tape::Interpreter.new
+		interpreter     = Drive::Interpreter.new
 		server_instance = interpreter.run code
 		routes          = interpreter.route_functions_by_route_name
 
@@ -176,7 +176,7 @@ class Server_Test < Base_Test
 		    app := Web_App()
 		TAPE
 
-		interpreter = Tape::Interpreter.new
+		interpreter = Drive::Interpreter.new
 		interpreter.run code
 		route      = interpreter.route_functions_by_route_name.values.first
 		path_parts = ['users', '42', 'posts', '99']
@@ -187,7 +187,7 @@ class Server_Test < Base_Test
 	end
 
 	def test_query_string_parsing
-		interpreter  = Tape::Interpreter.new
+		interpreter  = Drive::Interpreter.new
 		query_params = interpreter.parse_query_string 'name=John&age=30&city=NYC'
 
 		assert_equal 'John', query_params['name']
@@ -196,7 +196,7 @@ class Server_Test < Base_Test
 	end
 
 	def test_query_string_with_url_encoding
-		interpreter  = Tape::Interpreter.new
+		interpreter  = Drive::Interpreter.new
 		query_params = interpreter.parse_query_string 'message=Hello%20World&special=%21%40%23'
 
 		assert_equal 'Hello World', query_params['message']

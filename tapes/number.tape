@@ -1,7 +1,7 @@
 Number {
 	value,
 
-	Self ( value;
+	Self ( value := 0;
 		self.value = value
 	)
 

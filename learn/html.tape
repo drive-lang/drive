@@ -56,7 +56,7 @@ flare := Button('Signal', key := 'flare', onclick := (; 'lit' ))
 
 ### CSS anchor positioning
 
-CSS anchor positioning needs no new Tape-side plumbing at all -- it's plain CSS, expressed with the same `css_*` prefix already covered above. One element (the anchor) names itself; another element (the one being positioned) points back at that name and describes its position relative to it, using the `anchor()` function inside an ordinary property value.
+CSS anchor positioning needs no new Drive-side plumbing at all -- it's plain CSS, expressed with the same `css_*` prefix already covered above. One element (the anchor) names itself; another element (the one being positioned) points back at that name and describes its position relative to it, using the `anchor()` function inside an ordinary property value.
 
 A common pairing is a Popover-API element (`html_popover`) positioned next to whatever triggered it -- the popover shows/hides itself, and anchor positioning places it. Neither needs the other, but they're built for exactly this combination.
 ###
@@ -78,7 +78,7 @@ trigger := Trigger('Open menu')
 menu     := Menu()
 @assert trigger.css_anchor_name == '--menu-trigger', 'the anchor names itself with a custom-ident value'
 @assert menu.css_position_anchor == '--menu-trigger', 'the positioned element points back at that same name'
-@assert menu.css_top == 'anchor(bottom)', 'anchor() reads as a plain string -- Tape never needs to parse what is inside it'
+@assert menu.css_top == 'anchor(bottom)', 'anchor() reads as a plain string -- Drive never needs to parse what is inside it'
 
 Close | Button {
 	html_popovertarget := 'menu'

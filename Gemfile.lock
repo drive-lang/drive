@@ -1,13 +1,3 @@
-PATH
-  remote: .
-  specs:
-    tape-lang (0.0.1)
-      listen (~> 3.9)
-      logger (~> 1.7)
-      sequel (~> 5.99)
-      sqlite3 (~> 2.9.0)
-      webrick (~> 1.9)
-
 GEM
   remote: https://rubygems.org/
   specs:
@@ -62,11 +52,14 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
+  listen (~> 3.9)
+  logger (~> 1.7)
   minitest (= 5.25.4)
   rake (= 13.3.0)
   reline (~> 0.6.3)
-  sqlite3 (= 2.9.0)
-  tape-lang!
+  sequel (~> 5.99)
+  sqlite3 (~> 2.9.0)
+  webrick (~> 1.9)
 
 CHECKSUMS
   bigdecimal (4.1.1) sha256=1c09efab961da45203c8316b0cdaec0ff391dfadb952dd459584b63ebf8054ca
@@ -99,7 +92,6 @@ CHECKSUMS
   sqlite3 (2.9.0-x86_64-darwin) sha256=59fe51baa3cb33c36d27ce78b4ed9360cd33ccca09498c2ae63850c97c0a6026
   sqlite3 (2.9.0-x86_64-linux-gnu) sha256=72fff9bd750070ba3af695511ba5f0e0a2d8a9206f84869640b3e99dfaf3d5a5
   sqlite3 (2.9.0-x86_64-linux-musl) sha256=ef716ba7a66d7deb1ccc402ac3a6d7343da17fac862793b7f0be3d2917253c90
-  tape-lang (0.0.1)
   webrick (1.9.2) sha256=beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131
 
 RUBY VERSION

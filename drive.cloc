@@ -1,0 +1,41 @@
+# cloc language definitions for this repo. Loaded via: cloc --force-lang-def=drive.cloc
+# Ruby is trimmed to what this repo actually has. Drive is the .tape language: `#` and
+# `###`/`###` comments, backtick is interpolation (not a comment), ``` is a fence.
+Ruby
+    filter remove_matches ^\s*#
+    filter remove_below_above ^=begin ^=end
+    filter remove_inline #.*$
+    extension rb
+    filename Rakefile
+    script_exe ruby
+    3rd_gen_scale 4.20
+    end_of_line_continuation \\$
+Drive
+    filter remove_between_general ### ###
+    filter remove_matches ^\s*#
+    filter remove_inline \s+#.*$
+    extension tape
+    3rd_gen_scale 2.00
+JavaScript
+    filter rm_comments_in_strings ' /* */
+    filter rm_comments_in_strings ' //
+    filter rm_comments_in_strings " /* */
+    filter rm_comments_in_strings " //
+    filter call_regexp_common C++
+    extension cjs
+    extension js
+    extension mjs
+    3rd_gen_scale 1.48
+    end_of_line_continuation \\$
+CSS
+    filter rm_comments_in_strings " /* */
+    filter rm_comments_in_strings " //
+    filter call_regexp_common C
+    extension css
+    3rd_gen_scale 1.00
+HTML
+    filter remove_html_comments
+    filter call_regexp_common HTML
+    extension htm
+    extension html
+    3rd_gen_scale 1.90

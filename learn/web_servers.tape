@@ -64,7 +64,7 @@ Camp | Server {
 
 ### @start_server
 
-`@start_server` boots the server on a background thread and returns immediately, so the rest of the file keeps running right after it -- it's the interpreter itself that then waits on that thread once the whole file finishes, which is why a real Tape program just ends with `@start_server app` and leaves it running until interrupted. This walkthrough calls `@stop_server` right after so the file terminates on its own instead of waiting for a Ctrl+C.
+`@start_server` boots the server on a background thread and returns immediately, so the rest of the file keeps running right after it -- it's the interpreter itself that then waits on that thread once the whole file finishes, which is why a real Drive program just ends with `@start_server app` and leaves it running until interrupted. This walkthrough calls `@stop_server` right after so the file terminates on its own instead of waiting for a Ctrl+C.
 ###
 camp := Camp()
 @start_server camp
@@ -73,7 +73,7 @@ camp := Camp()
 
 ### Hot reload
 
-Run a server file with `bin/tape <file>` and it keeps watching. Editing that file, or any `.tape` it loads, tears the server down, re-runs the whole program, and restarts it on the same port -- just refresh the page. Ctrl+C stops it. There is nothing to enable; it is how `bin/tape` runs any file that starts a server.
+Run a server file with `bin/drive <file>` and it keeps watching. Editing that file, or any `.tape` it loads, tears the server down, re-runs the whole program, and restarts it on the same port -- just refresh the page. Ctrl+C stops it. There is nothing to enable; it is how `bin/drive` runs any file that starts a server.
 ###
 
 

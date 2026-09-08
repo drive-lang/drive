@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 
 # TYPE_IDENT :: (OPTIONAL_FORCED_TYPE_IDENT_FOR_CONSTANTS) {
@@ -13,7 +13,7 @@ require_relative 'base_test'
 # }
 class Enums_Test < Base_Test
 	def test_empty_enum
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum []
 		CODE
 		assert_kind_of Tape::Enum_Expr, out.first
@@ -23,7 +23,7 @@ class Enums_Test < Base_Test
 	end
 
 	def test_enum_with_forced_type
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum []
 		CODE
 		assert_kind_of Tape::Enum_Expr, out.first
@@ -33,7 +33,7 @@ class Enums_Test < Base_Test
 
 	# TYPE_IDENT # gets its own unique value
 	def test_bare_member_gets_its_own_unique_value
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC
 		    ]
@@ -45,7 +45,7 @@ class Enums_Test < Base_Test
 
 	# TYPE_IDENT, # with comma -- same shape as the bare form above, comma is just a separator
 	def test_member_with_trailing_comma
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC,
 		    ]
@@ -57,7 +57,7 @@ class Enums_Test < Base_Test
 
 	# TYPE_IDENT: TYPE_IDENT
 	def test_member_with_type_annotation_only
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC: Some_Type
 		    ]
@@ -70,7 +70,7 @@ class Enums_Test < Base_Test
 
 	# TYPE_IDENT := EXPR
 	def test_member_with_self_declared_value
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC := 1
 		    ]
@@ -85,7 +85,7 @@ class Enums_Test < Base_Test
 
 	# TYPE_IDENT: TYPE_IDENT = EXPR
 	def test_member_with_type_annotation_and_value
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC: Some_Type = 1
 		    ]
@@ -102,7 +102,7 @@ class Enums_Test < Base_Test
 
 	# A member can be another enum declaration, nested (recursive TYPE_IDENT [ ... ])
 	def test_nested_enum_member
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	Nested []
 		    ]
@@ -114,7 +114,7 @@ class Enums_Test < Base_Test
 	end
 
 	def test_multiple_bare_members
-		out = Tape.parse <<~CODE
+		out = Drive.parse <<~CODE
 		    My_Enum [
 		    	ABC
 		    	DEF
@@ -127,7 +127,7 @@ class Enums_Test < Base_Test
 
 	# `Tape::Enum.new` (no name argument) used to bake "Instance" into @declarations['name'] at construction time; a later `.name =` (a plain Ruby attr write) never touched it, so an enum's own name was permanently wrong. `name` is `@`-only now (`@.name`), read straight off the Ruby-level attr.
 	def test_enum_reports_its_own_name_not_the_ruby_default_regression
-		out = Tape.interp <<~CODE
+		out = Drive.interp <<~CODE
 		    Task_Type [ TODO, BUG ]
 		    Task_Type.@name
 		CODE
@@ -136,7 +136,7 @@ class Enums_Test < Base_Test
 
 	# The same bug, as it actually surfaced: a struct member typed with a user-declared enum displayed its type as "Instance" instead of the real enum name.
 	def test_struct_member_typed_with_an_enum_displays_the_real_enum_name_regression
-		out = Tape.interp <<~CODE
+		out = Drive.interp <<~CODE
 		    @load 'tapes/struct.tape'
 		    Task_Type [ TODO, BUG ]
 		    s := <kind: Task_Type = Task_Type.TODO>

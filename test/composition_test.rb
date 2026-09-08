@@ -1,10 +1,10 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 
 class Composition_Test < Base_Test
 	def test_union_viewer_has_read_permissions
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		v := Viewer()
 		(v.can_view, v.can_list, v.user_type)"
@@ -14,7 +14,7 @@ class Composition_Test < Base_Test
 
 	def test_union_viewer_does_not_have_write_permissions
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			v := Viewer()
 			v.can_create"
@@ -22,7 +22,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_union_editor_has_read_and_write_permissions
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		e := Editor()
 		(e.can_view, e.can_list, e.can_create, e.can_update, e.can_delete, e.user_type)"
@@ -31,7 +31,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_union_administrator_has_all_permissions
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		a := Administrator()
 		(a.can_view, a.can_create, a.can_manage_users, a.user_type)"
@@ -41,7 +41,7 @@ class Composition_Test < Base_Test
 
 	def test_removal_limited_editor_cannot_delete
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			l := Limited_Editor()
 			(l.can_create, l.can_update, l.user_type)"
@@ -49,7 +49,7 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			l := Limited_Editor()
 			l.can_delete"
@@ -58,7 +58,7 @@ class Composition_Test < Base_Test
 
 	def test_removal_read_only_admin_cannot_write
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			r := Read_Only_Admin()
 			(r.can_manage_users, r.can_view, r.user_type)"
@@ -66,14 +66,14 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			r := Read_Only_Admin()
 			r.can_create"
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			r := Read_Only_Admin()
 			r.can_delete"
@@ -82,7 +82,7 @@ class Composition_Test < Base_Test
 
 	def test_intersection_auditor_has_only_shared_permissions
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			a := Auditor()
 			(a.can_view_logs, a.user_type)"
@@ -90,14 +90,14 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			a := Auditor()
 			a.can_manage_users"
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			a := Auditor()
 			a.can_export_data"
@@ -106,7 +106,7 @@ class Composition_Test < Base_Test
 
 	def test_symmetric_difference_specialist_has_unique_permissions
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			s := Specialist()
 			(s.can_manage_users, s.can_configure_system, s.can_export_data, s.user_type)"
@@ -114,7 +114,7 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			s := Specialist()
 			s.can_view_logs"
@@ -122,7 +122,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_vehicle_sedan_has_basic_features
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		s := Sedan()
 		(s.has_engine, s.has_wheels, s.model)"
@@ -131,7 +131,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_vehicle_luxury_sedan_has_luxury_features
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		l := Luxury_Sedan()
 		(l.has_engine, l.has_leather_seats, l.has_sunroof, l.model)"
@@ -140,7 +140,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_vehicle_electric_car_has_no_traditional_engine
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		e := Electric_Car()
 		(e.has_wheels, e.has_battery, e.has_engine, e.model)"
@@ -149,7 +149,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_vehicle_luxury_electric_combines_features
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		l := Luxury_Electric()
 		(l.has_wheels, l.has_leather_seats, l.has_battery, l.has_engine, l.model)"
@@ -159,7 +159,7 @@ class Composition_Test < Base_Test
 
 	def test_api_public_user_response_has_only_shared_members
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			p := Public_User_Response()
 			(p.status, p.user_id, p.username, p.response_type)"
@@ -167,14 +167,14 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			p := Public_User_Response()
 			p.email"
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			p := Public_User_Response()
 			p.avatar_url"
@@ -182,7 +182,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_api_private_user_response_has_all_members
-		out = Tape.interp "
+		out = Drive.interp "
 		@load 'learn/compositions.tape'
 		p := Private_User_Response()
 		(p.status, p.user_id, p.username, p.email, p.response_type)"
@@ -192,7 +192,7 @@ class Composition_Test < Base_Test
 
 	def test_api_limited_user_response_removes_private_members
 		refute_raises Tape::Undeclared_Identifier do
-			out = Tape.interp "
+			out = Drive.interp "
 			@load 'learn/compositions.tape'
 			l := Limited_User_Response()
 			(l.user_id, l.username, l.response_type)"
@@ -200,7 +200,7 @@ class Composition_Test < Base_Test
 		end
 
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			@load 'learn/compositions.tape'
 			l := Limited_User_Response()
 			l.email"
@@ -215,7 +215,7 @@ class Composition_Test < Base_Test
 	# (`x := Base | Compo`) -- not restricted to type bodies.
 
 	def test_bare_composition_assigned_to_a_local_builds_a_scoped_value
-		out = Tape.interp "
+		out = Drive.interp "
 		Compo { a := 1 }
 		x := |Compo
 		y := x()
@@ -224,7 +224,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_bare_composition_chain_assigned_to_a_local_works
-		out = Tape.interp "
+		out = Drive.interp "
 		This { a := 1, shared := 'this' }
 		That { b := 2, shared := 'that' }
 		z := |This ^ That
@@ -234,7 +234,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_bare_composition_assigned_to_a_local_reflects_in_its_composed_type_set
-		out = Tape.interp "
+		out = Drive.interp "
 		Compo { a := 1 }
 		x := |Compo
 		y := x()
@@ -246,7 +246,7 @@ class Composition_Test < Base_Test
 	# enclosing Type's own declarations the way a bare `| Compo` *statement* (no `:=`) would.
 	def test_bare_composition_assigned_inside_a_type_body_does_not_leak_into_the_enclosing_type
 		assert_raises Tape::Undeclared_Identifier do
-			Tape.interp "
+			Drive.interp "
 			Compo { a := 99 }
 			Type { x := |Compo }
 			t := Type()
@@ -255,7 +255,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_bare_composition_assigned_inside_a_type_body_is_reachable_through_its_member
-		out = Tape.interp "
+		out = Drive.interp "
 		Compo { a := 99 }
 		Type { x := |Compo }
 		t := Type()
@@ -266,7 +266,7 @@ class Composition_Test < Base_Test
 
 	def test_bare_composition_as_a_standalone_statement_raises
 		assert_raises Tape::Composition_Outside_Type_Declaration do
-			Tape.interp "
+			Drive.interp "
 			Compo { a := 1 }
 			|Compo"
 		end
@@ -275,7 +275,7 @@ class Composition_Test < Base_Test
 	# The real, working way to get a scoped/local composed type -- a genuine chain (`X | Y`), not a bare
 	# prefix (`|Y`) -- still works: #interp_anonymous_composition builds a fresh, unnamed Type from it.
 	def test_composition_chain_assigned_to_a_local_still_works
-		out = Tape.interp "
+		out = Drive.interp "
 		Base {}
 		Compo { a := 1 }
 		x := Base | Compo
@@ -287,7 +287,7 @@ class Composition_Test < Base_Test
 	# Composing as a bare statement inside a type's own `{}` body (not just in the header, before it)
 	# is a distinct, legitimate form -- must keep working after the fix above.
 	def test_composition_as_a_bare_statement_inside_a_type_body_still_works
-		out = Tape.interp "
+		out = Drive.interp "
 		Number {}
 		Float { | Number }
 		Float =>= Number"
@@ -300,7 +300,7 @@ class Composition_Test < Base_Test
 	# object. #dup_composed_value fixes this by duping a mutable value when it's copied in.
 
 	def test_composed_array_member_is_independent_per_instance
-		out = Tape.interp "
+		out = Drive.interp "
 		Has_Items { items := [] }
 		A | Has_Items {}
 		a := A()
@@ -312,7 +312,7 @@ class Composition_Test < Base_Test
 	end
 
 	def test_composed_dictionary_member_is_independent_per_instance
-		out = Tape.interp "
+		out = Drive.interp "
 		Has_Store { store := {} }
 		A | Has_Store {}
 		a := A()
@@ -326,7 +326,7 @@ class Composition_Test < Base_Test
 	# Method sharing via composition (the whole point of `|`) must be unaffected -- Tape::Func isn't a
 	# Tape::Instance, so #dup_composed_value leaves it untouched.
 	def test_composed_method_is_still_shared_and_callable
-		out = Tape.interp "
+		out = Drive.interp "
 		Greeter { greet ( name; \"Hello, `name`!\" ) }
 		My_Type | Greeter {}
 		My_Type().greet('World')"
@@ -335,7 +335,7 @@ class Composition_Test < Base_Test
 
 	# Symmetric difference (`^`) copies in the operand's unique keys the same way `|` does -- same fix applies there too.
 	def test_composed_array_member_via_symmetric_difference_is_independent_per_instance
-		out = Tape.interp "
+		out = Drive.interp "
 		Abc { }
 		Def { items := [] }
 		S | Abc ^ Def {}

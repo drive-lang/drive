@@ -57,6 +57,8 @@ String {
 	has_all_same_characters? (;
 		value.squeeze.length <= 1
 	)
+
+	split_by_spaces (; split(' ') )
 }
 
 Str := String

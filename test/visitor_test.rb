@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 
 # tapes/visitor.tape's Warnings_Visitor mixin -- composed into tapes/css.tape's Css_Lint_Visitor and
@@ -8,7 +8,7 @@ class Visitor_Test < Base_Test
 	VISITOR = "@load 'tapes/visitor.tape'"
 
 	def test_warn_pushes_onto_warnings
-		out = Tape.interp "
+		out = Drive.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		t := Thing()
@@ -18,7 +18,7 @@ class Visitor_Test < Base_Test
 	end
 
 	def test_warn_appends_in_order
-		out = Tape.interp "
+		out = Drive.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		t := Thing()
@@ -32,7 +32,7 @@ class Visitor_Test < Base_Test
 	# test/composition_test.rb) from the composed side: two different types each composing
 	# Warnings_Visitor must not share one `warnings` Array between them.
 	def test_warnings_are_independent_across_composing_types
-		out = Tape.interp "
+		out = Drive.interp "
 		#{VISITOR}
 		Thing_A | Warnings_Visitor {}
 		Thing_B | Warnings_Visitor {}
@@ -46,7 +46,7 @@ class Visitor_Test < Base_Test
 
 	# Same, but two instances of the *same* composing type.
 	def test_warnings_are_independent_across_instances_of_the_same_type
-		out = Tape.interp "
+		out = Drive.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		a := Thing()

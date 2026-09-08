@@ -24,7 +24,7 @@ read_file_to_string ( path: String -> String;
 # Reads an entire file into a string buffer.
 # Returns empty string if reading fails.
 read_entire_file ( path: String -> String;
-    @ruby # or native syscall wrapper, interpreter should use file name (file in this case) as the external Ruby backing for this file. I think we should allow backing entire files with Ruby, leaving out the class name entirely on the Tape side. A person can then `space := @load '...'` to namespace file.tape.
+    @ruby # or native syscall wrapper, interpreter should use file name (file in this case) as the external Ruby backing for this file. I think we should allow backing entire files with Ruby, leaving out the class name entirely on the Drive side. A person can then `space := @load '...'` to namespace file.tape.
 )
 
 # Writes a string buffer directly to disk.

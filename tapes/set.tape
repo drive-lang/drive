@@ -20,9 +20,9 @@ Set {
 	clear (-> Set; @ruby )
 
 	# --- queries ---
-	# note; Implemented in Tape (not @ruby), same reasoning as tapes/array.tape's `include?` -- a
+	# note; Implemented in Drive (not @ruby), same reasoning as tapes/array.tape's `include?` -- a
 	# @ruby proxy falls through to Ruby's Set#include? (hash/eql? identity), which never sees an
-	# Tape-level `@operator ==` on a custom element type. Insertion dedup still uses Ruby identity
+	# Drive-level `@operator ==` on a custom element type. Insertion dedup still uses Ruby identity
 	# for non-primitive elements, though -- honoring a custom `==` there would mean giving up the
 	# Ruby Set backing entirely.
 	include? ( item -> Bool;

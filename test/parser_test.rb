@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 require 'timeout'
 
@@ -7,7 +7,7 @@ class Parser_Test < Base_Test
 	def test_identifiers
 		zipped = %w(variable_or_function CONSTANT Type).zip %I(identifier IDENTIFIER Identifier)
 		zipped.each do |code, type|
-			out = Tape.parse code
+			out = Drive.parse code
 			assert_kind_of Tape::Identifier_Expr, out.first
 			assert_equal code, out.first.value
 			assert_nil out.first.type
@@ -15,23 +15,23 @@ class Parser_Test < Base_Test
 	end
 
 	def test_integers_and_floats
-		out = Tape.parse '4'
+		out = Drive.parse '4'
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_equal 4, out.first.value
 		assert_equal :integer, out.first.type
 
-		out = Tape.parse '2.3'
+		out = Drive.parse '2.3'
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_equal 2.3, out.first.value
 		assert_equal :float, out.first.type
 	end
 
 	def test_numbers_with_prefixes
-		out = Tape.parse '-42'
+		out = Drive.parse '-42'
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_equal -42, out.first.value
 
-		out = Tape.parse '+4.2'
+		out = Drive.parse '+4.2'
 		assert_kind_of Tape::Prefix_Expr, out.first
 		assert_equal '+', out.first.operator.value
 		assert_equal 4.2, out.first.expression.value
@@ -39,45 +39,45 @@ class Parser_Test < Base_Test
 	end
 
 	def test_numbers_with_underscores
-		out = Tape.parse '2_000'
+		out = Drive.parse '2_000'
 		assert_equal 1, out.count
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_equal 2000, out.first.value
 
-		out = Tape.parse '3_0_'
+		out = Drive.parse '3_0_'
 		assert_equal 2, out.count
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_equal 30, out.first.value
 		assert_kind_of Tape::Identifier_Expr, out.last
 		assert_equal '_', out.last.value
 
-		out = Tape.parse '_2_00'
+		out = Drive.parse '_2_00'
 		assert_equal 1, out.count
 		refute_kind_of Tape::Number_Expr, out.first
 		refute_equal 200, out.first.value
 
-		out = Tape.parse '-20three'
+		out = Drive.parse '-20three'
 		assert_equal 2, out.count
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.last
 		assert_equal -20, out.first.value
 		assert_equal 'three', out.last.value
 
-		out = Tape.parse '40_two'
+		out = Drive.parse '40_two'
 		assert_equal 2, out.count
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.last
 		assert_equal 40, out.first.value
 		assert_equal '_two', out.last.value
 
-		out = Tape.parse '4__5__2__2'
+		out = Drive.parse '4__5__2__2'
 		assert_equal 2, out.count
 		assert_kind_of Tape::Number_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.last
 		assert_equal 4, out.first.value
 		assert_equal '__5__2__2', out.last.value
 
-		out = Tape.parse 'a1234'
+		out = Drive.parse 'a1234'
 		assert_equal 1, out.count
 		assert_kind_of Tape::Identifier_Expr, out.first
 		assert_equal 'a1234', out.first.value
@@ -85,39 +85,39 @@ class Parser_Test < Base_Test
 	end
 
 	def test_strings
-		out = Tape.parse '"A string"'
+		out = Drive.parse '"A string"'
 		assert_kind_of Tape::String_Expr, out.first
 		refute out.first.interpolated
 
-		out = Tape.parse "'Another string'"
+		out = Drive.parse "'Another string'"
 		assert_kind_of Tape::String_Expr, out.first
 		refute out.first.interpolated
 
-		out = Tape.parse '"An `interpolated` string"'
+		out = Drive.parse '"An `interpolated` string"'
 		assert_kind_of Tape::String_Expr, out.first
 		assert out.first.interpolated
 
-		out = Tape.parse "'Another `interpolated` string'"
+		out = Drive.parse "'Another `interpolated` string'"
 		assert_kind_of Tape::String_Expr, out.first
 		assert out.first.interpolated
 	end
 
 	def test_compound_assignments
-		out = Tape.parse 'numbers += 1623'
+		out = Drive.parse 'numbers += 1623'
 		refute_kind_of Tape::Identifier_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Number_Expr, out.first.right
 		assert_equal 1, out.count
 
-		out = Tape.parse 'numbers -= 1623'
+		out = Drive.parse 'numbers -= 1623'
 		assert_kind_of Tape::Infix_Expr, out.first
 
-		out = Tape.parse 'flag |= 2'
+		out = Drive.parse 'flag |= 2'
 		assert_kind_of Tape::Infix_Expr, out.first
 	end
 
 	def test_operator_precedence
-		out = Tape.parse '1 + 2 * 3 / 4 - 5 % 6'
+		out = Drive.parse '1 + 2 * 3 / 4 - 5 % 6'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.left
 		assert_kind_of Tape::Number_Expr, out.first.left.left
@@ -142,7 +142,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_operator_precedence_with_parentheses
-		out = Tape.parse '1 + ((2*3) / 4) - (5 % 6)'
+		out = Drive.parse '1 + ((2*3) / 4) - (5 % 6)'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.left
 		assert_equal '+', out.first.left.operator.value
@@ -167,60 +167,60 @@ class Parser_Test < Base_Test
 	end
 
 	def test_other
-		out = Tape.parse 'numbers := 4815'
+		out = Drive.parse 'numbers := 4815'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Number_Expr, out.first.right
 		assert_equal 1, out.count
 
-		out = Tape.parse 'numbers,'
+		out = Drive.parse 'numbers,'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.left
 		assert_equal '=', out.first.operator.value
 
-		out = Tape.parse 'Type := {}'
+		out = Drive.parse 'Type := {}'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.left
 		assert_kind_of Tape::Circumfix_Expr, out.first.right
 		assert_equal 1, out.count
 
-		out = Tape.parse 'time: Float'
+		out = Drive.parse 'time: Float'
 		assert_equal 'Float', out.first.type.value
 
-		out = Tape.parse 'num: Int = 1 + 2'
+		out = Drive.parse 'num: Int = 1 + 2'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.right
 		assert_equal 'Int', out.first.left.type.value
 	end
 
 	def test_more_fixities
-		out = Tape.parse '1 + 2 * 3 / 4'
+		out = Drive.parse '1 + 2 * 3 / 4'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal 1, out.count
 
-		out = Tape.parse '1 < 2'
+		out = Drive.parse '1 < 2'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal 1, out.count
 
-		out = Tape.parse '2 >= 1'
+		out = Drive.parse '2 >= 1'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal 1, out.count
 
-		out = Tape.parse '1 != 2'
+		out = Drive.parse '1 != 2'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal 1, out.count
 
-		out = Tape.parse '1 == 2'
+		out = Drive.parse '1 == 2'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal 1, out.count
 
-		out = Tape.parse '1 < 2, 4 > 3'
+		out = Drive.parse '1 < 2, 4 > 3'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.last
 		assert_equal 2, out.count
 	end
 
 	def test_ranges
-		out = Tape.parse '1...2'
+		out = Drive.parse '1...2'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Number_Expr, out.first.left
 		assert_equal '...', out.first.operator.value
@@ -228,7 +228,7 @@ class Parser_Test < Base_Test
 		assert_equal 1, out.first.left.value
 		assert_equal 2, out.first.right.value
 
-		out = Tape.parse '3.0...4.0'
+		out = Drive.parse '3.0...4.0'
 		assert_kind_of Tape::Number_Expr, out.first.left
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal '...', out.first.operator.value
@@ -236,7 +236,7 @@ class Parser_Test < Base_Test
 		assert_equal 3.0, out.first.left.value
 		assert_equal 4.0, out.first.right.value
 
-		out = Tape.parse '3..<4'
+		out = Drive.parse '3..<4'
 		assert_kind_of Tape::Number_Expr, out.first.left
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal '..<', out.first.operator.value
@@ -244,7 +244,7 @@ class Parser_Test < Base_Test
 		assert_equal 3, out.first.left.value
 		assert_equal 4, out.first.right.value
 
-		out = Tape.parse '5>..6'
+		out = Drive.parse '5>..6'
 		assert_kind_of Tape::Number_Expr, out.first.left
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal '>..', out.first.operator.value
@@ -252,7 +252,7 @@ class Parser_Test < Base_Test
 		assert_equal 5, out.first.left.value
 		assert_equal 6, out.first.right.value
 
-		out = Tape.parse '7>.<8'
+		out = Drive.parse '7>.<8'
 		assert_kind_of Tape::Number_Expr, out.first.left
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_equal '>.<', out.first.operator.value
@@ -260,7 +260,7 @@ class Parser_Test < Base_Test
 		assert_equal 7, out.first.left.value
 		assert_equal 8, out.first.right.value
 
-		out = Tape.parse '1...2, 3..<4, 5>..6, 7>.<8'
+		out = Drive.parse '1...2, 3..<4, 5>..6, 7>.<8'
 		assert_equal 4, out.count
 		out.each do
 			assert_kind_of Tape::Infix_Expr, it
@@ -270,7 +270,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_comma_separated_expressions
-		out = Tape.parse 'a, B, 5, "cool"'
+		out = Drive.parse 'a, B, 5, "cool"'
 		assert_equal 4, out.count
 		assert_kind_of Tape::Infix_Expr, out[0]
 		assert_kind_of Tape::Infix_Expr, out[1]
@@ -278,64 +278,62 @@ class Parser_Test < Base_Test
 		assert_kind_of Tape::String_Expr, out[3]
 	end
 
-	def test_scope_operators
-		# `~/` is the only symbolic scope operator; instance/type scope is `self`/`Self`.
-		out = Tape.parse '~/global_scope'
-		assert_kind_of Tape::Identifier_Expr, out.first
-		assert_equal '~/', out.first.scope_operator.value
-
-		# `self.`/`Self.` read as a plain `.` dot access off the bare keyword.
-		assert_kind_of Tape::Infix_Expr, Tape.parse('self.this_instance').first
+	def test_scope_keywords
+		# `self` / `Self` / `Global` are bare scope keywords -- `Keyword.member` is a plain `.` dot access.
+		assert_kind_of Tape::Infix_Expr, Drive.parse('Global.global_scope').first
+		assert_kind_of Tape::Infix_Expr, Drive.parse('self.this_instance').first
+		assert_kind_of Tape::Infix_Expr, Drive.parse('Self.type_scope').first
 
 		# The nil-init and func-name forms desugar, tagging the identifier with the keyword itself.
-		nil_init = Tape.parse('self.x,').first
+		nil_init = Drive.parse('self.x,').first
 		assert_equal 'self', nil_init.left.scope_operator.value
-		assert_equal 'Self', Tape.parse('Self.f (;)').first.name.scope_operator.value
+		assert_equal 'Self', Drive.parse('Self.f (;)').first.name.scope_operator.value
+		assert_equal 'Global', Drive.parse('Global.g (;)').first.name.scope_operator.value
 	end
 
 	def test_functions
-		out = Tape.parse '(;)'
+		out = Drive.parse '(;)'
 		assert_kind_of Tape::Func_Expr, out.first
 		assert_empty out.first.expressions
 		refute out.first.name
 
-		out = Tape.parse '(;
+		out = Drive.parse '(;
 		)'
 		assert_empty out.first.expressions
 		refute out.first.name
 
-		out = Tape.parse 'named_function (;)'
+		out = Drive.parse 'named_function (;)'
 		assert_equal 'named_function', out.first.name.value
 	end
 
 	def test_function_params
-		out = Tape.parse '( with_param; )'
+		out = Drive.parse '( with_param; )'
 		assert_equal 1, out.first.parameters.count
 		assert_equal 0, out.first.expressions.count
 
-		out = Tape.parse 'named ( with_param; )'
+		out = Drive.parse 'named ( with_param; )'
 		assert_equal 'named', out.first.name.value
 		assert_equal 1, out.first.parameters.count
 		refute out.first.parameters.first.label
 		refute out.first.parameters.first.default
 		refute out.first.parameters.first.type
 
-		out = Tape.parse '( labeled param; )'
+		out = Drive.parse '( labeled param; )'
 		assert_equal 'labeled', out.first.parameters.first.label.value
 		assert out.first.parameters.first.label
 		refute out.first.parameters.first.default
 		refute out.first.parameters.first.type
 
-		out = Tape.parse '( default_values := 4; )'
+		out = Drive.parse '( default_values := 4; )'
 		assert out.first.parameters.first.default
 		assert_kind_of Tape::Number_Expr, out.first.parameters.first.default
 
-		out = Tape.parse 'named ( and_labeled with_default := 8; )'
+		out = Drive.parse 'named ( and_labeled with_default := 8; )'
 		assert_equal 'and_labeled', out.first.parameters.first.label.value
 		assert_equal 'with_default', out.first.parameters.first.name.value
 		assert_equal 'named', out.first.name.value
 
-		out = Tape.parse 'named ( with, multiple, even labeled := 4, params := 5; )'
+		out = Drive.parse 'named ( with, multiple, even labeled := 4, params := 5; )'
 		assert_equal 4, out.first.parameters.count
 		assert_equal out.first.parameters.map(&:label), [nil, nil, Tape::Lexeme.new(:identifier, 'even'), nil]
 		assert_equal out.first.parameters.map(&:name), %w(with multiple labeled params).map { Tape::Lexeme.new(:identifier, _1) }
@@ -343,14 +341,14 @@ class Parser_Test < Base_Test
 	end
 
 	def test_function_bodies
-		out = Tape.parse '
+		out = Drive.parse '
 		square ( input;
 			input * input
 		)'
 		refute_empty out.first.expressions
 		assert_kind_of Tape::Infix_Expr, out.first.expressions[0]
 
-		out = Tape.parse '
+		out = Drive.parse '
 		nothing ( input;
 			return input
 		)'
@@ -359,14 +357,14 @@ class Parser_Test < Base_Test
 	end
 
 	def test_function_signatures
-		out = Tape.parse 'nothing ( input;
+		out = Drive.parse 'nothing ( input;
 			return input
 		)'
 		assert_equal 'nothing(input;)', out.first.signature
 	end
 
 	def test_complex_function
-		out = Tape.parse '
+		out = Drive.parse '
 		curr? ( sequence;
 			if not remainder or not lexemes?
 				return false
@@ -429,33 +427,33 @@ class Parser_Test < Base_Test
 	end
 
 	def test_function_calls
-		out = Tape.parse '(;)()'
+		out = Drive.parse '(;)()'
 		assert_kind_of Tape::Call_Expr, out.first
 		assert_kind_of Tape::Func_Expr, out.first.receiver
 		assert_empty out.first.arguments
 
-		out = Tape.parse '(;)(true)'
+		out = Drive.parse '(;)(true)'
 		refute_empty out.first.arguments
 		assert_kind_of Tape::Identifier_Expr, out.first.arguments.first
 
-		out = Tape.parse '(;)(1, 2, 3)'
+		out = Drive.parse '(;)(1, 2, 3)'
 		out.first.arguments.each do
 			assert_kind_of Tape::Number_Expr, it
 		end
 	end
 
 	def test_types
-		out = Tape.parse 'String {}'
+		out = Drive.parse 'String {}'
 		assert_kind_of Tape::Type_Expr, out.first
 		assert_equal 'String', out.first.name
 
-		out = Tape.parse 'Transform {
+		out = Drive.parse 'Transform {
 			position,
 			rotation,
 		}'
 		assert_equal 2, out.first.expressions.count
 
-		out = Tape.parse 'Entity {
+		out = Drive.parse 'Entity {
 			|Transform
 		}'
 		assert_kind_of Tape::Composition_Expr, out.first.expressions.first
@@ -464,7 +462,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_mixed_inline_compositions
-		out = Tape.parse 'Xform | Transform ~ Vec2 & This ^ That {}'
+		out = Drive.parse 'Xform | Transform ~ Vec2 & This ^ That {}'
 		assert_kind_of Tape::Composition_Expr, out.first.expressions.first
 		assert_equal '|', out.first.expressions[0].operator.value
 		assert_equal 'Transform', out.first.expressions[0].identifier.value
@@ -477,20 +475,20 @@ class Parser_Test < Base_Test
 	end
 
 	def test_control_flows
-		out = Tape.parse 'if true
+		out = Drive.parse 'if true
 			celebrate()
 		end'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Call_Expr, out.first.when_true.first
 
-		out = Tape.parse 'wrap ( number, limit;
+		out = Drive.parse 'wrap ( number, limit;
 			if number > limit
 				number = 0
 			end
 		 )'
 		assert_kind_of Tape::Conditional_Expr, out.first.expressions[0]
 
-		out = Tape.parse 'if 1 + 2 * 3 == 7
+		out = Drive.parse 'if 1 + 2 * 3 == 7
 			"This one!"
 		elif 1 + 2 * 3 == 9
 			\'No, this one!\'
@@ -503,14 +501,14 @@ class Parser_Test < Base_Test
 	end
 
 	def test_conditionals_at_end_of_line
-		out = Tape.parse 'eat while lexemes? && curr?()'
+		out = Drive.parse 'eat while lexemes? && curr?()'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.condition
 		assert_kind_of Tape::Identifier_Expr, out.first.when_true.first
 	end
 
 	def test_unless_conditional
-		out = Tape.parse 'do_this unless the_condition'
+		out = Drive.parse 'do_this unless the_condition'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.condition
 		assert_equal 'unless', out.first.type.value
@@ -520,7 +518,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_until_conditional
-		out = Tape.parse 'repeat_this until the_condition'
+		out = Drive.parse 'repeat_this until the_condition'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.condition
 		assert_equal 'until', out.first.type.value
@@ -530,7 +528,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_silly_elwhile
-		out        = Tape.parse '
+		out        = Drive.parse '
 		while a
 			1
 		elwhile b
@@ -564,7 +562,7 @@ class Parser_Test < Base_Test
 
 	def test_if_else
 		# Direct copy-past from test_silly_elwhile
-		out = Tape.parse '
+		out = Drive.parse '
 		if a
 			1
 		elif b
@@ -599,29 +597,29 @@ class Parser_Test < Base_Test
 	end
 
 	def test_circumfixes
-		out = Tape.parse '[], (), {}'
+		out = Drive.parse '[], (), {}'
 		assert_equal 3, out.count
 		out.each do |it|
 			assert_kind_of Tape::Circumfix_Expr, it
 			assert_empty it.expressions
 		end
 
-		out = Tape.parse '[1, 2, 3]'
+		out = Drive.parse '[1, 2, 3]'
 		assert_equal 3, out.first.expressions.count
 	end
 
 	def test_type_init
-		out = Tape.parse 'Type()'
+		out = Drive.parse 'Type()'
 		assert_kind_of Tape::Call_Expr, out.first
 	end
 
 	def test_func_call
-		out = Tape.parse 'funk()'
+		out = Drive.parse 'funk()'
 		assert_kind_of Tape::Call_Expr, out.first
 	end
 
 	def test_call_expr_improvement
-		out = Tape.parse 'Some.thing(1)'
+		out = Drive.parse 'Some.thing(1)'
 		assert_kind_of Tape::Call_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.receiver
 		assert_kind_of Tape::Number_Expr, out.first.arguments.first
@@ -630,8 +628,8 @@ class Parser_Test < Base_Test
 	def test_spread_lambda_single_anon_func_argument_drops_its_parens
 		# `xs.map(x; x*2)` is sugar for `xs.map((x; x*2))` -- only when the receiver is a member
 		# access / call / subscript (never a bare identifier, which stays a `f(x; body)` declaration).
-		spread  = Tape.parse('xs.map(x; x * 2)').first
-		wrapped = Tape.parse('xs.map((x; x * 2))').first
+		spread  = Drive.parse('xs.map(x; x * 2)').first
+		wrapped = Drive.parse('xs.map((x; x * 2))').first
 
 		assert_kind_of Tape::Call_Expr, spread
 		assert_kind_of Tape::Infix_Expr, spread.receiver
@@ -647,7 +645,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_spread_lambda_chains
-		out = Tape.parse 'xs.map(x; x * 2).filter(n; n > 2)'
+		out = Drive.parse 'xs.map(x; x * 2).filter(n; n > 2)'
 		assert_kind_of Tape::Call_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.receiver           # .filter
 		assert_kind_of Tape::Call_Expr, out.first.receiver.left       # xs.map(...)
@@ -655,13 +653,13 @@ class Parser_Test < Base_Test
 
 	def test_spread_lambda_does_not_touch_bare_identifier_declarations
 		# `f(x; body)` at a bare identifier is still a function *declaration*, unchanged.
-		assert_kind_of Tape::Func_Expr, Tape.parse('double(n; n * 2)').first
+		assert_kind_of Tape::Func_Expr, Drive.parse('double(n; n * 2)').first
 	end
 
 	def test_spread_lambda_only_for_a_lone_param_shaped_argument
 		# a number then more is not "one anonymous-function argument" -- no spread, and (important) no
 		# parser hang trying to read `0` as a parameter.
-		result = Timeout.timeout(5) { Tape.parse('xs.accumulate(0, a, x; a + x)') rescue :parse_error }
+		result = Timeout.timeout(5) { Drive.parse('xs.accumulate(0, a, x; a + x)') rescue :parse_error }
 		refute_nil result, 'parser must terminate on this shape rather than spinning'
 	end
 
@@ -670,7 +668,7 @@ class Parser_Test < Base_Test
 	# ordinary string argument like `.join(';')` got mistaken for a param-list-shaped spread-lambda
 	# argument, purely because its *content* happens to spell the real param/body separator.
 	def test_spread_lambda_not_triggered_by_a_string_argument_matching_the_separator_character
-		out = Tape.parse "xs.join(';')"
+		out = Drive.parse "xs.join(';')"
 		assert_kind_of Tape::Call_Expr, out.first
 		assert_equal 1, out.first.arguments.count
 		assert_kind_of Tape::String_Expr, out.first.arguments.first
@@ -678,13 +676,13 @@ class Parser_Test < Base_Test
 
 	def test_spread_lambda_not_triggered_by_string_arguments_matching_other_param_list_tokens
 		[',', ':', '->', '<', '>', '@', '(', ')', '[', '{'].each do |value|
-			out = Tape.parse "xs.join('#{value}')"
+			out = Drive.parse "xs.join('#{value}')"
 			assert_kind_of Tape::String_Expr, out.first.arguments.first, "failed for '#{value}'"
 		end
 	end
 
 	def test_join_with_a_semicolon_separator_actually_runs_correctly
-		out = Tape.interp "[1, 2, 3].join(';')"
+		out = Drive.interp "[1, 2, 3].join(';')"
 		assert_equal '1;2;3', out
 	end
 
@@ -692,7 +690,7 @@ class Parser_Test < Base_Test
 	# value contains real syntax characters (parens, the separator) must not confuse where the param
 	# list/body boundary actually is.
 	def test_func_declaration_with_a_punctuation_like_string_default_still_parses_correctly
-		out = Tape.interp "f (x := '(;)'; x), f()"
+		out = Drive.interp "f (x := '(;)'; x), f()"
 		assert_equal '(;)', out
 	end
 
@@ -705,40 +703,40 @@ class Parser_Test < Base_Test
 	# mistook a literal argument equal to the closing character for the real delimiter, ending the
 	# group early and leaving the true closer to crash the parser as an "unhandled lexeme".
 	def test_call_argument_matching_the_closing_paren_does_not_end_the_call_early
-		out = Tape.interp "[1, 2].join(')')"
+		out = Drive.interp "[1, 2].join(')')"
 		assert_equal '1)2', out
 	end
 
 	def test_array_literal_element_matching_the_closing_bracket_parses_correctly
-		out = Tape.interp "['a', ']']"
+		out = Drive.interp "['a', ']']"
 		assert_equal ['a', ']'], out.values
 	end
 
 	def test_dictionary_value_matching_the_closing_brace_parses_correctly
-		out = Tape.interp "d := {a: 1, b: '}'}
+		out = Drive.interp "d := {a: 1, b: '}'}
 		d.b"
 		assert_equal '}', out
 	end
 
 	def test_tuple_element_matching_the_closing_paren_parses_correctly
-		out = Tape.interp "t := ('x', ')')
+		out = Drive.interp "t := ('x', ')')
 		t.1"
 		assert_equal ')', out
 	end
 
 	def test_struct_member_matching_the_closing_angle_bracket_parses_correctly
-		out = Tape.interp "s := <'>'>
+		out = Drive.interp "s := <'>'>
 		s.0"
 		assert_equal '>', out
 	end
 
 	def test_return_is_an_identifier
-		out = Tape.parse 'return 1 + 2'
+		out = Drive.parse 'return 1 + 2'
 		assert_kind_of Tape::Prefix_Expr, out.first
 	end
 
 	def test_return_with_conditional_at_end_of_line
-		out = Tape.parse 'return x unless y'
+		out = Drive.parse 'return x unless y'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Prefix_Expr, out.first.when_true.first
 		assert_kind_of Tape::Identifier_Expr, out.first.when_true.first.expression
@@ -746,7 +744,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_return_with_conditionals
-		out = Tape.parse 'return 3 if true'
+		out = Drive.parse 'return 3 if true'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Prefix_Expr, out.first.when_true.first
 		assert_kind_of Tape::Number_Expr, out.first.when_true.first.expression
@@ -754,7 +752,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_identifier_dot_integer_is_an_infix
-		out = Tape.parse 'something.4'
+		out = Drive.parse 'something.4'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.left
 		assert_kind_of Tape::Number_Expr, out.first.right
@@ -762,7 +760,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_identifier_dot_float_is_an_infix
-		out = Tape.parse 'not_gonna_work.4.8.15'
+		out = Drive.parse 'not_gonna_work.4.8.15'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Identifier_Expr, out.first.left
 		assert_kind_of Tape::Array_Index_Expr, out.first.right
@@ -771,14 +769,14 @@ class Parser_Test < Base_Test
 	end
 
 	def test_multidot_number_lexeme
-		out = Tape.parse '4.8.15.16.23.42'
+		out = Drive.parse '4.8.15.16.23.42'
 		assert_kind_of Tape::Array_Index_Expr, out.first
 		assert_equal '4.8.15.16.23.42', out.first.value
 		assert_equal [4, 8, 15, 16, 23, 42], out.first.indices_in_order
 	end
 
 	def test_complex_return_with_conditionals
-		out = Tape.parse 'return 4+2 if true'
+		out = Drive.parse 'return 4+2 if true'
 		assert_kind_of Tape::Conditional_Expr, out.first
 		assert_kind_of Tape::Prefix_Expr, out.first.when_true.first
 		assert_kind_of Tape::Infix_Expr, out.first.when_true.first.expression
@@ -786,35 +784,35 @@ class Parser_Test < Base_Test
 	end
 
 	def test_possibly_ambigous_type_and_func_syntax_mixture
-		out = Tape.parse 'x , y , z'
+		out = Drive.parse 'x , y , z'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out[1]
 		assert_kind_of Tape::Identifier_Expr, out.last
 
-		out = Tape.parse 'x , y , z'
+		out = Drive.parse 'x , y , z'
 		assert_kind_of Tape::Infix_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out[1]
 		assert_kind_of Tape::Identifier_Expr, out.last
 	end
 
 	def test_function_signature
-		out = Tape.parse '(-> Identifier;)'
+		out = Drive.parse '(-> Identifier;)'
 		assert_kind_of Tape::Func_Signature_Expr, out.first
 
-		out = Tape.parse '(Number -> String;)'
+		out = Drive.parse '(Number -> String;)'
 		assert_kind_of Tape::Func_Signature_Expr, out.first
 
-		out = Tape.parse 'string (number;)'
+		out = Drive.parse 'string (number;)'
 		assert_kind_of Tape::Func_Expr, out.first
 	end
 
 	def test_double_less_than_is_operator
-		out = Tape.parse '<<'
+		out = Drive.parse '<<'
 		assert_kind_of Tape::Operator_Expr, out.first
 	end
 
 	def test_writable_unpack_prefix
-		out = Tape.parse 'funk ( @writable with; )'
+		out = Drive.parse 'funk ( @splat with; )'
 		assert_equal 'with', out.first.parameters.first.value
 		assert_kind_of Tape::Param_Expr, out.first.parameters.first
 		assert out.first.parameters.first.add_to_writable
@@ -822,7 +820,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_readable_unpack_prefix
-		out = Tape.parse 'funk ( @readable with; )'
+		out = Drive.parse 'funk ( @splatr with; )'
 		assert_equal 'with', out.first.parameters.first.value
 		assert_kind_of Tape::Param_Expr, out.first.parameters.first
 		assert out.first.parameters.first.add_to_readable
@@ -830,7 +828,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_for_loops
-		out = Tape.parse '
+		out = Drive.parse '
 		for []
 		end'
 		assert_empty out.first.body
@@ -841,12 +839,12 @@ class Parser_Test < Base_Test
 	def test_directive_identifier
 		# `@word` with nothing after it is a bare Context read (routed by `.prefixed_with_at` at interpret
 		# time), not a generic operand-grabbing directive -- there's no reserved-word list anymore.
-		out = Tape.parse '@whatever'
+		out = Drive.parse '@whatever'
 		assert_instance_of Tape::Identifier_Expr, out.first
 		assert out.first.prefixed_with_at
 
 		# A trailing `(...)` is an ordinary call on that read.
-		out = Tape.parse '@whatever(a, b)'
+		out = Drive.parse '@whatever(a, b)'
 		assert_instance_of Tape::Call_Expr, out.first
 		assert_instance_of Tape::Identifier_Expr, out.first.receiver
 		assert out.first.receiver.prefixed_with_at
@@ -854,20 +852,20 @@ class Parser_Test < Base_Test
 
 	def test_all_http_methods
 		Tape::HTTP_VERBS.each do |verb|
-			assert_instance_of Tape::Route_Expr, Tape.parse("#{verb}://path (;)").first
+			assert_instance_of Tape::Route_Expr, Drive.parse("#{verb}://path (;)").first
 		end
 	end
 
 	def test_route_declaration_with_http_method_directives
 		refute_raises Tape::Invalid_Http_Directive_Handler do
-			out = Tape.parse 'get://something (;)'
+			out = Drive.parse 'get://something (;)'
 			assert_equal 1, out.count
 			assert_instance_of Tape::Route_Expr, out.first
 			assert_equal 'get', out.first.http_method.value
 			assert_equal "something", out.first.path
 		end
 
-		out = Tape.parse '@whatever "endpoint" (;)'
+		out = Drive.parse '@whatever "endpoint" (;)'
 		refute_instance_of Tape::Route_Expr, out.first
 		assert_instance_of Tape::Identifier_Expr, out[0] # bare `@whatever` Identity read
 		assert out[0].prefixed_with_at
@@ -875,7 +873,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_empty_html_element_expression
-		out = Tape.parse '```html
+		out = Drive.parse '```html
 		```'
 		assert_equal 1, out.count
 
@@ -883,18 +881,18 @@ class Parser_Test < Base_Test
 	end
 
 	def test_skip_and_stop_are_operators
-		out = Tape.parse 'skip'
+		out = Drive.parse 'skip'
 		assert_instance_of Tape::Operator_Expr, out.first
 
-		out = Tape.parse 'stop'
+		out = Drive.parse 'stop'
 		assert_instance_of Tape::Operator_Expr, out.first
 	end
 
 	def test_single_line_comments
-		out = Tape.parse '# abc'
+		out = Drive.parse '# abc'
 		assert_instance_of Tape::Comment_Expr, out.first
 
-		out = Tape.parse '# abc
+		out = Drive.parse '# abc
 		# def'
 		assert_instance_of Tape::Comment_Expr, out.first
 		assert_instance_of Tape::Comment_Expr, out.last
@@ -902,26 +900,26 @@ class Parser_Test < Base_Test
 	end
 
 	def test_block_comments
-		out = Tape.parse '###abc###'
+		out = Drive.parse '###abc###'
 		assert_instance_of Tape::Comment_Expr, out.first
 
-		out = Tape.parse '###abc
+		out = Drive.parse '###abc
 		def###'
 		assert_instance_of Tape::Comment_Expr, out.first
 		assert_instance_of Tape::Comment_Expr, out.last
 		assert out.first == out.last
 
-		out = Tape.parse '###abc### ###def###'
+		out = Drive.parse '###abc### ###def###'
 		assert_instance_of Tape::Comment_Expr, out.first
 		assert_instance_of Tape::Comment_Expr, out.last
 		assert out.first != out.last
 	end
 
 	def test_fence_blocks
-		out = Tape.parse '```abc```'
+		out = Drive.parse '```abc```'
 		assert_instance_of Tape::Fence_Expr, out.first
 
-		out = Tape.parse '```abc
+		out = Drive.parse '```abc
 		def```'
 		assert_instance_of Tape::Fence_Expr, out.first
 		assert_instance_of Tape::Fence_Expr, out.last
@@ -929,7 +927,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_fence_expr_attributes
-		out   = Tape.parse '```
+		out   = Drive.parse '```
 		some content here
 		```'
 		fence = out.first
@@ -941,7 +939,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_fence_expr_multiline_content
-		out   = Tape.parse '```
+		out   = Drive.parse '```
 		line one
 		line two
 		line three
@@ -956,7 +954,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_html_fence_expr_attributes
-		out        = Tape.parse '```html
+		out        = Drive.parse '```html
 		<div>Hello</div>
 		```'
 		html_fence = out.first
@@ -969,7 +967,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_html_fence_expr_with_interpolation
-		out        = Tape.parse '```html
+		out        = Drive.parse '```html
 		<h1>Welcome `name`</h1>
 		```'
 		html_fence = out.first
@@ -980,7 +978,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_html_fence_expr_without_interpolation
-		out        = Tape.parse '```html
+		out        = Drive.parse '```html
 		<p>Plain text</p>
 		```'
 		html_fence = out.first
@@ -990,7 +988,7 @@ class Parser_Test < Base_Test
 	end
 
 	def test_html_fence_strips_html_marker
-		out        = Tape.parse '```html
+		out        = Drive.parse '```html
 		<span>Content</span>
 		```'
 		html_fence = out.first
@@ -1002,24 +1000,24 @@ class Parser_Test < Base_Test
 
 	def test_operator_overload_parses
 		assert_raises Tape::Operator_Overload_Fixity_Must_Be_One_Of do
-			Tape.parse <<~CODE
+			Drive.parse <<~CODE
 			    @operator := @heehee 500 ( left, right; )
 			CODE
 		end
 
 		assert_raises Tape::Operator_Overload_Precedence_Must_Be_Integer do
-			Tape.parse <<~CODE
+			Drive.parse <<~CODE
 			    @operator $ @prefix hmm ( left, right; )
 			CODE
 		end
 
 		assert_raises Tape::Operator_Overload_Precedence_Must_Be_Integer do
-			Tape.parse <<~CODE
+			Drive.parse <<~CODE
 			    @operator + @infix notanumber ( left, right; )
 			CODE
 		end
 
-		out      = Tape.parse '@operator := @infix 500 ( left, right; )'
+		out      = Drive.parse '@operator := @infix 500 ( left, right; )'
 		overload = out.first
 		assert_instance_of Tape::Operator_Overload_Expr, overload
 		assert_equal ':=', overload.value
@@ -1029,12 +1027,12 @@ class Parser_Test < Base_Test
 
 		{ 'infix' => '~~', 'prefix' => '!!', 'postfix' => '??' }.each do |fixity, op|
 			refute_raises do
-				Tape.parse "@operator #{op} @#{fixity} 300 ( x; x )"
+				Drive.parse "@operator #{op} @#{fixity} 300 ( x; x )"
 			end
 		end
 
 		# Operator is registered so it can appear in a subsequent expression as Infix_Expr
-		out   = Tape.parse "@operator ~> @infix 700 ( left, right; left )\na ~> b"
+		out   = Drive.parse "@operator ~> @infix 700 ( left, right; left )\na ~> b"
 		infix = out.last
 		assert_instance_of Tape::Infix_Expr, infix
 		assert_equal '~>', infix.operator.value
@@ -1043,13 +1041,13 @@ class Parser_Test < Base_Test
 	end
 
 	def test_statement_expressions
-		out = Tape.parse "`1+2`"
+		out = Drive.parse "`1+2`"
 		assert_kind_of Tape::Statement_Expr, out.first
 		assert_kind_of Tape::Infix_Expr, out.first.expression
 	end
 
 	def test_fancier_statement_example
-		out = Tape.parse "x := `@load 'tapes/string'`"
+		out = Drive.parse "x := `@load 'tapes/string'`"
 		assert_kind_of Tape::Statement_Expr, out.last.right
 	end
 end

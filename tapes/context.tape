@@ -11,6 +11,11 @@ Context <
 	root_path: String                   # the project root path (Tape::ROOT_PATH)
 	static_declarations: Set            # Set of names declared static on this Type
 
+	#- Func reflection
+	parameters: Array
+	arguments: Array
+	func_signature: Any # todo; I don't have the Func_Signature type yet
+
 	#- Struct reflection (nil unless the subject is a Struct)
 	names: Array\String                 # member names
 	type_names: Array\String            # member type names
@@ -36,8 +41,7 @@ Context <
 	declare: (String, Any, Any;)        # declares an identifier in the current scope (name / name, value / name, value, type)
 	push_scope: (Any;)                  # pushes a Type/Instance onto the stack -- members reachable unprefixed
 	pop_scope: (Any;)                   # pops it back off (asserts identity with what push_scope pushed)
-	add_readable_scope: (Any;)          # adds a scope's members as a read-only lookup fallback
-	add_writable_scope: (Any;)          # ... also a fallback for writes
-	remove_readable_scope: (Any;)       # removes it
-	remove_writable_scope: (Any;)       # removes it
+	splat: (Any;)                       # unpack a scope's members into lookup, also as a write target
+	splatr: (Any;)                      # ... read-only
+	unsplat: (Any;)                     # remove a splatted scope from lookup
 >

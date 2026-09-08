@@ -7,8 +7,8 @@ to the `puts` member with `x` as its argument -- an ordinary expression, not a s
 
 This file covers the general-purpose ones. The rest have their own walkthrough, next to the
 feature they belong to: `@load` (loading_code.tape), `@start_server` / `@stop_server`
-(web_servers.tape), `@connect` (databases.tape), and `@add_readable_scope` / `@readable`,
-`@add_writable_scope` / `@writable` (scopes.tape).
+(web_servers.tape), `@connect` (databases.tape), and `@splat` / `@splatr` /
+`@unsplat` / `@push_scope` / `@pop_scope` (scopes.tape).
 ###
 @puts '@word is shorthand for @.word -- an ordinary call on a context member'
 

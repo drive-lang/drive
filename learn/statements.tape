@@ -65,7 +65,7 @@ r := Row\<`1+2`>()
 
 ### Not idempotent — every call re-runs the wrapped expression
 
-This is the real-world angle for a tagged `Statement` member: a column default computed at insert-time instead of baked in once when the schema is declared, e.g. `created_at: Statement` around a clock call (Tape has no clock yet, so a counter stands in below). But it cuts both ways — two tagged references sharing *the same* Statement value both advance the same underlying call, not independent ones.
+This is the real-world angle for a tagged `Statement` member: a column default computed at insert-time instead of baked in once when the schema is declared, e.g. `created_at: Statement` around a clock call (Drive has no clock yet, so a counter stands in below). But it cuts both ways — two tagged references sharing *the same* Statement value both advance the same underlying call, not independent ones.
 ###
 seq      := 0
 next_seq := `seq += 1`

@@ -1,5 +1,0 @@
-#!/usr/bin/env ruby
-
-require_relative '../src/tape'
-
-Tape::CLI.run ARGV

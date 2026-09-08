@@ -1,6 +1,6 @@
 ### Introduction
 
-Sometimes you want to attach a small bundle of typed data to something without declaring a whole new Type for it. Structs are Tape's answer: `<...>` builds a small, runtime-inspectable value on the spot.
+Sometimes you want to attach a small bundle of typed data to something without declaring a whole new Type for it. Structs are Drive's answer: `<...>` builds a small, runtime-inspectable value on the spot.
 
 This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see learn/tagged_types.tape for that.
 ###
@@ -14,7 +14,7 @@ type_names := pair.@types.values.map((it;
 ### Two layers, don't confuse them
 
 - Tape::Member/Tape::Struct (Ruby, src/external/ruby/struct.rb + member.rb) -- the low-level engine behind every `<...>` literal above. Always present, no load required.
-- Member/Struct (Tape, tapes/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`tapes/global.tape` -- `@load 'tapes/struct.tape'` here is redundant, just explicit). Gives you a proper Tape-level Struct type with a real `@.members` array, `has?`/`include?`, and a custom `==` operator, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
+- Member/Struct (Drive, tapes/struct.tape + member.tape) -- a separate, higher-level layer built on top, loaded by default as part of the standard library (`tapes/global.tape` -- `@load 'tapes/struct.tape'` here is redundant, just explicit). Gives you a proper Drive-level Struct type with a real `@.members` array, `has?`/`include?`, and a custom `==` operator, so a `<...>` literal actually runs a real declared type's body instead of being a bare Ruby struct.
 ###
 @load 'tapes/struct.tape'
 

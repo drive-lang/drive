@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 require 'net/http'
 require 'uri'
@@ -20,7 +20,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_instance
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 			db := Database()
 		    sq := Sqlite('#{@filepath}')
@@ -40,7 +40,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_connection_instance
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    @connect db
@@ -51,7 +51,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_connection_is_cached
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    c1 := @connect db
@@ -62,14 +62,14 @@ class Database_Test < Base_Test
 	end
 
 	def test_connect_directive_creates_database_connection
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			db.connection
 		TAPE
 		assert_nil out
 
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
@@ -79,7 +79,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_creating_table
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
@@ -96,7 +96,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_database_reference
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -124,7 +124,7 @@ class Database_Test < Base_Test
 
 	def test_create_table_column_types
 		refute_raises do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -140,7 +140,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_update
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -161,7 +161,7 @@ class Database_Test < Base_Test
 	# coerce it back so `if record.done` behaves; before the fix an unset value read as the truthy
 	# Bool *type* and a set one read as a truthy Integer.
 	def test_bool_column_round_trips_as_a_usable_boolean
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -190,7 +190,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_find_by
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -208,7 +208,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_find_by_returns_nil_when_not_found
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -224,7 +224,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_record_where
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -246,7 +246,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_or_create_table_creates_when_missing
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -266,7 +266,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_or_create_table_reuses_existing_table
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -286,7 +286,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_by_struct
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -304,7 +304,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_by_name
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -317,7 +317,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_table_returns_nil_when_missing
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    db.find_table('ghosts')
@@ -326,7 +326,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_delete_table
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -342,7 +342,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_delete_table_by_name_without_the_struct_in_hand
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -360,7 +360,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_exists_false_for_missing_table
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    Widget <id: Primary_Key>
@@ -370,7 +370,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_exists_by_name
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -383,7 +383,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_tables_lists_every_table
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -398,7 +398,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_to_s
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := Database()
 		    db.to_s()
@@ -407,7 +407,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_sqlite_memory_does_not_persist_to_disk
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite.memory()
 		    db.url
@@ -420,7 +420,7 @@ class Database_Test < Base_Test
 		filepath = File.expand_path("../temp/#{filename}.db", __dir__)
 		File.delete(filepath) if File.exist? filepath
 
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}
 		    db := @connect Sqlite.local('#{filename}')
 		    db.url
@@ -432,7 +432,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_find_returns_nil_when_missing
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -448,7 +448,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_delete
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -468,11 +468,11 @@ class Database_Test < Base_Test
 		assert_nil out.values[1]
 	end
 
-	# --- Tape.assert failure paths ---
+	# --- Drive.assert failure paths ---
 
 	def test_create_table_raises_for_non_struct
 		error = assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table('not a struct')
@@ -483,7 +483,7 @@ class Database_Test < Base_Test
 
 	def test_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table(<id: Primary_Key>)
@@ -493,7 +493,7 @@ class Database_Test < Base_Test
 
 	def test_find_or_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_or_create_table(<id: Primary_Key>)
@@ -503,7 +503,7 @@ class Database_Test < Base_Test
 
 	def test_find_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_table(<id: Primary_Key>)
@@ -516,7 +516,7 @@ class Database_Test < Base_Test
 	# caught there instead, one guard covering every caller.
 	def test_table_exists_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.table_exists?(<id: Primary_Key>)
@@ -526,7 +526,7 @@ class Database_Test < Base_Test
 
 	def test_delete_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.delete_table!(<id: Primary_Key>)
@@ -537,12 +537,12 @@ class Database_Test < Base_Test
 	# --- Column types available to create_table ---
 
 	def test_create_table_every_column_type
-		# No distinct Tape Flo/Decimal/Blob type exists yet -- alias one yourself, same as the
+		# No distinct Drive Flo/Decimal/Blob type exists yet -- alias one yourself, same as the
 		# codebase's own `Text | String {}` pattern (see database.rb's #proxy_create_table).
 		# Primary_Key/String/Int/Bool/Date/Time/Date_Time/Enum need no aliasing -- all real,
 		# provided types.
 		refute_raises do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -574,7 +574,7 @@ class Database_Test < Base_Test
 	# --- Building a Table by hand instead of through Database ---
 
 	def test_table_built_manually_and_linked_to_a_database
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -601,7 +601,7 @@ class Database_Test < Base_Test
 
 	def test_create_raises_for_dictionary
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -617,7 +617,7 @@ class Database_Test < Base_Test
 
 	def test_update_raises_for_dictionary
 		assert_raises RuntimeError do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -636,7 +636,7 @@ class Database_Test < Base_Test
 
 	def test_find_by_raises_for_unknown_column
 		error = assert_raises Tape::Table_Invalid_Filter_Column do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -654,7 +654,7 @@ class Database_Test < Base_Test
 
 	def test_where_raises_for_unknown_column
 		error = assert_raises Tape::Table_Invalid_Filter_Column do
-			Tape.interp <<~TAPE
+			Drive.interp <<~TAPE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 

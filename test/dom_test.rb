@@ -1,11 +1,11 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require_relative 'base_test'
 
 class Dom_Test < Base_Test
 	# Runs `src`, returns [interpreter, rendered-html-of-the-result].
 	def render src
-		interp   = Tape::Interpreter.new
+		interp   = Drive::Interpreter.new
 		instance = interp.run src
 		[interp, interp.render_dom_to_html(instance)]
 	end
@@ -42,8 +42,8 @@ class Dom_Test < Base_Test
 
 		assert_equal html1, html2
 		assert_equal html2, html3
-		assert_includes html1, 'data-tape-onclick="panel-0"'
-		assert_includes html1, 'data-tape-id="panel-1"'
+		assert_includes html1, 'data-drive-onclick="panel-0"'
+		assert_includes html1, 'data-drive-id="panel-1"'
 		assert_equal 1, interp.dom_onclick_function_handlers.size, 'handler map must not grow across re-renders'
 		assert_equal 1, interp.dom_input_elements.size
 	end
@@ -61,8 +61,8 @@ class Dom_Test < Base_Test
 		    }
 		    Outer()
 		TAPE
-		assert_includes html, 'data-tape-onclick="outer-0"'
-		assert_includes html, 'data-tape-onclick="inner-0"'
+		assert_includes html, 'data-drive-onclick="outer-0"'
+		assert_includes html, 'data-drive-onclick="inner-0"'
 	end
 
 	def test_handler_defined_in_render_still_works_after_re_render
@@ -134,8 +134,8 @@ class Dom_Test < Base_Test
 		    }
 		    Page()
 		TAPE
-		assert_includes html, 'data-tape-onclick="page-first"'
-		assert_includes html, 'data-tape-onclick="page-0"', 'the unkeyed sibling keeps slot 0 -- a key must not advance the counter'
+		assert_includes html, 'data-drive-onclick="page-first"'
+		assert_includes html, 'data-drive-onclick="page-0"', 'the unkeyed sibling keeps slot 0 -- a key must not advance the counter'
 	end
 
 	# --- #3  Dom constructor named arguments (whitelisted) ---
@@ -161,24 +161,24 @@ class Dom_Test < Base_Test
 		    }
 		    Page()
 		TAPE
-		assert_includes html, 'data-tape-onclick="p-go"'
+		assert_includes html, 'data-drive-onclick="p-go"'
 		refute_nil interp.dom_onclick_function_handlers['p-go']
 	end
 
 	def test_non_whitelisted_named_arg_on_a_dom_type_still_raises
 		assert_raises Tape::Unknown_Named_Argument do
-			Tape.interp "@load 'tapes/html'\nButton(\"x\", bogus := 1)"
+			Drive.interp "@load 'tapes/html'\nButton(\"x\", bogus := 1)"
 		end
 	end
 
 	def test_whitelisted_named_arg_on_a_non_dom_type_still_raises
 		assert_raises Tape::Unknown_Named_Argument do
-			Tape.interp "Widget { Self (; ) }\nWidget(html_id := 'x')"
+			Drive.interp "Widget { Self (; ) }\nWidget(html_id := 'x')"
 		end
 	end
 
 	def test_a_declared_param_wins_over_the_prop_shortcut
-		out = Tape.interp <<~TAPE
+		out = Drive.interp <<~TAPE
 		    @load 'tapes/html'
 		    Tag | Div {
 		    	seen,

@@ -49,7 +49,7 @@ greet ( name := "World";
 )
 
 @assert greet() == 'Hello, World', 'an omitted param should fall back to its default'
-@assert greet(name := 'Tape') == 'Hello, Tape', 'a named argument should override the default'
+@assert greet(name := 'Drive') == 'Hello, Drive', 'a named argument should override the default'
 
 
 ### What goes wrong

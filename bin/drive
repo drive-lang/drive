@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+
+# You can start `drive` from any directory, including through a symlink. When you
+# start it outside the project, the Ruby version manager can pick a Ruby without
+# the gems (it looks beside the *symlink*, not the real file). If the running
+# Ruby is not the one in `.ruby-version`, start again once with the correct one.
+drive_bin_path = File.realpath __FILE__
+project_root   = File.expand_path '../..', drive_bin_path
+wanted_ruby    = File.read(File.join(project_root, '.ruby-version')).strip rescue nil
+
+if wanted_ruby && RUBY_VERSION != wanted_ruby && !ENV['DRIVE_RUBY_SELECTED']
+	shim = File.expand_path 'shims/ruby', ENV.fetch('RBENV_ROOT', '~/.rbenv')
+	ruby = File.executable?(shim) ? shim : 'ruby'
+	exec({ 'RBENV_VERSION' => wanted_ruby, 'DRIVE_RUBY_SELECTED' => '1' }, ruby, drive_bin_path, *ARGV)
+end
+
+require_relative '../drive/drive.rb'
+
+Drive::CLI.run ARGV

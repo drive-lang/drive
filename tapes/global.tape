@@ -21,7 +21,7 @@
 
 ### How to load tapes.
 @load 'tapes/some.tape'  # tapes/ is the stdlib found in ./tapes/
-@load './this.tape'      # relative to wherever you ran bin/tape from (cwd)
-@load 'that.tape'        # relative to wherever you ran bin/tape from (cwd)
+@load './this.tape'      # relative to wherever you ran bin/drive from (cwd)
+@load 'that.tape'        # relative to wherever you ran bin/drive from (cwd)
 @load 'and_this'         # no .tape extension required
 ###

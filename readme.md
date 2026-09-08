@@ -1,7 +1,7 @@
 ![Version](https://img.shields.io/badge/version-0.0.0-2B7FFF.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-2B7FFF.svg)
 [![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-2B7FFF)](https://justforfunnoreally.dev)
-![Status of project Ruby tests](https://github.com/figgleforth/tape-lang/actions/workflows/tests.yml/badge.svg)
+![Status of project Ruby tests](https://github.com/drive-lang/drive/actions/workflows/tests.yml/badge.svg)
 
 Learn about the language below, or [in the learn section](learn/readme.md), or *[click here to get started using it](getting_started.md)*.
 
@@ -261,11 +261,13 @@ math := "2 + 2 = `2 + 2`"    # "2 + 2 = 4"
 escaped := "Literal \`backticks\`"
 ```
 
-## Scope Operators
+## Scope Keywords
 
-1. `self` accesses current instance scope only
-2. `Self` accesses current type/class scope only
-3. `~/` accesses global scope
+`self`, `Self`, and `Global` are bare scope keywords — each is a value on its own, and `Keyword.member` reaches one name in exactly that scope, no outward search:
+
+1. `self` — the current instance only
+2. `Self` — the current type only (where statics live)
+3. `Global` — the global scope only
 
 ```tape
 My_Class {
@@ -278,7 +280,7 @@ My_Class {
     )
 
     get_global (;
-        ~/PI  # Access global scope constants
+        Global.PI  # reach a global constant past any local shadow
     )
 }
 ```
@@ -516,14 +518,14 @@ find_first ( predicate;
 )
 ```
 
-## Readable and Writable Scopes
+## Splatting a Scope
 
-Every scope keeps two extra fallback places identifier lookup checks, after its own declarations — a **readable** scope (read-only) and a **writable** scope (also a fallback for writes) — making an instance's members accessible without an `instance.` prefix. Lookup order is always `[self, writable, readable]`: a scope's own declarations win first, then anything reachable through a writable scope, then a readable scope.
+Every scope keeps two extra fallback places identifier lookup checks, after its own declarations — a **read-only** set and a **writable** set (also a fallback for writes) — making an instance's members reachable without an `instance.` prefix. Lookup order is always `[self, writable, read-only]`: a scope's own declarations win first.
 
-1. `@readable`/`@writable` in a function signature adds the argument to a readable/writable scope, making its members directly accessible in the function body
-2. `@add_readable_scope instance` / `@add_writable_scope instance` manually add an instance to a readable/writable scope, in any scope; `@remove_readable_scope`/`@remove_writable_scope` take it back out
-3. Both are held *weakly* — adding an instance doesn't keep it alive. Once nothing else refers to it, it's free to be garbage collected on its own, even though it's technically still "added". You only need `@remove_readable_scope`/`@remove_writable_scope` for explicitly taking something out early, not to avoid a leak
-4. The standard library itself lives this way — `String`/`Array`/etc. are reachable through Global's own readable scope, not declared on Global directly. Reassigning a built-in name (`Array = Mine`) can never mutate the real one; it just shadows the name for the rest of your program
+1. `@splat x` unpacks `x` as a writable splat; `@splatr x` read-only; `@unsplat x` removes it. Works on a function param (the common case) or by hand anywhere.
+2. A `: Type` / `: <...>` annotation on a splat param *is* enforced at the call — pass the wrong shape and you get a `Type_Contract_Violation` right there, not an `Undeclared_Identifier` deep in the body.
+3. Both sets are held *weakly* — a splatted instance isn't kept alive; once nothing else refers to it it's collectible on its own, so `@unsplat` is only for cutting something off early, not for avoiding a leak.
+4. The standard library lives this way — `String`/`Array`/etc. are reachable through Global's own read-only splat, not declared on Global directly. Reassigning a built-in (`Array = Mine`) can't mutate the real one; it just shadows the name for the rest of your program.
 
 ```tape
 Vector {
@@ -531,9 +533,9 @@ Vector {
     y := 0
 }
 
-# Auto-unpack in parameters
-magnitude ( @readable vec;
-    (x ** 2 + y ** 2).sqrt()  # Access x, y directly
+# Auto-unpack in a parameter
+magnitude ( @splatr vec;
+    (x ** 2 + y ** 2).sqrt()  # x, y resolve directly
 )
 
 v := Vector()
@@ -541,22 +543,22 @@ v.x = 3
 v.y = 4
 magnitude(v)  # 5
 
-# A writable unpack lets a plain write reach the unpacked instance's own member
-double ( @writable vec;
+# @splat (writable) lets a plain write reach the unpacked instance's own member
+double ( @splat vec;
     x *= 2   # writes straight through to vec.x
     y *= 2
     vec
 )
 doubled := double(v)  # doubled.x: 6, doubled.y: 8
 
-# Manual scope control
-@add_readable_scope some_instance     # Add to readable scope
-@remove_readable_scope some_instance  # Remove from readable scope
+# By hand, anywhere
+@splatr some_instance
+@unsplat some_instance
 ```
 
 ```tape
 # The standard library works the same way -- Array is reachable through
-# Global's own readable scope, not declared on Global directly
+# Global's own read-only splat, not declared on Global directly
 Mine | Array { extra := true }
 Array = Mine          # shadows the name -- the real Array is untouched
 [1, 2, 3].length()    # 3 -- still works, Mine composes Array
@@ -578,10 +580,10 @@ Point {
 
 outer (;
     p := Point(23, 42)
-    @add_readable_scope p
+    @splatr p
 
     inner (;
-        a + b   # a, b resolved from p via the readable scope, despite being nested inside outer
+        a + b   # a, b resolved from p via the splat, despite being nested inside outer
     )
 
     inner()
@@ -593,7 +595,7 @@ outer()  # 65
 
 1. `@push_scope <Type or instance>` pushes that scope directly onto the stack, so declarations made inside it become real members of the target
 2. `@pop_scope <same target>` pops back to the previous scope — it asserts (by identity) that you're popping what you actually pushed, raising instead of popping the wrong thing
-3. Unlike readable/writable scopes, `@push_scope` mutates its target — reopening a Type extends every instance of it, reopening a specific instance changes only that one
+3. Unlike a splat, `@push_scope` mutates its target — reopening a Type extends every instance of it, reopening a specific instance changes only that one
 
 ```tape
 Button {
@@ -699,7 +701,7 @@ s.reverse()
 s.include?('World') # true
 s.start_with?('He') # true
 s.end_with?('!')    # true
-s.gsub('World', 'Tape')
+s.gsub('World', 'Drive')
 s.to_i()            # Convert to integer
 s.empty?()          # false
 ```
@@ -874,7 +876,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 
 ### Reflective vitals
 
-Read-only facts about the scope, snapshotted the first time `@` is reached:
+Read-only facts about the scope, snapshotted the first time `@` is reached (a struct's `@.values` / `@.members` are the exception — they always reflect its current member values, even after a `.member = …` write):
 
 ```tape
 Flying { airborne := true }
@@ -902,7 +904,7 @@ r.@names       # ['name', 'types']
 
 ### Function members
 
-`@puts`, `@assert`, `@refute`, `@sleep`, `@load`, `@declare`, `@push_scope` / `@pop_scope`, `@connect`, `@start_server` / `@stop_server`, and the readable/writable-scope functions all live on the context. A bare `@puts` (no call) is the function itself, so it can be captured:
+`@puts`, `@assert`, `@refute`, `@sleep`, `@load`, `@declare`, `@push_scope` / `@pop_scope`, `@connect`, `@start_server` / `@stop_server`, and the scope functions `@splat` / `@splatr` / `@unsplat` all live on the context. A bare `@puts` (no call) is the function itself, so it can be captured:
 
 ```tape
 kept := @puts('logged')   # prints 'logged', returns it unchanged (a passthrough)
@@ -929,7 +931,7 @@ w.@version        # 2 — an instance reads through to its type's context
 
 ## @load
 
-1. Imports another Tape file
+1. Imports another Drive file
 2. A file is only run once per scope it's loaded into — loading the same file into the same scope again returns the first run's result instead of re-running it
 3. Imports may be scoped by assigning the @load to a variable
 
@@ -960,7 +962,7 @@ double(@puts 5)   # prints 5, returns 10 -- the call still gets the real 5
 
 ### Telling printed values apart
 
-Tape's built-in collection types each wrap their printed contents in a different bracket, so you can tell what you're looking at at a glance:
+Drive's built-in collection types each wrap their printed contents in a different bracket, so you can tell what you're looking at at a glance:
 
 ```tape
 @puts [1, 2, 3]      # [1, 2, 3]      -- Array
@@ -1103,7 +1105,7 @@ db.find_table('users')          # -> a Table, or nil
 db.delete_table!(User)          # also takes a bare :users
 ```
 
-Column types: `Primary_Key`, `String`/`Text`, `Int`, `Number`, `Bool`, `Date`, `Time`, `Date_Time`. `Flo`/`Decimal`/`Blob` are mapped but not backed by a Tape type yet.
+Column types: `Primary_Key`, `String`/`Text`, `Int`, `Number`, `Bool`, `Date`, `Time`, `Date_Time`. `Flo`/`Decimal`/`Blob` are mapped but not backed by a Drive type yet.
 
 ## Record ORM
 

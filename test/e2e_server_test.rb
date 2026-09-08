@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../src/tape'
+require_relative '../drive/drive'
 require 'net/http'
 require 'uri'
 require 'timeout'
@@ -17,7 +17,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# `#start_server` used to spawn WEBrick in a Thread.new and return immediately, with nothing synchronizing the caller to when WEBrick actually starts listening. Thread.new returns before the new thread has run at all, so `webrick_server.status` was still :Stop right after start_server returned.
-	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and tape almost every time, so `bin/tape run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
+	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and tape almost every time, so `bin/drive run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
 	def test_start_server_blocks_until_webrick_is_actually_running_regression
 		code = <<~TAPE
 		    Server {
@@ -34,7 +34,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -56,7 +56,7 @@ class E2E_Server_Test < Minitest::Test
 
 		    Web_App | Server {
 		    	get:// (;
-		    		"Hello from Tape!"
+		    		"Hello from Drive!"
 		    	)
 
 		    	get://hello/:name ( name;
@@ -67,7 +67,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -78,7 +78,7 @@ class E2E_Server_Test < Minitest::Test
 		# Test GET /
 		response = Net::HTTP.get_response URI("http://localhost:#{@port}/")
 		assert_equal '200', response.code
-		assert_equal 'Hello from Tape!', response.body
+		assert_equal 'Hello from Drive!', response.body
 
 		# Test parameterized route
 		response = Net::HTTP.get_response URI("http://localhost:#{@port}/hello/World")
@@ -111,7 +111,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -147,7 +147,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -179,7 +179,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -215,7 +215,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -250,7 +250,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -291,7 +291,7 @@ class E2E_Server_Test < Minitest::Test
 		    app := Web_App()
 		TAPE
 
-		@interpreter    = Tape::Interpreter.new
+		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
@@ -335,7 +335,7 @@ class E2E_Server_Test < Minitest::Test
 		    b := Server_B(#{port_b})
 		TAPE
 
-		interpreter = Tape::Interpreter.new
+		interpreter = Drive::Interpreter.new
 		interpreter.run code
 
 		a_instance = interpreter.stack.first['a']

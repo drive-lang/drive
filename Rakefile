@@ -1,5 +1,5 @@
 require 'minitest/test_task'
-require_relative 'src/tape'
+require_relative 'drive/drive'
 require 'pp'
 
 task :default => [:test, :cloc]
@@ -11,5 +11,5 @@ Minitest::TestTask.create(:test) do |t|
 end
 
 task :cloc do
-	sh "\ncloc --quiet --force-lang-def=tape.cloc ."
+	sh "\ncloc --quiet --force-lang-def=drive.cloc --exclude-dir=temp,test ."
 end

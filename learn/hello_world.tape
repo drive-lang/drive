@@ -10,4 +10,4 @@ Greet {
 	)
 }
 
-Greet('Tape').greeting()
+@puts Greet('Drive').greeting()

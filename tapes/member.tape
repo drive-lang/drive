@@ -10,7 +10,7 @@ Member {
 	)
 
 	to_s ( compact := false;
-		# A member can genuinely hold `false` as its value (`done := false`), which is falsy in Tape -- same as `nil` under a plain truthy check (`if value`), even though only `nil` actually means "no value was ever set". Every branch below checks presence via `has_value` instead, so a real `false` value still prints as one rather than looking unset.
+		# A member can genuinely hold `false` as its value (`done := false`), which is falsy in Drive -- same as `nil` under a plain truthy check (`if value`), even though only `nil` actually means "no value was ever set". Every branch below checks presence via `has_value` instead, so a real `false` value still prints as one rather than looking unset.
 		has_value := value != nil
 
 		# A func-signature member's `type` is a raw Func_Signature, not a Type -- it has no `@display_name`

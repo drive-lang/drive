@@ -26,7 +26,7 @@ not what it points at).
 ###
 @assert @.object_id =>= Number, 'object_id is a number'
 @assert @.size_in_bytes =>= Number, 'size_in_bytes is a number'
-@assert @root_path.end_with?('tape-lang'), 'root is the project path'
+@assert not @root_path.empty?(), 'root_path is the absolute path to the project directory'
 
 
 ### `@.to_s()` -- a context prints as `@<name>`

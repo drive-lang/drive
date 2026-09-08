@@ -1,6 +1,6 @@
 ### Introduction
 
-Capitalization tells Tape what something is, instead of a keyword. UPPERCASE is a constant (`ISLAND`), Capitalized is a type (`Survivor`), lowercase is a variable or function (`name`, `push_button`). A type is declared with `Identifier { body }` -- no `class` keyword needed, the capital letter already said it.
+Capitalization tells Drive what something is, instead of a keyword. UPPERCASE is a constant (`ISLAND`), Capitalized is a type (`Survivor`), lowercase is a variable or function (`name`, `push_button`). A type is declared with `Identifier { body }` -- no `class` keyword needed, the capital letter already said it.
 ###
 Survivor {
 	name,
@@ -44,7 +44,7 @@ Hatch().enter()
 
 ### Scope operators
 
-Three forms reach into a specific scope explicitly, rather than searching outward through everything in reach: `self` is the current instance only, `Self` is the current type (static members) only, `~/` is the global scope only. Each looks in exactly one place, so a name collision elsewhere can't quietly shadow the one you meant.
+Three forms reach into a specific scope explicitly, rather than searching outward through everything in reach: `self` is the current instance only, `Self` is the current type (static members) only, `Global` is the global scope only. Each looks in exactly one place, so a name collision elsewhere can't quietly shadow the one you meant.
 
 `Self` alone also calls the type as a constructor -- `Self() === Type_Name()`.
 ###
@@ -60,7 +60,7 @@ Dharma_Station {
 	)
 
 	describe (;
-		"`self.station_name` on `~/ISLAND` (station #`Self.station_count`)"
+		"`self.station_name` on `Global.ISLAND` (station #`Self.station_count`)"
 	)
 }
 
@@ -96,7 +96,7 @@ monster := Smoke_Monster('Smoke Monster', 'control the Island')
 
 ### Composition: | union
 
-Tape has no inheritance -- types compose instead, with four operators borrowed from set theory. `|` (union) merges every declaration from the right side into the left, with the LEFT side winning any name conflicts. Multiple operators chain freely:
+Drive has no inheritance -- types compose instead, with four operators borrowed from set theory. `|` (union) merges every declaration from the right side into the left, with the LEFT side winning any name conflicts. Multiple operators chain freely:
 ###
 Castaway {
 	survived_815 := true
