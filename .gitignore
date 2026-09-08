@@ -1,11 +1,8 @@
 .idea/
-.zed/
-temp/
+.claude/
+.project/
+.temporary/
+.working/
+
+.DS_Store
 *.db
-*.DS_Store
-*/**/*.DS_Store
-.claude/*
-src/odin/references/
-tapes/2nd/
-tapes/3rd/
-projects/

@@ -1,15 +1,14 @@
 ### What's here?
 
-This [`src`](.) folder contains the implementation of Drive in Ruby. Source code moves through five phases: **Lexer → Parser → Type Checker → Declarator → Interpreter.** `Interpreter` (`drive/runtime/interpreter.rb`) is the entry point: it owns a `Lexer` and `Parser`, drives all five phases via `run(source)`, and holds all execution state.
+This [`drive`](.) folder contains the implementation of Drive in Ruby. Source code moves through five phases: **Lexer → Parser → Type Checker → Declarator → Interpreter.** The phases are numbered folders, in run order.
 
-Rather than listing individual files here (they move around; check the directory itself for the current contents), here's what each one is for:
+- **`drive.rb`**: the entry point. Requires everything in load order, then exposes the `Drive` module's convenience methods (`Drive.lex`, `Drive.parse`, `Drive.interp`, and their `_file` counterparts).
+- **`cli.rb`** / **`repl.rb`**: `Drive::CLI` (the `bin/drive` commands) and `Drive::REPL`.
+- **`1_lexer/`** … **`5_interpreter/`**: one folder per pipeline phase. `5_interpreter/` also holds the scope hierarchy (`scopes.rb`: Global, Type, Instance, Func, Route, …), the error classes, the DOM renderer, the hot reloader, and the browser assets — everything the executor needs at runtime.
+- **`backings/`**: the Ruby class behind a built-in `.tape` type (`backings/array.rb` ↔ `tapes/array.tape`), which `@ruby` proxy methods delegate into.
+- **`shared/`**: constants, mixins, and helpers pulled in across phases (`constants.rb`, `helpers.rb`, `ascii.rb`, `ruby_proxies.rb`, `error_formatter.rb`, `documenter.rb`, …).
 
-- **`compiler/`**: turns Drive source into a type-checked AST (tokenizing, parsing, static type checking, and the forward-declaration pass that lets code reference a function or type before its own definition).
-- **`runtime/`**: executes that AST (the interpreter itself, the scope hierarchy: Global, Type, Instance, Func, Route, etc., and runtime error definitions).
-- **`external/ruby/`**: Ruby-backed implementations of Drive's built-in types (`String`, `Array`, `Number`, etc.) that Drive-level proxy methods delegate into.
-- **`systems/`**: larger subsystems layered on top of the interpreter, e.g. HTML rendering.
-- **`shared/`**: constants and helper functions used across every phase.
-- **`tape.rb`**: the entry point. Requires everything and exposes the `Drive` module's convenience methods (`Drive.lex`, `Drive.parse`, `Drive.interp`, and their `_file` counterparts).
+The two Ruby modules: **`Drive::`** is the engine (the 10 pipeline/tool classes, each with `include Tape`); **`Tape::`** is everything the engine reads and makes (the AST, the scope hierarchy, the built-in value types, the errors, the constants).
 
 ---
 

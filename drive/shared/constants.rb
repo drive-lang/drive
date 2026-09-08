@@ -5,7 +5,7 @@ module Tape
 	HTTP_VERBS                        = %w(get put patch post delete head options connect trace)
 	VOID_HTML_TAGS                    = %w(area base br col command embed hr img input keygen link meta param source track wbr)
 	HTTP_VERB_SEPARATOR               = '://'
-	# Every `@` (Context) member is defined once, on Tape::Context (see drive/external/ruby/context.rb):
+	# Every `@` (Context) member is defined once, on Tape::Context (see drive/backings/context.rb):
 	# Context::MEMBERS, and the derived Context::FUNCTIONS / ::STACK_FUNCTIONS / ::VITALS.
 	CONTEXT_OPERATOR                  = '@'
 	CONTEXT_ARG_TERMINATORS           = %W( \n \r \) \} \] \, \; )

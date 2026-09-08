@@ -29,9 +29,9 @@ module Drive
 		        -h | --help           Show help instructions
 
 		    EXAMPLES:
-		        drive learn/hello_world.tape -p
+		        drive demos/hello_world.tape -p
 		        drive lex "x = 5 + 3" -p
-		        drive parsef learn/hello_world.tape -p
+		        drive parsef demos/hello_world.tape -p
 		        drive interp "4815" -p
 		INST
 
@@ -86,8 +86,12 @@ module Drive
 			else
 				hot_reload @command
 			end
-		rescue Errno::ENOENT
-			$stderr.puts "Could not find file `#{@arg || @command}`"
+		rescue Errno::ENOENT => e
+			# The missing file might be the one the CLI was told to run, or one the program itself
+			# tried to open (File_System.read, @load). Errno::ENOENT names the real path in its
+			# message ("... - <path>"); fall back to the CLI argument only if that isn't there.
+			missing = e.message.include?(' - ') ? e.message.split(' - ').last : (@arg || @command)
+			$stderr.puts "Could not find file `#{missing}`"
 			exit 1
 		rescue Tape::Error => e
 			$stderr.puts e.message

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Working Relationship
 
-User writes the code and **Claude starts in PM/advisor mode**: help maintain `todos.md`, track what's in flight, surface language gaps worth prioritizing, review approach, and act as a sounding board for design decisions — don't jump into implementation unprompted, even when a task looks small or the next step seems obvious. Only write code, run the implementation, or make edits to source/`.tape` files when explicitly asked to act as an assistant for that task. Write a changelog only when asked to.
+The user writes the code. Claude advises by default: review the approach, surface gaps, act as a sounding board — but do not start implementation unprompted, even when a task looks small or the next step seems obvious. Only write code, run the implementation, or edit source / `.tape` files when the user explicitly asks. Write a changelog only when asked.
 
-This is a side project (sometimes PRs — other times commit straight to `main`), and keeping it feeling like one matters: the point is to push the language toward its vision himself, hitting real gaps under real workloads (see the `hockey-sim port` entry in `todos.md`), not delegating that discovery process away.
+This is a side project. Some changes go through PRs, others commit straight to `main`. The user drives the language's direction; Claude does not track a roadmap.
 
 ## About Drive
 
@@ -28,7 +28,7 @@ Drive is an educational programming language for web development, implemented in
 bundle exec rake test
 
 # Run specific test file
-ruby test/lexer_test.rb
+ruby tests/lexer_test.rb
 
 # Run all tests and cloc
 bundle exec rake
@@ -37,7 +37,7 @@ bundle exec rake
 CI=1 bundle exec rake test
 ```
 
-The suite is serial (~6s). 5 `hot_reload_test.rb` tests boot a real WEBrick server (~2s); they're `remove_method`'d unless `ENV['CI']` (see the `CI_ONLY` list at the bottom of that file), leaving one placeholder skip. `rake test` locally = `915 runs, 1 skip`; GitHub Actions (sets `CI`) and `CI=1 rake test` = all 919. `database_test.rb`/`server_test.rb` are fast and always run.
+The suite is serial (~8s). 5 `hot_reload_test.rb` tests boot a real WEBrick server (~2s); they're `remove_method`'d unless `ENV['CI']` (see the `CI_ONLY` list at the bottom of that file). `rake test` locally ~ `966 runs, 0 skips`; GitHub Actions (sets `CI`) and `CI=1 rake test` ~ `971`. `database_test.rb`/`server_test.rb` are fast and always run.
 
 ### Running Drive Programs
 
@@ -75,53 +75,34 @@ Five phases: **Lexer → Parser → Type Checker → Forward Declarator → Inte
 - A `Tape` file names an engine class explicitly — `Drive::Interpreter`, `Drive::ROOT_PATH` (a few sites in `declarator.rb`, `error_formatter.rb`, `hot_reloader.rb`, `table.rb`). The reverse is the `include Tape` above.
 - Mnemonic: a Drive runs a tape. `bin/drive` is the CLI; `tapes/`, `.tape`, and `@load` paths are unchanged.
 
-### Compile-time (drive/compiler/)
+### Directory layout — `drive/`
 
-Source code is tokenized, parsed into an AST, and statically type checked:
+The pipeline phases are numbered folders, in run order. `drive/drive.rb` requires everything in that order (it *is* the load-order spec). Anything not in the pipeline gets no number.
 
-- `lexer.rb` - Tokenizes source code into lexemes (tokens)
-- `parser.rb` - Parses lexemes into an AST of expression objects
-- `lexeme.rb` - Token representation
-- `expressions.rb` - AST node definitions
-- `type_checker.rb` - Static type checker; runs on the AST before interpretation
-- `declarator.rb` - Builds `Interpreter#declarations`, the table `#resolve_forward_declaration` lazily interprets from — see Forward Declarations below
-
-### Runtime (drive/runtime/)
-
-The AST is executed to produce output:
-
-- `interpreter.rb` - The running program; owns `@lexer`, `@parser`, and all execution state (`stack`, `routes`, `servers`, `cached_expressions_by_filepath`, etc.); `run(source)` is the entry point; handles file loading via `load_file_into_scope`
-- `scopes.rb` - All scope types and built-in types:
-	- `Global < Scope` - The global scope; pushed as the bottom of the stack on first `run`; standard library declarations live here
-	- `Type`, `Instance`, `Func`, `Route`, `Return` - Scope hierarchy
-	- `String`, `Array`, `Number`, `Dictionary`, `Server`, `Table`, `Database`, etc. - Built-in types. The newer ones live in `drive/external/ruby/` instead (`set.rb`, `range.rb`, `number.rb`, `struct.rb`, `statement.rb`, `enum.rb`, `temporal.rb`, ...), each paired with a `.tape` file
-- `errors.rb` - Runtime error definitions
-
-### Systems (drive/systems/)
-
-- `server_runner.rb` - HTTP server implementation using WEBrick (routing, URL params, query strings)
-- `dom_renderer.rb` - HTML rendering for `Dom` composition
-
-### Shared (drive/shared/)
-
-- `constants.rb` - Language constants, operators, precedence table, reserved words
-- `helpers.rb` - Utility functions for identifier classification (constant_identifier?, type_identifier?, member_identifier?)
-
-### Entry Point
-
-- `drive/drive.rb` - Requires all components; exposes convenience methods:
-	- `Drive.lex(source)` / `Drive.lex_file(filepath)` - Tokenize only
-	- `Drive.parse(source)` / `Drive.parse_file(filepath)` - Parse to AST
-	- `Drive.interp(source)` / `Drive.interp_file(filepath)` - Full execution
+- `drive.rb` — entry point; requires all components, then defines `Drive.lex`/`.parse`/`.declare`/`.interp` (+ `_file` variants), `ROOT_PATH`, `STANDARD_LIBRARY_PATH`, `VERSION`
+- `cli.rb` — `Drive::CLI` (the `bin/drive` commands)
+- `repl.rb` — `Drive::REPL`
+- `1_lexer/` — `lexer.rb` (`Drive::Lexer`: source → tokens), `lexeme.rb` (`Tape::Lexeme`)
+- `2_parser/` — `parser.rb` (`Drive::Parser`: tokens → AST), `expressions.rb` (`Tape::Expression` + every `*_Expr`)
+- `3_type_checker/` — `type_checker.rb` (`Drive::Type_Checker`: static checks on the AST)
+- `4_declarator/` — `declarator.rb` (`Drive::Declarator`: builds `Interpreter#declarations` for forward resolution — see Forward Declarations)
+- `5_interpreter/` — the AST executor and everything it needs at runtime:
+	- `interpreter.rb` — `Drive::Interpreter`, the running program; owns `@lexer`/`@parser`, `stack`, `routes`, `servers`, `cached_expressions_by_filepath`; `run(source)` is the entry point
+	- `scopes.rb` — the scope hierarchy: `Tape::Scope`, `Global < Scope` (bottom of the stack, holds the stdlib), `Type`, `Instance`, `Func`, `Route`, `Return`, `Any`, `Nil`, `Bool`, `Server`, `Request`, `Response`
+	- `errors.rb` — runtime + compile error classes; `func_signature.rb`, `return.rb` — small runtime value types
+	- `dom_renderer.rb` — `Drive::Dom_Renderer`, HTML for `Dom` composition; `hot_reloader.rb` — `Drive::Hot_Reloader`, file-watch + re-run
+	- `dom.js`, `live_reload.js`, `view_transition.css` — browser assets `interpreter.rb` serves (read by literal path `drive/5_interpreter/…`)
+- `backings/` — the Ruby class behind a built-in `.tape` type (`string.rb` ↔ `tapes/string.tape`, …): `string array number range set dictionary struct context enum statement member file_system temporal database table`. Each is `class X < Instance` inside `module Tape`.
+- `shared/` — pulled in across the codebase: `constants.rb` (`module Tape`: operators, precedence, reserved words), `helpers.rb` (`module Helpers`: identifier casing, `assert`), `ascii.rb` (`Tape::Ascii`), `ruby_proxies.rb`, `declaration_accessors.rb`, `cached_by_path.rb`, `error_formatter.rb` (`Tape::Error_Formatter`), `documenter.rb` (`Drive::Documenter` — a separate doc-comment pass, not in the run pipeline)
 
 ### Standard Library
 
 - `tapes/global.tape` - Auto-loaded when `load_standard_library` is `true` (default) — lands in its own `Standard_Library` scope added to Global's readable scope, not as direct Global declarations (see Splatting a Scope below)
-- Standard library path defined in `Tape::STANDARD_LIBRARY_PATH`
+- Standard library path defined in `Drive::STANDARD_LIBRARY_PATH`
 
 ## Type Checker
 
-The type checker (`drive/compiler/type_checker.rb`) runs between the parser and interpreter. It is invoked from `Interpreter#output` before the execution loop, so it also runs on files loaded via `@load`.
+The type checker (`drive/3_type_checker/type_checker.rb`) runs between the parser and interpreter. It is invoked from `Interpreter#output` before the execution loop, so it also runs on files loaded via `@load`.
 
 ### What it checks
 
@@ -200,7 +181,7 @@ result             # 42
 a := 123
 ```
 
-### `Declarator` (`drive/compiler/declarator.rb`)
+### `Declarator` (`drive/4_declarator/declarator.rb`)
 
 Walks the whole top-level AST once, before interpretation (invoked from `Interpreter#output`, same spot `Type_Checker` runs from), building `Interpreter#declarations`: `Hash{::String => Tape::Declaration}`. `Tape::Declaration = Data.define(:key, :expr_or_decl, :expr)` — `expr` is always the *original* expression (what would need to be `interpret`ed to actually bring the declaration into being); `expr_or_decl` is a more inspectable rendering (a nested Hash for a `Type_Expr`/`Func_Expr`/`Route_Expr` body, the raw value expression for `:=`/`=`, etc.). Inspect either directly via `bin/drive declare <code>` / `declaref <file>`.
 
@@ -223,7 +204,7 @@ The consuming side lives in `#interp_identifier`'s final `else` branch — the c
 
 - **Hoistable vs. not** — `HOISTABLE_EXPRESSIONS` (`Func_Expr`, `Type_Expr`, `Route_Expr`, `Struct_Expr`, `Func_Signature_Expr`, `Operator_Expr`, `Operator_Overload_Expr`; lives on `Interpreter`, not `constants.rb` — it references `Expression` subclasses, and `constants.rb` loads before `expressions.rb` does) are declarative and order-independent, so running one early changes nothing about what the program means. `#hoistable_declaration_expr?` also unwraps one level of `:=`/`=` to catch `This := That {}` (see Runtime Type Contracts above, "Class-styled identifier assigned a Scope value") — same declarative category as a bare `Type_Expr`, just spelled through an assignment. A *named* `@load` (`Ident := @load 'file'` / `IDENT := @load 'file'`) is checked the same way, but additionally requires a Capitalized/UPPERCASE left-hand name (`Drive.type_of_identifier`) — a lowercase `mod := @load 'file'` stays a plain variable, not hoisted. A *bare* `@load` (no assignment at all) is checked separately, via `#bare_load_directive_expr?` — always hoistable, since there's no left-hand name to apply a casing rule to; kept out of `#hoistable_declaration_expr?`'s own recursive unwrap specifically so it can't leak permissiveness into the named/casing-restricted case. Anything else — a plain `x := 5`, `x := some_call()`, `ident,` — is a step in the program's own imperative order, and reading it before that step runs is a bug in the *program*; forward-resolving it anyway would silently paper over that instead of raising
 - **Guards against double execution** — forcing a declaration marks its `.expr` in `@forced_declarations` (identity-tracked, a plain `Set` — `Expression` doesn't override `hash`/`eql?`); `#output`'s own top-level walk skips any expression already in that set when it reaches it for real, so a forced function/type/`@load` only ever runs once. That skip has to *keep* the running result (`result` in `input.each.inject(nil) { |result, expr| ... }`), not reset it via a bare `next` — otherwise, if the skipped statement happens to be the file's *last* one, the whole program's reported result silently becomes `nil` instead of the true last value
-- **Only fires when Global is actually reachable** — guarded by `stack.any? { |s| s.equal? global }` (identity check, not `#include?`, which is `==` and can hit an Drive type's own overload — e.g. `Tape::Array#==` assumes its operand also has `.values`). A plain `x.y` dot access deliberately excludes Global from its lookup (`#interp_dot_scope`'s `exclude_global_scope: true`, see Scope System below) specifically so a member missing on `x` stays missing — without this guard, forward-resolution would quietly reach past that exclusion and resolve to an unrelated global of the same name. Consequence worth knowing: a plain identifier reference (`This()`) hoists, but a `.method()` call doesn't independently hoist the method it's calling — `sign.warning()` only works once `warning`'s own declaration has actually been reached, even if `sign`'s type was itself forced early (see `learn/forward_declarations.tape`)
+- **Only fires when Global is actually reachable** — guarded by `stack.any? { |s| s.equal? global }` (identity check, not `#include?`, which is `==` and can hit an Drive type's own overload — e.g. `Tape::Array#==` assumes its operand also has `.values`). A plain `x.y` dot access deliberately excludes Global from its lookup (`#interp_dot_scope`'s `exclude_global_scope: true`, see Scope System below) specifically so a member missing on `x` stays missing — without this guard, forward-resolution would quietly reach past that exclusion and resolve to an unrelated global of the same name. Consequence worth knowing: a plain identifier reference (`This()`) hoists, but a `.method()` call doesn't independently hoist the method it's calling — `sign.warning()` only works once `warning`'s own declaration has actually been reached, even if `sign`'s type was itself forced early (see `demos/forward_declarations.tape`)
 - **`#global`** — a dedicated reference set once when Global is created, independent of `stack` (which `#interp_member_access` temporarily swaps out during dot-access resolution — `stack.first` isn't reliably Global during that window)
 - **`declarations` is saved/restored around `#load_file_into_scope`'s recursive `#output` call**, same as `@input` already was — otherwise loading a file (`@load`, especially the `x := @load 'file'` isolated-scope form) would overwrite the outer program's own `declarations` with the loaded file's, and forward-resolution would leak names declared inside an isolated module scope straight onto Global
 
@@ -233,7 +214,7 @@ The consuming side lives in `#interp_identifier`'s final `else` branch — the c
 
 ## Scope System
 
-Drive uses a scope hierarchy, all defined in `drive/runtime/scopes.rb`:
+Drive uses a scope hierarchy, all defined in `drive/5_interpreter/scopes.rb`:
 
 - **Global** - The global scope; pushed as the bottom of `Interpreter#stack` on first `run`; standard library declarations live here; execution state (routes, servers, loaded files, etc.) lives directly on `Interpreter`
 - **Type** - Class definitions (tracks `@types`, `@expressions`)
@@ -434,7 +415,7 @@ Implemented once in `#interp_comparison_infix` (`interpreter.rb`), checked up fr
 
 ## Structs
 
-`<...>` attaches runtime-inspectable metadata (a "struct") to a standalone value or a reference to an existing type. Parsed by `parse_struct` in `parser.rb` into `Tape::Struct_Expr`; interpreted by `interp_struct` in `interpreter.rb` into an `Tape::Struct` instance (`drive/external/ruby/struct.rb` — no paired `.tape` file; `tapes/struct.tape` + `tapes/member.tape` are a separate, higher-level `Member`/`Struct` layer built on top of it, loaded by default via `tapes/global.tape`).
+`<...>` attaches runtime-inspectable metadata (a "struct") to a standalone value or a reference to an existing type. Parsed by `parse_struct` in `parser.rb` into `Tape::Struct_Expr`; interpreted by `interp_struct` in `interpreter.rb` into an `Tape::Struct` instance (`drive/backings/struct.rb` — no paired `.tape` file; `tapes/struct.tape` + `tapes/member.tape` are a separate, higher-level `Member`/`Struct` layer built on top of it, loaded by default via `tapes/global.tape`).
 
 Tagging a *Type* declaration/reference itself — as opposed to a standalone struct value — goes through `\` (`Tape::TAG_OPERATOR`, `drive/shared/constants.rb`) instead of bare `<...>`, to stay unambiguous from a lone unnamed Struct-valued member (see "Each declared tag is its own type" below) and from ordinary comparisons. `\`'s RHS is resolved by `#resolve_tag_node` (`interpreter.rb`; `#resolve_tag_reference` is a thin `expr.tag` → `#resolve_tag_node` delegator), dispatched from `interp_type`/`#interp_tagged_type_declaration`:
 
@@ -572,9 +553,9 @@ An **empty `Name <>`** is a forward declaration: a later `Name <...full...>` fil
 
 ## Enums (not finalized — don't rely on yet)
 
-`TYPE_IDENTIFIER [ ... ]` declares an `Tape::Enum` (`Tape::Enum_Expr` in the parser, `#parse_enum_expr`; `#interp_enum`/`#build_enum`/`#build_enum_member` in `interpreter.rb`; backing Drive body in `tapes/enum.tape`, Ruby class in `drive/external/ruby/enum.rb`). Members can be bare (`TODO`), bare with a trailing comma (`BUG,`), type-annotated only (`DONE: Priority`), type-annotated with a value (`CANCELLED: Priority = 99`), self-declared with a value (`ARCHIVED := 'archived'`), or a nested enum (`Nested [ A, B ]`, reachable only as `Outer.Nested`). A bare/annotated-only member's value is a Symbol matching its own name. The enum's reflective data is `@`-only — `@.keys`/`@.values`/`@.types` (parallel Arrays), `@.type` (forced type, currently always nil), `@.count` — held as plain Ruby ivars (`enum_keys`/`enum_values`/`enum_types`/`enum_type`) on `Tape::Enum`, not `@declarations`, so a member named `KEYS`/`TYPES` can't clash. `#fill_context`'s Enum branches (`#context_types_for` / `#context_type_for` / `#context_values_for` + direct `keys`/`count`) copy them onto the enum's `Context`. `@.composed_types` still gives the ordinary composed-type `Set` (`Set{enum_name}`).
+`TYPE_IDENTIFIER [ ... ]` declares an `Tape::Enum` (`Tape::Enum_Expr` in the parser, `#parse_enum_expr`; `#interp_enum`/`#build_enum`/`#build_enum_member` in `interpreter.rb`; backing Drive body in `tapes/enum.tape`, Ruby class in `drive/backings/enum.rb`). Members can be bare (`TODO`), bare with a trailing comma (`BUG,`), type-annotated only (`DONE: Priority`), type-annotated with a value (`CANCELLED: Priority = 99`), self-declared with a value (`ARCHIVED := 'archived'`), or a nested enum (`Nested [ A, B ]`, reachable only as `Outer.Nested`). A bare/annotated-only member's value is a Symbol matching its own name. The enum's reflective data is `@`-only — `@.keys`/`@.values`/`@.types` (parallel Arrays), `@.type` (forced type, currently always nil), `@.count` — held as plain Ruby ivars (`enum_keys`/`enum_values`/`enum_types`/`enum_type`) on `Tape::Enum`, not `@declarations`, so a member named `KEYS`/`TYPES` can't clash. `#fill_context`'s Enum branches (`#context_types_for` / `#context_type_for` / `#context_values_for` + direct `keys`/`count`) copy them onto the enum's `Context`. `@.composed_types` still gives the ordinary composed-type `Set` (`Set{enum_name}`).
 
-**Syntactically present, but the type system isn't enforced yet**: each member's own `: Type` annotation is stored but never checked against anything — `Task_Type [ BUG: String = 'oops' ]` declares and constructs without error. The older forced-type spelling (`TYPE_IDENT :: Type { ... }`) doesn't exist anymore — `#parse_enum_expr` no longer parses a forced type at all, so `.type` is currently always `nil`. See the todos.md entry for finalizing this. Don't build real functionality on top of Enum type annotations until that's resolved.
+**Syntactically present, but the type system isn't enforced yet**: each member's own `: Type` annotation is stored but never checked against anything — `Task_Type [ BUG: String = 'oops' ]` declares and constructs without error. The older forced-type spelling (`TYPE_IDENT :: Type { ... }`) doesn't exist anymore — `#parse_enum_expr` no longer parses a forced type at all, so `.type` is currently always `nil`. Don't build real functionality on top of Enum type annotations until that's resolved.
 
 ## Destructuring
 
@@ -622,14 +603,14 @@ cool := 2342
 
 ## `@` is `Context` — a filled struct
 
-`@` resolves to the current scope's `Context` (`#context_for`, cached on `Scope#context`). `Context` is declared in `tapes/context.tape` as a **plain bare named struct** (`Context <name: String, …, to_s: (-> String;), puts: (Args -> Args;), …>`) — `Tape::Context < Tape::Struct` (`drive/external/ruby/context.rb`) with **no `proxy_*` methods**. `#context_for` builds one per scope and `#fill_context` populates every member:
+`@` resolves to the current scope's `Context` (`#context_for`, cached on `Scope#context`). `Context` is declared in `tapes/context.tape` as a **plain bare named struct** (`Context <name: String, …, to_s: (-> String;), puts: (Args -> Args;), …>`) — `Tape::Context < Tape::Struct` (`drive/backings/context.rb`) with **no `proxy_*` methods**. `#context_for` builds one per scope and `#fill_context` populates every member:
 
 - **reflective vitals** (`name`, `display_name`, `composed_types`, `types`, `type`, `object_id`, `size_in_bytes`, `root`, `static_declarations`, and the Struct/Enum-only `names`/`type_names`/`values`/`members`/`keys`/`count`) — computed values, snapshot at first `@` access, not read live. `#context_types_for` / `#context_type_for` / `#context_values_for` mirror the Struct/Enum branches.
 - **function members** — `to_s`, `puts`, `sleep`, `assert`, `refute`, `connect`, `start_server`, `stop_server`, plus the stack functions `load`, `declare`, `push_scope`, `pop_scope`, and the splat trio `splat` / `splatr` / `unsplat` (see Splatting a Scope below). `#fill_context` gives each a **synthesized callable stand-in** — a `Tape::Func` with **no body**, carrying `#context_function_name` (the member name). It synthesizes them from the constant, not the parsed declaration, so `@load` / `@push_scope` work during the stdlib bootstrap before `Context` itself is declared.
 
 ### `Tape::Context::MEMBERS` — the one source of truth
 
-Every `@` member is defined once, on `Tape::Context` (`drive/external/ruby/context.rb`): `MEMBERS` maps each name to `{}` (a reflective vital), `{ fn: :intrinsic }` (dispatched via `#interp_intrinsic`), `{ fn: :stack }` (runs in the caller's frame via `#interp_context_stack_function`), or `{ fn: :stack, alias_of: '…' }` (same, name-resolved first). `Context::FUNCTIONS` / `::STACK_FUNCTIONS` / `::VITALS` are all derived from it (`.select`); `constants.rb` no longer holds those lists. There are no aliases any more. `tapes/context.tape` is the hand-written mirror — its `name: (signature)` members carry the docs and drive `#stringify_context`'s `@` display and `#fill_context`'s vital list; `test/context_test.rb` asserts its member names equal `MEMBERS.keys`. Adding a member means one `MEMBERS` entry plus one `context.tape` line, and the test fails if you forget either.
+Every `@` member is defined once, on `Tape::Context` (`drive/backings/context.rb`): `MEMBERS` maps each name to `{}` (a reflective vital), `{ fn: :intrinsic }` (dispatched via `#interp_intrinsic`), `{ fn: :stack }` (runs in the caller's frame via `#interp_context_stack_function`), or `{ fn: :stack, alias_of: '…' }` (same, name-resolved first). `Context::FUNCTIONS` / `::STACK_FUNCTIONS` / `::VITALS` are all derived from it (`.select`); `constants.rb` no longer holds those lists. There are no aliases any more. `tapes/context.tape` is the hand-written mirror — its `name: (signature)` members carry the docs and drive `#stringify_context`'s `@` display and `#fill_context`'s vital list; `tests/context_test.rb` asserts its member names equal `MEMBERS.keys`. Adding a member means one `MEMBERS` entry plus one `context.tape` line, and the test fails if you forget either.
 
 **There is no "directive" concept.** `@word a, b` / `@word(a, b)` parses (`#parse_context_call`) as an ordinary `Call_Expr` on `@.word`; bare `@word` (a value-producing function or a reflective vital) stays a `@.word` reference so `p := @puts` captures it. `@operator … @infix …` is its own declaration form (`#parse_operator_overload` → `Operator_Overload_Expr`); `@ruby` is a magic identifier in a func body (`#interp_ruby_proxy`, real Ruby proxies only); `@splat` / `@splatr` in a param list are annotations. `Directive_Expr` / `#interp_directive` / `DIRECTIVES_WITH_OPERAND` / `CONTEXT_INTRINSICS` are all gone.
 
@@ -662,7 +643,7 @@ Thing.label             # Undeclared_Identifier -- `.` is user-space only, `@x` 
 
 ## Statement Expressions
 
-`` `expr` `` wraps any expression without running it — an `Tape::Statement`, callable later with `()`. Parsed by `#parse_statement_expr` (`parser.rb`) into `Tape::Statement_Expr`; interpreted by `#interp_statement` (`interpreter.rb`) into an `Tape::Statement` instance (`drive/external/ruby/statement.rb` + `tapes/statement.tape`).
+`` `expr` `` wraps any expression without running it — an `Tape::Statement`, callable later with `()`. Parsed by `#parse_statement_expr` (`parser.rb`) into `Tape::Statement_Expr`; interpreted by `#interp_statement` (`interpreter.rb`) into an `Tape::Statement` instance (`drive/backings/statement.rb` + `tapes/statement.tape`).
 
 ```tape
 `1+2`()                    # 3 — written and called in the same place, evaluates immediately
@@ -700,7 +681,7 @@ dynamic.use_caller_scope = true
 Slacker(dynamic).live_count()    # 4 — resolves Slacker's *own* count member instead (0 -> 4); outer count untouched
 ```
 
-- `.use_caller_scope = true` switches a Statement from captured (predictable, closure-like) to dynamic (resolves fresh at every call site) — see `learn/statements.tape`
+- `.use_caller_scope = true` switches a Statement from captured (predictable, closure-like) to dynamic (resolves fresh at every call site) — see `demos/statements.tape`
 - `.memoize = true` caches the first `()` result and returns it on every call after that, instead of re-running — `Memoized_Statement`/`Memoizer` no longer exist as separate types, this replaced them
 - `Statement(other)` adopts `other`'s wrapped expression, `captured_scope`, and settings rather than re-capturing "wherever this `Statement(...)` call happens to be written" — `Statement(x+1)` behaves exactly like writing `` `x+1` `` directly (`Tape::Statement#proxy_from`, called from `tapes/statement.tape`'s `Self(;)`)
 
@@ -767,7 +748,7 @@ f(1, 2, 3)            # (1, [2, 3])
 
 - A variadic param takes the whole unconsumed positional tail; params declared *after* it get named args, defaults, or `Missing_Argument` — never positionals.
 - `rest := <value>` at a call site: an Array spreads into the tail, anything else raises `Type_Contract_Violation` (expected `Arguments`).
-- **The nicety**: when a func has a variadic param, an unknown named arg (`h(value := 5)`, no `value` param) binds by its own name into the call scope instead of raising `Unknown_Named_Argument`. A variadic body can't rely on any given name being set — this is for the directive-proxy shape in the `@`/Context redesign (see todos.md).
+- **The nicety**: when a func has a variadic param, an unknown named arg (`h(value := 5)`, no `value` param) binds by its own name into the call scope instead of raising `Unknown_Named_Argument`. A variadic body can't rely on any given name being set — this is for the directive-proxy shape in the `@`/Context redesign.
 - Override `Arguments#push` (in `tapes/array.tape`) for a typed variadic.
 - The static `Type_Checker` skips a func with a variadic param entirely.
 
@@ -940,13 +921,13 @@ Four range operators, all built on the same `...`/`..<`/`>..`/`>.<` family (`RAN
 
 **Endless / beginless.** A range operator with no operand on one side is open-ended: `2...` (nil end, `expr.right` nil — parsed in `#complete_expression`) or `...3` / `..<-1` (nil start, `expr.left` nil — parsed in `#begin_expression`, `...`/`..<` only). `#interp_range_infix` reads a nil side as a nil `::Range` endpoint. Iterating (`for`, `.to_a`) an endless one loops forever; slicing is fine. The lexer treats a range operator as terminal (`break if RANGE_OPERATORS.include? it` in `#lex_operator`) so `xs[...-1]` lexes `...` then a prefix `-`, not one glued `...-`.
 
-`Tape::Range` is an ordinary Instance (`drive/external/ruby/range.rb`, `tapes/range.tape`), not a `::Range` subclass — it wraps the real `::Range` in `.range` and has full type identity (`(1...5) === Range`), a `: Range` contract, and its own methods. Every Drive range is numeric and only ever built by these four operators (there's no `Range(...)` literal). See the Range entry under Built-in Types below.
+`Tape::Range` is an ordinary Instance (`drive/backings/range.rb`, `tapes/range.tape`), not a `::Range` subclass — it wraps the real `::Range` in `.range` and has full type identity (`(1...5) === Range`), a `: Range` contract, and its own methods. Every Drive range is numeric and only ever built by these four operators (there's no `Range(...)` literal). See the Range entry under Built-in Types below.
 
 **As a subscript** — `arr[1...3]` / `"abc"[0..<2]` slices an Array or String. `#interp_subscript` unwraps the `Tape::Range` to its `.range` before indexing; the sliced Array result is re-linked (`#wrap_tape_array`), an out-of-bounds start yields `nil` (Ruby semantics). Each operator keeps its own end/start behavior, so `xs[1...3]` (inclusive) is one element longer than `xs[1..<3]`. Endless (`xs[2...]`) and beginless (`xs[...3]`, `xs[...-1]` for the whole array) work; negative endpoints count from the end. A `Dictionary` range key isn't meaningful and isn't special-cased.
 
 ## Built-in Types and Intrinsic Methods
 
-Drive's built-in types (String, Array, Set, Range, Dictionary, Number) have ruby methods that delegate to Ruby's native implementations. These methods are declared using a `proxy_` prefix (see drive/shared/ruby_proxies.rb). Each has a Ruby class in `drive/external/ruby/` (or `scopes.rb` for the oldest ones) and a paired `.tape` file declaring its surface.
+Drive's built-in types (String, Array, Set, Range, Dictionary, Number) have ruby methods that delegate to Ruby's native implementations. These methods are declared using a `proxy_` prefix (see drive/shared/ruby_proxies.rb). Each has a Ruby class in `drive/backings/` (or `scopes.rb` for the oldest ones) and a paired `.tape` file declaring its surface.
 
 **Wiring a Ruby-built instance's type identity.** A `Tape::Instance` created in Ruby (`Tape::String.new` in a proxy, a numeric literal, a `Set` from `|`, ...) seeds `@types` from its Ruby class name (`"Tape::String"`), which fails every `===` / return-type check. Two shared helpers fix it, and are the only places instance `.types` gets set from a name: **`#adopt_type(instance, type_name)`** — `#link_instance_to_type` (sets `enclosing_scope` to `global[type_name]`) then `instance.types = enclosing_scope.types` (or bare `::Set[type_name]` if the global type isn't declared yet). Used by `#finish_intrinsic_instance` (which also sets `.name`), the `@ruby` proxy return, `#wrap_tape_array` / `#wrap_arguments_array`, and `#maybe_instance`'s nil branch. **`#prefix_type(scope, name)`** — puts `name` at the front of a scope's composed set, so `Ident <...>` and a named schema instance are `Ident`-shaped not just `Struct`-shaped.
 
@@ -1030,7 +1011,7 @@ dict.count()       # 3
 
 ### Set
 
-An unordered collection of unique items, backed by a Ruby `::Set` in `Tape::Set#@set` (`drive/external/ruby/set.rb`, `tapes/set.tape`). No literal syntax — build one with `Set()` / `Set([1, 2, 3])` / `Set(1...5)` / `Set(other_set)`. Loaded by `tapes/global.tape` (no `@load` needed).
+An unordered collection of unique items, backed by a Ruby `::Set` in `Tape::Set#@set` (`drive/backings/set.rb`, `tapes/set.tape`). No literal syntax — build one with `Set()` / `Set([1, 2, 3])` / `Set(1...5)` / `Set(other_set)`. Loaded by `tapes/global.tape` (no `@load` needed).
 
 ```tape
 s := Set([1, 2, 2, 3])   # {1, 2, 3} -- dedups
@@ -1049,11 +1030,11 @@ Set([1, 2, 3]) ^ Set([2, 3, 4]) # symmetric    -> Set{1, 4}
 - **Set algebra**: `union`/`intersection`/`difference`/`symmetric_difference` are Drive methods returning a fresh linked `Set` (via `Set(...)`). The `|`/`&`/`-`/`^` operators are handled by the Ruby backing — `#interp_logical_infix` / `#interp_arithmetic_infix` reach `Tape::Set#|` etc. directly (they don't consult an operand's own overloads), and `#maybe_instance`'s `when Tape::Set` branch re-links the result on the next dot access so `(a | b).values()` chains.
 - **HOF**: `each` (returns self), `map` (→ Array), `filter`/`select` (→ Set), `find`, `any?`, `all?`.
 - `for a_set` iterates its members (`#interp_for_loop`'s `when Tape::Set` → `collection.set.to_a`).
-- Polymorphic params (`merge`, `union`, ...) are annotated `: Set_Like` — `Set_Like := Set | Array | Range`, a composed alias declared at the top of `tapes/set.tape` (Drive has no inline `A | B` annotation syntax yet; see todos.md). `Tape::Set#to_ruby_set` coerces any of the three, and raises via `Drive.assert` for anything else rather than leaking a Ruby `NoMethodError`.
+- Polymorphic params (`merge`, `union`, ...) are annotated `: Set_Like` — `Set_Like := Set | Array | Range`, a composed alias declared at the top of `tapes/set.tape` (Drive has no inline `A | B` annotation syntax yet). `Tape::Set#to_ruby_set` coerces any of the three, and raises via `Drive.assert` for anything else rather than leaking a Ruby `NoMethodError`.
 
 ### Range
 
-A numeric range (`drive/external/ruby/range.rb`, `tapes/range.tape`), `Tape::Range < Instance` wrapping a Ruby `::Range` in `.range`. Only ever built by the four range operators (see Ranges above) — no `Range(...)` literal.
+A numeric range (`drive/backings/range.rb`, `tapes/range.tape`), `Tape::Range < Instance` wrapping a Ruby `::Range` in `.range`. Only ever built by the four range operators (see Ranges above) — no `Range(...)` literal.
 
 ```tape
 r := 1...5
@@ -1101,7 +1082,7 @@ Mirrors Ruby's numeric tower. `Number` is the abstract base (Ruby's `Numeric` ro
 
 Properties: `value` (the wrapped Ruby number). Methods: `numerator()`, `denominator()`, `to_s()`, `abs()`, `floor()`, `ceil()`, `round()`, `sqrt()`, `even?()`, `odd?()`, `to_i()`, `to_f()`, `clamp(min, max)`. (No `type` — dropped; use `=== Integer` / `.value.class`-equivalents.)
 
-Defined in `tapes/number.tape`, implemented in `drive/external/ruby/number.rb`. `Number#initialize` coerces a non-`Numeric` argument to `0` — `#interp_ruby_proxy` builds a throwaway `ruby_class.new(type_name_string)` when dispatching a static proxy (`Integer.rand`).
+Defined in `tapes/number.tape`, implemented in `drive/backings/number.rb`. `Number#initialize` coerces a non-`Numeric` argument to `0` — `#interp_ruby_proxy` builds a throwaway `ruby_class.new(type_name_string)` when dispatching a static proxy (`Integer.rand`).
 
 ### Date / Time / Date_Time
 
@@ -1127,9 +1108,9 @@ Time.now().epoch()   # Unix seconds (Time only)
 ```
 
 - **Common members**: `year`, `month`, `day`, `iso8601()`, `to_s()` (all three). `Time`/`Date_Time` add `hour`, `minute`, `second`. `Time` adds `epoch()`. `Date` adds `weekday`.
-- **Comparison**: `<`, `>`, `<=`, `>=`, `==`, `!=` all work, against another wrapper or a raw Ruby value — `Temporal#<=>` unwraps either side (`drive/external/ruby/temporal.rb`).
+- **Comparison**: `<`, `>`, `<=`, `>=`, `==`, `!=` all work, against another wrapper or a raw Ruby value — `Temporal#<=>` unwraps either side (`drive/backings/temporal.rb`).
 - **Static constructors**: `Date.today`, `Date.parse`; `Time.now`, `Time.at`, `Time.parse`; `Date_Time.now`, `Date_Time.parse`.
-- Backing bodies: `tapes/date.tape`, `tapes/time.tape`, `tapes/date_time.tape`. Ruby classes and the shared `Temporal` mixin: `drive/external/ruby/temporal.rb`. Tests: `test/temporal_test.rb`.
+- Backing bodies: `tapes/date.tape`, `tapes/time.tape`, `tapes/date_time.tape`. Ruby classes and the shared `Temporal` mixin: `drive/backings/temporal.rb`. Tests: `tests/temporal_test.rb`.
 - These are the types a `Date` / `Time` / `Date_Time` table column maps to — a value read back from such a column comes out as the matching wrapper, linked to its global type via `Table#linked_temporal` (`table.rb`).
 
 ### File_System (File I/O)
@@ -1304,20 +1285,20 @@ find ( func;
 
 ## Testing
 
-Tests use Minitest and inherit from `Base_Test` (in test/base_test.rb):
+Tests use Minitest and inherit from `Base_Test` (in tests/base_test.rb):
 
-- `test/lexer_test.rb` - Lexer tests
-- `test/parser_test.rb` - Parser tests
-- `test/interpreter_test.rb` - Interpreter tests
-- `test/type_checker_test.rb` - Static type checker tests
-- `test/composition_test.rb` - Class composition operator tests
-- `test/pipeline_test.rb` - Full lex→parse→interpret pipeline tests
-- `test/error_test.rb` - Runtime error tests
-- `test/proxies_test.rb` - Ruby Proxy method tests
-- `test/regression_test.rb` - Regression tests
-- `test/server_test.rb` - Server and routing tests
-- `test/e2e_server_test.rb` - End-to-end server tests
-- `test/database_test.rb` - Database and ORM tests
+- `tests/lexer_test.rb` - Lexer tests
+- `tests/parser_test.rb` - Parser tests
+- `tests/interpreter_test.rb` - Interpreter tests
+- `tests/type_checker_test.rb` - Static type checker tests
+- `tests/composition_test.rb` - Class composition operator tests
+- `tests/pipeline_test.rb` - Full lex→parse→interpret pipeline tests
+- `tests/error_test.rb` - Runtime error tests
+- `tests/proxies_test.rb` - Ruby Proxy method tests
+- `tests/regression_test.rb` - Regression tests
+- `tests/server_test.rb` - Server and routing tests
+- `tests/e2e_server_test.rb` - End-to-end server tests
+- `tests/database_test.rb` - Database and ORM tests
 
 The base test class provides `refute_raises` helper for asserting no exceptions.
 
@@ -1334,7 +1315,7 @@ Drive includes built-in database support with an ActiveRecord-style ORM using Se
 
 db := @connect Sqlite('./data/myapp.db')   # a real path
 db := @connect Sqlite.memory()             # ':memory:', nothing hits disk
-db := @connect Sqlite.local('demo')        # <@root_path>/temp/demo.db (adds `.db` if missing)
+db := @connect Sqlite.local('demo')        # <@root_path>/.temporary/demo.db (adds `.db` if missing)
 ```
 
 - `Sqlite(url)` builds an unconnected `Database` (`adapter`/`url` set, `connection` still nil). `@connect` interprets its argument, links it to the `Database` type, and lazily builds + caches the Sequel connection on it (`#interp_intrinsic`'s `connect` case). A second `@connect` on the same `Database` returns the same cached `Sequel::SQLite::Database`.
@@ -1403,7 +1384,7 @@ users.count()
 
 ### Implementation
 
-- Sequel + SQLite. `Database`/`Table` proxy methods: `drive/external/ruby/database.rb`, `drive/external/ruby/table.rb`. Tests: `test/database_test.rb`, plus the temporal-column round-trip in `test/temporal_test.rb`.
+- Sequel + SQLite. `Database`/`Table` proxy methods: `drive/backings/database.rb`, `drive/backings/table.rb`. Tests: `tests/database_test.rb`, plus the temporal-column round-trip in `tests/temporal_test.rb`.
 - `Database#find_table` is a `proxy_overload` — `Tape::Struct` → `#find_table_struct`, `::String` → `#find_table_named`.
 - `#table_name_for` is the single place a table name is derived from a schema struct; every struct-accepting method funnels through it, so the "must be named" assert covers all of them at once.
 
@@ -1504,7 +1485,7 @@ Css_Formatter_Visitor(minify := true).format(rule)
 
 **`Css_Formatter_Visitor`** — constructed `(indent_size := 4, minify := false)`. `format(node, depth := 0, nested_in_rule := false)` dispatches on `node`'s composed type (`=== Stylesheet`/`Style_Rule`/`At_Rule`/.../`Color`, falling back to `node.to_s()`) to a matching `format_*` method.
 
-- `nested_in_rule` decides whether `format_style_rule` synthesizes a `&` prefix on its own selectors (`format_nested_selector` — only if a selector doesn't already start with `&`/`:`) — it's passed `true` **only** from `format_style_rule`'s own recursive call over `rule.rules` (real CSS nesting, where a parent selector genuinely exists to combine with). Every other caller (`format_stylesheet`'s top-level rules, `format_at_rule`'s/`format_scope_rule`'s own body) leaves it `false`, even though those also increment `depth` — `depth > 0` alone can't tell "really nested inside another selector" apart from "just indented because an `@media`/`@scope` wraps it", which used to wrongly synthesize `&` in the latter case too (bugs.md).
+- `nested_in_rule` decides whether `format_style_rule` synthesizes a `&` prefix on its own selectors (`format_nested_selector` — only if a selector doesn't already start with `&`/`:`) — it's passed `true` **only** from `format_style_rule`'s own recursive call over `rule.rules` (real CSS nesting, where a parent selector genuinely exists to combine with). Every other caller (`format_stylesheet`'s top-level rules, `format_at_rule`'s/`format_scope_rule`'s own body) leaves it `false`, even though those also increment `depth` — `depth > 0` alone can't tell "really nested inside another selector" apart from "just indented because an `@media`/`@scope` wraps it", which used to wrongly synthesize `&` in the latter case too.
 - `Color`'s shorthand branch (`node.hex.has_all_same_characters?()`) relies on String's positional dot-index (`node.hex.0 * 3` — see the String section above) to repeat a single character three times; the plain branch just returns `node.hex` as-is.
 
 **`Css_Lint_Visitor | Warnings_Visitor`** — `lint(node)` resets `self.warnings` then walks, checking each `Property` for a duplicate name (within the same `Style_Rule`), a hardcoded vendor prefix (`-webkit-`/`-moz-`/`-ms-`/`-o-`), and a redundant zero-unit (`"0px"` where `"0"` would do) via `ZERO_UNITS`/`.any?`. Recurses into `Stylesheet.rules`, `Style_Rule.rules`, `Scope_Rule.rules`, and `At_Rule.body` (when it's an Array). When handed a whole `Stylesheet`, it also runs `check_animation_transform_clash` — a cascade check, not a formatting one: a state rule (`.card:hover`, `:focus`, … — `STATE_PSEUDOS`) that sets `transform` while the base selector (`.card`) runs an `animation`/`animation-name` whose `@keyframes` steps also animate `transform` warns, because the running animation recomputes `transform` every frame and the hover value never shows. Needs the full sheet in view (keyframes + both rules), so it only fires at `Stylesheet` level.

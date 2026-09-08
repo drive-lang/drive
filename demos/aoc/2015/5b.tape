@@ -1,0 +1,57 @@
+###
+--- Part Two
+
+Realizing the error of his ways, Santa has switched to a better model of determining whether a string is naughty or nice. None of the old rules apply, as they are all clearly ridiculous.
+
+Now, a nice string is one with all of the following properties:
+
+- It contains a pair of any two letters that appears at least twice in the string without overlapping, like xyxy (xy) or aabcdefgaa (aa), but not like aaa (aa, but it overlaps).
+- It contains at least one letter which repeats with exactly one letter between them, like xyx, abcdefeghi (efe), or even aaa.
+
+For example:
+
+- qjhvhtzxzqqjkmpb is nice because is has a pair that appears twice (qj) and a letter that repeats with exactly one letter between them (zxz).
+- xxyxx is nice because it has a pair that appears twice and a letter that repeats with one between, even though the letters used by each rule overlap.
+- uurcxstgmygtbstg is naughty because it has a pair (tg) but no repeat with a single letter between them.
+- ieodomkazucvgmuy is naughty because it has a repeating letter with one between (odo), but no pair that appears twice.
+###
+
+# NO aaa (overlapping)
+# OK xyxy (xy at positions 0 and 2)
+# OK aabcdaa (aa at positions 0 and 5)
+two_pairs? ( input;
+	chars := input.chars()
+	for 0...(chars.length() - 2)
+		pair := "`chars[at]``chars[at + 1]`"
+		# Look for same pair starting at position at+2 or later (non-overlapping)
+		for (at + 2)...(chars.length() - 2)
+			if "`chars[it]``chars[it + 1]`" == pair
+				return true
+			end
+		end
+	end
+	false
+)
+
+repeat_with_gap? ( input;
+	chars := input.chars()
+	for 0...(chars.length() - 3)  # Need at least 3 chars from current position
+		if chars[at] == chars[at + 2]
+			return true
+		end
+	end
+	false
+)
+
+nice? ( input;
+	two_pairs?(input) and repeat_with_gap?(input)
+)
+
+input := File_System.read('demos/aoc/2015/5.txt').split('\n')
+total := 0
+
+for input
+	total += 1 if nice?(it)
+end
+
+total == 69

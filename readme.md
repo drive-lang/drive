@@ -3,7 +3,7 @@
 [![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-2B7FFF)](https://justforfunnoreally.dev)
 ![Status of project Ruby tests](https://github.com/drive-lang/drive/actions/workflows/tests.yml/badge.svg)
 
-Learn about the language below, or [in the learn section](learn/readme.md), or *[click here to get started using it](getting_started.md)*.
+Learn about the language below, or [in the learn section](demos/readme.md), or *[click here to get started using it](getting_started.md)*.
 
 ---
 
@@ -763,7 +763,7 @@ cached()                   # 4
 cached()                   # 4 -- didn't run again
 ```
 
-See `learn/statements.tape` for the full picture, including `.use_caller_scope`.
+See `demos/statements.tape` for the full picture, including `.use_caller_scope`.
 
 ## Numbers
 
@@ -1080,7 +1080,7 @@ get://api/data (;
 
 1. `@load 'tapes/database.tape'` -- this pulls in `tapes/table.tape` too
 2. `Sqlite(url)` builds a database; `@connect` opens it and **returns it**
-3. `Sqlite.memory()` for an in-memory db, `Sqlite.local('name')` for `temp/name.db`
+3. `Sqlite.memory()` for an in-memory db, `Sqlite.local('name')` for `.temporary/name.db`
 
 ```tape
 @load 'tapes/database.tape'
