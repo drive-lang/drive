@@ -1,1 +1,1 @@
-*.tape linguist-language=Crystal linguist-vendored
+*.tape linguist-language=VHS linguist-detectable=true
