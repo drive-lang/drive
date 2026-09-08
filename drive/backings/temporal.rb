@@ -1,7 +1,7 @@
 require 'date'
 require 'time'
 
-module Tape
+module Disk
 	# Shared behavior for the three temporal wrappers Date / Time / DateTime
 	module Temporal
 		attr_accessor :value
@@ -57,12 +57,12 @@ module Tape
 
 		private
 
-		# A string arg arrives raw (::String) for a literal, or as an Tape::String.
+		# A string arg arrives raw (::String) for a literal, or as an Disk::String.
 		def string_arg arg
 			arg.respond_to?(:value) ? arg.value : arg.to_s
 		end
 
-		# A number arg arrives raw (Integer/Float) or as an Tape::Number (unwrap via backing_value).
+		# A number arg arrives raw (Integer/Float) or as an Disk::Number (unwrap via backing_value).
 		def number_arg arg
 			return arg.backing_value if arg.respond_to?(:backing_value)
 			arg.respond_to?(:numerator) ? arg.numerator : arg
@@ -79,11 +79,11 @@ module Tape
 		end
 
 		def proxy_today
-			Tape::Date.new ::Date.today
+			Disk::Date.new ::Date.today
 		end
 
 		def proxy_parse string
-			Tape::Date.new ::Date.parse(string_arg(string))
+			Disk::Date.new ::Date.parse(string_arg(string))
 		end
 
 		def proxy_weekday
@@ -101,15 +101,15 @@ module Tape
 		end
 
 		def proxy_now
-			Tape::Time.new ::Time.now
+			Disk::Time.new ::Time.now
 		end
 
 		def proxy_at epoch_seconds
-			Tape::Time.new ::Time.at(number_arg(epoch_seconds))
+			Disk::Time.new ::Time.at(number_arg(epoch_seconds))
 		end
 
 		def proxy_parse string
-			Tape::Time.new ::Time.parse(string_arg(string))
+			Disk::Time.new ::Time.parse(string_arg(string))
 		end
 
 		def proxy_hour
@@ -140,11 +140,11 @@ module Tape
 		end
 
 		def proxy_now
-			Tape::Date_Time.new ::DateTime.now
+			Disk::Date_Time.new ::DateTime.now
 		end
 
 		def proxy_parse string
-			Tape::Date_Time.new ::DateTime.parse(string_arg(string))
+			Disk::Date_Time.new ::DateTime.parse(string_arg(string))
 		end
 
 		def proxy_hour

@@ -2,10 +2,10 @@ require 'minitest/autorun'
 require_relative '../drive/drive'
 require_relative 'base_test'
 
-# tapes/visitor.tape's Warnings_Visitor mixin -- composed into tapes/css.tape's Css_Lint_Visitor and
-# tapes/html2.tape's Html_Lint_Visitor. See test/css_test.rb and test/html2_test.rb for those.
+# disks/visitor.disk's Warnings_Visitor mixin -- composed into disks/css.disk's Css_Lint_Visitor and
+# disks/html2.disk's Html_Lint_Visitor. See test/css_test.rb and test/html2_test.rb for those.
 class Visitor_Test < Base_Test
-	VISITOR = "@load 'tapes/visitor.tape'"
+	VISITOR = "@load 'disks/visitor.disk'"
 
 	def test_warn_pushes_onto_warnings
 		out = Drive.interp "

@@ -5,10 +5,10 @@ This [`drive`](.) folder contains the implementation of Drive in Ruby. Source co
 - **`drive.rb`**: the entry point. Requires everything in load order, then exposes the `Drive` module's convenience methods (`Drive.lex`, `Drive.parse`, `Drive.interp`, and their `_file` counterparts).
 - **`cli.rb`** / **`repl.rb`**: `Drive::CLI` (the `bin/drive` commands) and `Drive::REPL`.
 - **`1_lexer/`** … **`5_interpreter/`**: one folder per pipeline phase. `5_interpreter/` also holds the scope hierarchy (`scopes.rb`: Global, Type, Instance, Func, Route, …), the error classes, the DOM renderer, the hot reloader, and the browser assets — everything the executor needs at runtime.
-- **`backings/`**: the Ruby class behind a built-in `.tape` type (`backings/array.rb` ↔ `tapes/array.tape`), which `@ruby` proxy methods delegate into.
+- **`backings/`**: the Ruby class behind a built-in `.disk` type (`backings/array.rb` ↔ `disks/array.disk`), which `@ruby` proxy methods delegate into.
 - **`shared/`**: constants, mixins, and helpers pulled in across phases (`constants.rb`, `helpers.rb`, `ascii.rb`, `ruby_proxies.rb`, `error_formatter.rb`, `documenter.rb`, …).
 
-The two Ruby modules: **`Drive::`** is the engine (the 10 pipeline/tool classes, each with `include Tape`); **`Tape::`** is everything the engine reads and makes (the AST, the scope hierarchy, the built-in value types, the errors, the constants).
+The two Ruby modules: **`Drive::`** is the engine (the 10 pipeline/tool classes, each with `include Disk`); **`Disk::`** is everything the engine reads and makes (the AST, the scope hierarchy, the built-in value types, the errors, the constants).
 
 ---
 
@@ -49,7 +49,7 @@ lexemes     = Drive.lex source        # => array of Lexemes
 expressions = Drive.parse source      # => array of Expressions
 result      = Drive.interp source     # => Hello, Again!
 
-source_file = './my_program.tape'
+source_file = './my_program.disk'
 lexemes     = Drive.lex_file source_file
 expressions = Drive.parse_file source_file
 result      = Drive.interp_file source_file
@@ -60,7 +60,7 @@ result      = Drive.interp_file source_file
 This is the quickest way to run code:
 
 ```bash
-bundle exec bin/drive file.tape
+bundle exec bin/drive file.disk
 ```
 
 You can also use `bin/drive interp` for direct source as string evaluation:

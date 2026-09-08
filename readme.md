@@ -12,7 +12,7 @@ Learn about the language below, or [in the learn section](demos/readme.md), or *
 1. Must start with a lowercase letter or `_`.
 2. Can end with `!` or `?`
 
-```tape
+```disk
 nothing := nil
 something: Number = 123
 _private_thing := "Yes"
@@ -28,7 +28,7 @@ tested? := false
 5. The last expression is the return value
 6. Return early using `return` keyword
 
-```tape
+```disk
 # func_name ( [args]; [body] )
 
 func_with_args ( arg1, arg2 := 1, etc := true;
@@ -55,7 +55,7 @@ _privately_do ( x, y, z; )
 
 **Labels** — a param declared as two identifiers in a row (`label name`) can be called `label: value`. Matches by position, never reorders. Opt-in per call; wrong label raises `Argument_Label_Mismatch`.
 
-```tape
+```disk
 send_message ( to person, saying text;
     "To `person`: `text`"
 )
@@ -66,7 +66,7 @@ send_message('Sayid', 'Meet at the caves')
 
 **Named arguments** — `name := value` at a call site binds by the callee's declared param name, order-independent. Positional args (bare or labeled) must come first; once you name one, the rest must be named too.
 
-```tape
+```disk
 sub ( a, b; a - b )
 
 sub(a := 1, b := 2)   # -1
@@ -81,7 +81,7 @@ sub(1, b := 2)        # -1 positional then named is fine
 
 **Struct-typed params** — `: <...>` instead of a plain type name checks *structurally*, not by name: any argument that has each listed member, with a compatible type, is accepted. `Any` matches any member type. Checked on every call, raising `Type_Contract_Violation` on a mismatch.
 
-```tape
+```disk
 f ( right: <name: String, type: Any, value: Any>; right.name )
 
 m := Member('x', String, 4)
@@ -93,7 +93,7 @@ f(nil)   # raises Type_Contract_Violation
 
 A named function is registered in its enclosing scope as it's declared, so it can call itself.
 
-```tape
+```disk
 factorial ( n;
     if n == 0 or n == 1
         1
@@ -133,7 +133,7 @@ end
 
 Calling a function, or referencing a type, works even before its own declaration is reached in the file — including mutual recursion between two functions declared in either order.
 
-```tape
+```disk
 result := main()   # `main` hasn't been declared yet, but this still works
 
 main (; helper() )
@@ -142,7 +142,7 @@ helper (; 42 )
 result  # 42
 ```
 
-```tape
+```disk
 is_even ( n;
     if n == 0
         true
@@ -164,7 +164,7 @@ is_even(4)  # true
 
 A class-styled alias (`This := That {}`) hoists the same way, since it's declaring a type just spelled through an assignment:
 
-```tape
+```disk
 p := This()
 
 This := That {}
@@ -175,27 +175,27 @@ p.greet()  # 'hi'
 
 A bare `@load` hoists too, so imports can live at the bottom of the file instead of the top:
 
-```tape
+```disk
 sign := Div([P('hi')])
 sign.to_s()  # '<div><p>hi</p></div>'
 
-@load 'tapes/html.tape'
+@load 'disks/html.disk'
 ```
 
 `Ident := @load 'file'` / `IDENT := @load 'file'` work the same way — only a Capitalized or UPPERCASE left-hand name opts in, since that's what marks it as a namespace rather than an ordinary variable:
 
-```tape
+```disk
 sign := Html_Lib.Div([Html_Lib.P('hi')])
 sign.to_s()  # '<div><p>hi</p></div>'
 
-Html_Lib := @load 'tapes/html.tape'
+Html_Lib := @load 'disks/html.disk'
 
-# html_lib := @load 'tapes/html.tape'   -- lowercase stays a plain variable, not hoisted
+# html_lib := @load 'disks/html.disk'   -- lowercase stays a plain variable, not hoisted
 ```
 
 Plain variable assignments are never hoisted this way — reading one before its own line has actually run still raises `Undeclared_Identifier`, same as any language with top-to-bottom execution:
 
-```tape
+```disk
 @puts "`a`"   # raises Undeclared_Identifier
 a := 123
 ```
@@ -205,7 +205,7 @@ a := 123
 1. Must start with an uppercase character
 2. Can have an initializer `Self`
 
-```tape
+```disk
 My_Class {
     input,
     
@@ -223,7 +223,7 @@ instance := My_Class('some input')  # Initted with "some input"
 1. Must be UPPERCASE
 2. Cannot be reassigned after initial declaration
 
-```tape
+```disk
 PI := 3.14159
 MAX_SIZE := 100
 APP_NAME := 'My App'
@@ -231,7 +231,7 @@ APP_NAME := 'My App'
 
 ## Comments
 
-```tape
+```disk
 # This is a single-line comment
 # Stack a few of these for a multi-line comment
 
@@ -254,7 +254,7 @@ still inside the outer comment
 1. Use backticks inside strings to interpolate expressions
 2. Escape with backslash to prevent interpolation
 
-```tape
+```disk
 name := 'World'
 greeting := "Hello, `name`!"  # "Hello, World!"
 math := "2 + 2 = `2 + 2`"    # "2 + 2 = 4"
@@ -269,7 +269,7 @@ escaped := "Literal \`backticks\`"
 2. `Self` — the current type only (where statics live)
 3. `Global` — the global scope only
 
-```tape
+```disk
 My_Class {
     Self.count := 0   # Type-level (static) variable
     value,
@@ -291,7 +291,7 @@ My_Class {
 2. Shared across all instances
 3. Accessed on the type itself: `Type.member`
 
-```tape
+```disk
 Counter {
     Self.count := 0
 
@@ -316,7 +316,7 @@ Counter.count  # 2
 3. `~` removal: remove members of right type from left
 4. `^` symmetric difference: keep non-shared members
 
-```tape
+```disk
 Movable {
     x := 0
     y := 0
@@ -343,7 +343,7 @@ s.draw()
 
 Composition chains, so `~` can remove a trait that was mixed in earlier in the same chain:
 
-```tape
+```disk
 Flying { can_fly := true }
 Swimming { can_swim := true }
 
@@ -355,12 +355,12 @@ d.can_swim    # true
 Ostrich | Duck ~ Flying { name := 'ostrich' }
 o := Ostrich()
 o.can_swim    # true
-o.can_fly     # raises Tape::Undeclared_Identifier
+o.can_fly     # raises Disk::Undeclared_Identifier
 ```
 
 A type can even compose with itself, to extend or override a built-in type's own behavior:
 
-```tape
+```disk
 Array | Array {
     each ( func;
         for self.values   # self.values reaches the original Array's own values, despite `each` itself now being redefined
@@ -381,7 +381,7 @@ doubled  # [2, 4, 6]
 
 There are two ways to give a type a second name, and they behave differently under the [type comparison operators](#comparison):
 
-```tape
+```disk
 Whole | Integer {}    # subtype — Whole is a NEW type that composes Integer
 Int32 := Integer      # alias   — Int32 IS Integer, the same type object
 
@@ -402,7 +402,7 @@ Use `:=` when you just want a synonym (`Int := Integer` in the standard library)
 3. Can be used as inline modifiers
 4. Any value works as a condition -- truthiness follows Ruby's own rules: only `nil`/`false` are falsy, everything else (`0`/`0.0` included) is truthy
 
-```tape
+```disk
 if x > 10
     'big'
 elif x > 5
@@ -426,7 +426,7 @@ end
 2. `until` loops until condition becomes true
 3. `elwhile` chains another loop when prior condition becomes false
 
-```tape
+```disk
 i := 0
 while i < 5
     @puts i
@@ -457,7 +457,7 @@ end
 2. `it` is the current element
 3. `at` is the current index
 
-```tape
+```disk
 for [1, 2, 3]
     @puts it      # Current element
     @puts at      # Current index
@@ -480,7 +480,7 @@ end
 3. `reject` filters where body is falsy
 4. `count` counts where body is truthy
 
-```tape
+```disk
 doubled := for [1, 2, 3] map
     it * 2
 end  # [2, 4, 6]
@@ -504,7 +504,7 @@ end  # 3
 2. `stop` breaks out of loop
 3. `return` exits the function (propagates through loops)
 
-```tape
+```disk
 for items
     skip if it.this     # Continue to next
     stop if it.that     # Break out
@@ -527,7 +527,7 @@ Every scope keeps two extra fallback places identifier lookup checks, after its 
 3. Both sets are held *weakly* — a splatted instance isn't kept alive; once nothing else refers to it it's collectible on its own, so `@unsplat` is only for cutting something off early, not for avoiding a leak.
 4. The standard library lives this way — `String`/`Array`/etc. are reachable through Global's own read-only splat, not declared on Global directly. Reassigning a built-in (`Array = Mine`) can't mutate the real one; it just shadows the name for the rest of your program.
 
-```tape
+```disk
 Vector {
     x := 0
     y := 0
@@ -556,7 +556,7 @@ doubled := double(v)  # doubled.x: 6, doubled.y: 8
 @unsplat some_instance
 ```
 
-```tape
+```disk
 # The standard library works the same way -- Array is reachable through
 # Global's own read-only splat, not declared on Global directly
 Mine | Array { extra := true }
@@ -567,7 +567,7 @@ Array = Mine          # shadows the name -- the real Array is untouched
 
 An unpacked instance stays visible to functions defined after the unpack, even nested ones:
 
-```tape
+```disk
 Point {
     a := 0
     b := 0
@@ -597,7 +597,7 @@ outer()  # 65
 2. `@pop_scope <same target>` pops back to the previous scope — it asserts (by identity) that you're popping what you actually pushed, raising instead of popping the wrong thing
 3. Unlike a splat, `@push_scope` mutates its target — reopening a Type extends every instance of it, reopening a specific instance changes only that one
 
-```tape
+```disk
 Button {
     label := 'default'
 }
@@ -614,7 +614,7 @@ b.css_filter   # 'invert()' — every Button gets it, since Button itself was ex
 @pop_scope b
 
 c := Button()
-c.onclick   # raises Tape::Undeclared_Identifier — only b was modified
+c.onclick   # raises Disk::Undeclared_Identifier — only b was modified
 ```
 
 ## Arrays
@@ -622,7 +622,7 @@ c.onclick   # raises Tape::Undeclared_Identifier — only b was modified
 1. Created with `[]` brackets
 2. Access elements with subscript or dot notation
 
-```tape
+```disk
 arr := [1, 2, 3, 4, 5]
 arr[0]              # 1
 arr.0               # 1 (dot notation)
@@ -646,7 +646,7 @@ arr.filter(x; x > 2)    # (equivalent to arr.filter((x; x > 2)))
 2. Keys can be symbols, strings, or identifiers
 3. Access with subscript `dict[:key]`
 
-```tape
+```disk
 dict := {x: 10, y: 20}
 dict[:x]            # 10
 dict[:z] = 30       # Assignment
@@ -666,7 +666,7 @@ dict.fetch(:missing, 'default')
 1. An unordered collection of unique items -- no literal, build one with `Set(...)`
 2. Seed it from an array, a range, or another set
 
-```tape
+```disk
 s := Set([1, 2, 2, 3])   # {1, 2, 3} -- dedups
 s.add(4)                  # mutating methods return self, so they chain
 s.include?(2)             # true
@@ -688,7 +688,7 @@ end
 
 ## Strings
 
-```tape
+```disk
 s := 'Hello, World!'
 s.length            # 13
 s.0                 # 'H' (dot notation, indexes by character -- same as Array's own .0)
@@ -714,7 +714,7 @@ s.empty?()          # false
 4. Items split only on whitespace, not on punctuation — `1px` and `file.ext` each stay one item
 5. A `` `expr` `` item (see Statement Expressions below) is evaluated immediately, like string interpolation, and folded through the same casing treatment as everything else
 
-```tape
+```disk
 %string(boo Hoo COOL)      # [boo, Hoo, COOL]
 %symbol(BOO hoo Cool)      # [:BOO, :hoo, :Cool]
 
@@ -737,13 +737,13 @@ cool := 2342
 
 ## Statement Expressions
 
-1. `` `expr` `` wraps any expression without running it -- an `Tape::Statement`, callable later with `()`
+1. `` `expr` `` wraps any expression without running it -- an `Disk::Statement`, callable later with `()`
 2. Written straight at a call site, `` `expr`() `` just evaluates immediately
 3. Stored in a variable, it can be called any number of times -- each call re-evaluates the wrapped expression fresh, by default remembering the scope it was *built* in (a normal closure, no matter where `()` ends up being called from)
 4. `.memoize = true` caches the first call's result instead of re-running every time
 5. `.use_caller_scope = true` does the opposite of remembering -- resolves fresh against wherever `()` is actually called from
 
-```tape
+```disk
 `1+2`()                    # 3 -- evaluated right away
 
 x := `1+2`
@@ -763,11 +763,11 @@ cached()                   # 4
 cached()                   # 4 -- didn't run again
 ```
 
-See `demos/statements.tape` for the full picture, including `.use_caller_scope`.
+See `demos/statements.disk` for the full picture, including `.use_caller_scope`.
 
 ## Numbers
 
-```tape
+```disk
 n := 42
 n.abs()             # Absolute value
 n.floor()           # Round down
@@ -784,7 +784,7 @@ n.clamp(0, 100)     # Clamp to range
 
 `Date`, `Time`, and `Date_Time` are always available -- no `@load`.
 
-```tape
+```disk
 Date.today()                # today
 Date.parse('2020-03-15')
 Time.now()
@@ -813,7 +813,7 @@ Date.parse('2020-01-01') < Date.parse('2021-01-01')   # true -- all of < > <= >=
 3. `>..` exclusive start
 4. `>.<` exclusive both
 
-```tape
+```disk
 1...5   #   1, 2, 3, 4, 5    (inclusive)
 1..<5   #   1, 2, 3, 4       (exclusive end)
 1>..5   #      2, 3, 4, 5    (exclusive start)
@@ -826,7 +826,7 @@ end
 
 A range is a real value with its own methods:
 
-```tape
+```disk
 r := 1...5
 r.start()          # 1
 r.finish()         # 5
@@ -843,7 +843,7 @@ x: Range = 1...5   # a `: Range` contract holds
 
 A range also works as an Array or String subscript — each operator keeps its own end/start rule, so `[1...3]` is one element longer than `[1..<3]`. Endless and beginless forms slice too; a negative endpoint counts from the end:
 
-```tape
+```disk
 xs := [10, 20, 30, 40, 50]
 xs[1...3]    # [20, 30, 40]      inclusive
 xs[1..<3]    # [20, 30]          exclusive end
@@ -855,8 +855,8 @@ xs[...-1]    # [10, 20, 30, 40, 50]   -1 is the last index
 
 ## File I/O
 
-```tape
-@load 'tapes/file_system.tape'
+```disk
+@load 'disks/file_system.disk'
 
 content := File_System.read('./file.txt')
 File_System.write_string_to_file('./out.txt', 'Hello!')
@@ -866,7 +866,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 
 `@` is the current scope's *context* — a struct the interpreter fills with facts about wherever it's written, plus a set of built-in functions. Every scope has one: Global, a Type, an instance, a function body. There's no separate "directive" concept — `@word` is just `@.word`.
 
-```tape
+```disk
 @ === Context      # true
 @.name             # 'Global' at the top level
 @.to_s()           # '@Global'
@@ -878,7 +878,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 
 Read-only facts about the scope, snapshotted the first time `@` is reached (a struct's `@.values` / `@.members` are the exception — they always reflect its current member values, even after a `.member = …` write):
 
-```tape
+```disk
 Flying { airborne := true }
 Duck | Flying {}
 
@@ -892,7 +892,7 @@ nil.@type               # 'Nil'
 
 Reflection lives on `@` only. Plain `.` is reserved for a scope's own members, so a struct member named `name` or `types` never collides with the reflective accessor of the same name:
 
-```tape
+```disk
 Row <name: String, types: Number>
 r := Row('cooper', 3)
 
@@ -906,7 +906,7 @@ r.@names       # ['name', 'types']
 
 `@puts`, `@assert`, `@refute`, `@sleep`, `@load`, `@declare`, `@push_scope` / `@pop_scope`, `@connect`, `@start_server` / `@stop_server`, and the scope functions `@splat` / `@splatr` / `@unsplat` all live on the context. A bare `@puts` (no call) is the function itself, so it can be captured:
 
-```tape
+```disk
 kept := @puts('logged')   # prints 'logged', returns it unchanged (a passthrough)
 p := @puts
 p('again')                # 'again'
@@ -916,7 +916,7 @@ p('again')                # 'again'
 
 Inside a `Type { }` body you can hang your own members off the type's context. They show up under `@`, never in plain `.` access, so they can't collide with the type's real members. A built-in name (`@name`, `@types`, ...) is reserved and raises.
 
-```tape
+```disk
 Widget {
     @version := 2
     @author: String = 'me'
@@ -935,19 +935,19 @@ w.@version        # 2 — an instance reads through to its type's context
 2. A file is only run once per scope it's loaded into — loading the same file into the same scope again returns the first run's result instead of re-running it
 3. Imports may be scoped by assigning the @load to a variable
 
-```tape
-@load 'tapes/string.tape'
-@load 'tapes/array.tape'
-@load './my_module.tape'
-my_mod := @load './my_module.tape'
+```disk
+@load 'disks/string.disk'
+@load 'disks/array.disk'
+@load './my_module.disk'
+my_mod := @load './my_module.disk'
 my_mod.Some_Type()
 
-@load './my_module.tape'   # already loaded into this scope -- returns the same result again, doesn't re-run
+@load './my_module.disk'   # already loaded into this scope -- returns the same result again, doesn't re-run
 ```
 
 ## @puts
 
-```tape
+```disk
 @puts 'Hello, World!'
 @puts variable
 @puts "Value: `expression`"
@@ -955,7 +955,7 @@ my_mod.Some_Type()
 
 `@puts` is a passthrough: it prints, then returns the original value unchanged, so it can sit inline anywhere an expression is expected:
 
-```tape
+```disk
 double ( n; n * 2 )
 double(@puts 5)   # prints 5, returns 10 -- the call still gets the real 5
 ```
@@ -964,7 +964,7 @@ double(@puts 5)   # prints 5, returns 10 -- the call still gets the real 5
 
 Drive's built-in collection types each wrap their printed contents in a different bracket, so you can tell what you're looking at at a glance:
 
-```tape
+```disk
 @puts [1, 2, 3]      # [1, 2, 3]      -- Array
 @puts (1, 2, 3)      # (1, 2, 3)      -- Tuple
 @puts {x: 1, y: 2}   # {x: 1, y: 2}   -- Dictionary
@@ -973,12 +973,12 @@ Drive's built-in collection types each wrap their printed contents in a differen
 
 A custom type prints as raw internals until it defines its own `to_s(;)` — see [Classes](#classes):
 
-```tape
+```disk
 Point {
     x := 1
     greet (; 'hi' )
 }
-@puts Point()   # #<Tape::Instance name="Point" declarations=["x", "greet"]>
+@puts Point()   # #<Disk::Instance name="Point" declarations=["x", "greet"]>
 ```
 
 Nothing enforces a bracket convention for your own types, but picking one that doesn't collide with the built-ins above keeps output easy to scan.
@@ -989,7 +989,7 @@ Nothing enforces a bracket convention for your own types, but picking one that d
 2. `@declare name` declares `nil`; `@declare name, value` and `@declare name, value, type` add a value and, optionally, a type
 3. Passed a Struct instead of a name, spreads every *named* member onto the current scope in one go — each member's own name, value, and declared type carry over directly
 
-```tape
+```disk
 @declare 'flare_count'          # flare_count == nil
 @declare 'flare_count', 3       # flare_count == 3
 @declare 'ration', 2, Number    # same as `ration: Number = 2`
@@ -1004,8 +1004,8 @@ supplies := <water: Number = 40, wood: Number = 12>
 2. Define routes with HTTP method syntax
 3. Boot with `@start_server` (background thread; `@stop_server` to shut one down)
 
-```tape
-@load 'tapes/server.tape'
+```disk
+@load 'disks/server.disk'
 
 App | Server {
     Self (;
@@ -1030,7 +1030,7 @@ App | Server {
 2. URL parameters with `:param` syntax
 3. Query params via `request.query`
 
-```tape
+```disk
 App | Server {
     # Static route
     get://users (;
@@ -1057,7 +1057,7 @@ App | Server {
 
 ## Request & Response
 
-```tape
+```disk
 post://login (;
     username := request.body[:username]
     password := request.body[:password]
@@ -1078,19 +1078,19 @@ get://api/data (;
 
 ## Database
 
-1. `@load 'tapes/database.tape'` -- this pulls in `tapes/table.tape` too
+1. `@load 'disks/database.disk'` -- this pulls in `disks/table.disk` too
 2. `Sqlite(url)` builds a database; `@connect` opens it and **returns it**
 3. `Sqlite.memory()` for an in-memory db, `Sqlite.local('name')` for `.temporary/name.db`
 
-```tape
-@load 'tapes/database.tape'
+```disk
+@load 'disks/database.disk'
 
 db := @connect Sqlite('./data/app.db')
 ```
 
 A schema is a **named Struct** -- one member per column, its type deciding the column type. The table name comes from the struct's name (`User` -> `users`), so the struct has to be named.
 
-```tape
+```disk
 User <
     id: Primary_Key
     name: String
@@ -1111,7 +1111,7 @@ Column types: `Primary_Key`, `String`/`Text`, `Int`, `Number`, `Bool`, `Date`, `
 
 `db.find_or_create_table(schema)` returns a `Table`. CRUD lives on that object -- no model composition, no statics.
 
-```tape
+```disk
 users := db.find_or_create_table(User)
 
 cooper := users.create(<name := 'Cooper'>)   # attrs are a `:=`-member Struct
@@ -1128,17 +1128,17 @@ users.count()
 
 - A record is a `Struct` named after the schema -- read members by name (`record.name`), or `record.to_h` for the whole row
 - `Bool` columns round-trip as real `true`/`false`; `Date`/`Time`/`Date_Time` columns round-trip as the matching wrapper (`record.joined_at.year`)
-- A filter naming a column the schema doesn't have raises `Tape::Table_Invalid_Filter_Column`
+- A filter naming a column the schema doesn't have raises `Disk::Table_Invalid_Filter_Column`
 
 ## HTML Elements
 
-1. Compose with HTML element types from `tapes/html.tape`
+1. Compose with HTML element types from `disks/html.disk`
 2. `css_*` prefix sets inline CSS properties
 3. `html_*` prefix sets HTML attributes
 4. `.to_s()` renders an element and its children to string directly
 
-```tape
-@load 'tapes/html.tape'
+```disk
+@load 'disks/html.disk'
 
 Card | Div {
     css_padding := '1rem'
@@ -1169,13 +1169,13 @@ page := Html([
 
 ## CSS
 
-1. `@load 'tapes/css.tape'` -- CSS is plain data: `Property`/`Style_Rule`/`At_Rule`/`Scope_Rule`/`Custom_Property_Rule`/`Layer_Order`/`Keyframe`/`Variable_Declaration`/`Css_Function`/`Color` are all bare structs, no parser involved
+1. `@load 'disks/css.disk'` -- CSS is plain data: `Property`/`Style_Rule`/`At_Rule`/`Scope_Rule`/`Custom_Property_Rule`/`Layer_Order`/`Keyframe`/`Variable_Declaration`/`Css_Function`/`Color` are all bare structs, no parser involved
 2. `Css_Formatter_Visitor` walks a tree of those structs and turns it into a real CSS string -- pretty by default, `minify := true` for one line
 3. A rule nested inside another rule's own `rules` gets a synthesized `&` prefix (real CSS nesting); a rule merely sitting inside an `At_Rule`/`Scope_Rule` body does not, since there's no parent selector for `&` to refer to there
 4. `Css_Lint_Visitor` walks the same kind of tree checking for duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` -> `0`) instead of formatting it. Handed a whole `Stylesheet`, it also warns when a state rule (`.card:hover`, `:focus`, ...) sets `transform` while the base selector runs a keyframe `animation` that also animates `transform` — the running animation recomputes it every frame, so the hover value never shows
 
-```tape
-@load 'tapes/css.tape'
+```disk
+@load 'disks/css.disk'
 
 rule := Style_Rule(['.card'], [Property('color', 'red'), Property('padding', '8px')])
 
@@ -1191,15 +1191,15 @@ Css_Lint_Visitor().lint(Style_Rule(['.a'], [Property('color', 'red'), Property('
 
 ## Struct-Based HTML
 
-1. `@load 'tapes/html2.tape'` -- same spirit as CSS above: `Element <tag, attributes: Array\Attribute, css: Css, children>` is the one node shape, and lowercase constructors (`div`, `p`, `h1`, ...) build it. Coexists with `tapes/html.tape`'s `Dom` types above rather than replacing them -- this one only builds an HTML string, it doesn't hook into the server's live-render pipeline (onclick wiring, `dom.js`)
+1. `@load 'disks/html2.disk'` -- same spirit as CSS above: `Element <tag, attributes: Array\Attribute, css: Css, children>` is the one node shape, and lowercase constructors (`div`, `p`, `h1`, ...) build it. Coexists with `disks/html.disk`'s `Dom` types above rather than replacing them -- this one only builds an HTML string, it doesn't hook into the server's live-render pipeline (onclick wiring, `dom.js`)
 2. `attributes` is an ordered `Array\Attribute` (`Attribute(name, value)`, built the same way `Property` builds a CSS declaration) -- not a Dictionary, so attributes keep their given order and can even collide (see `Html_Lint_Visitor` below)
-3. `css` takes any css.tape struct directly -- `Html_Formatter_Visitor` renders it as one more child, an embedded `<style>` block, wherever it's attached
+3. `css` takes any css.disk struct directly -- `Html_Formatter_Visitor` renders it as one more child, an embedded `<style>` block, wherever it's attached
 4. `Html_Render`/`Html_Format` are two shared `Html_Formatter_Visitor` instances (compact/pretty); void tags (`br`, `img`, `input`, ...) never get a closing tag in either mode
-5. `Html_Stats_Visitor` (node count, depth, unique tags), `Html_Sanitizer_Visitor` (strips `script`/`iframe`/`object`/`embed` and `on*`/`javascript:` attributes), and `Html_Lint_Visitor` (void element given children, `<img>` missing `alt`, empty containers, duplicate attribute names) walk the same tree for their own purposes -- `Html_Lint_Visitor` and `Css_Lint_Visitor` both compose `tapes/visitor.tape`'s `Warnings_Visitor` mixin for their shared `warnings`/`warn` machinery
+5. `Html_Stats_Visitor` (node count, depth, unique tags), `Html_Sanitizer_Visitor` (strips `script`/`iframe`/`object`/`embed` and `on*`/`javascript:` attributes), and `Html_Lint_Visitor` (void element given children, `<img>` missing `alt`, empty containers, duplicate attribute names) walk the same tree for their own purposes -- `Html_Lint_Visitor` and `Css_Lint_Visitor` both compose `disks/visitor.disk`'s `Warnings_Visitor` mixin for their shared `warnings`/`warn` machinery
 
-```tape
-@load 'tapes/html2.tape'
-@load 'tapes/css.tape'
+```disk
+@load 'disks/html2.disk'
+@load 'disks/css.disk'
 
 page := div([
     h1('Welcome'),
@@ -1214,7 +1214,7 @@ Html_Render.render(page)
 
 ### Arithmetic
 
-```tape
+```disk
 + - * / %     # Basic math
 **            # Exponentiation
 << >>         # Bitwise shift / Array append
@@ -1222,7 +1222,7 @@ Html_Render.render(page)
 
 ### Comparison
 
-```tape
+```disk
 == !=             # Equality
 < <= > >=         # Relational
 <=>               # Spaceship (three-way)
@@ -1234,7 +1234,7 @@ Html_Render.render(page)
 
 `===`, `=!=`, `=>=`, `=<=`, and `=/=` compare a type or instance's *composed types* — its own name plus everything it's picked up via `|`/`&`/`~`/`^` — rather than comparing values:
 
-```tape
+```disk
 Flying { can_fly := true }
 Swimming { can_swim := true }
 
@@ -1255,7 +1255,7 @@ Flying =/= Swimming    # true  (share nothing)
 
 All five comparison operators also take [Structs](#structs) into account. An untagged type is treated as having no members, so plain comparisons like the ones above are unaffected:
 
-```tape
+```disk
 Abc\<Number> {}
 Abc\<Number> === Abc\<String>   # false — same composed type, different tag
 Abc === Abc                     # true  — neither side tagged
@@ -1263,7 +1263,7 @@ Abc === Abc                     # true  — neither side tagged
 
 `Any` is a universal wildcard for `==`/`!=`/`===`/`=!=`: anything that isn't `nil` counts as equal to it, no composition needed.
 
-```tape
+```disk
 String === Any    # true
 4 == Any          # true
 nil == Any        # false — the one exception
@@ -1271,7 +1271,7 @@ nil == Any        # false — the one exception
 
 A String compares equal (`==`/`!=` only) to a bare Type whose `@name` it spells — so a collection of type-name strings can be scanned with a real type:
 
-```tape
+```disk
 Flying { can_fly := true }
 Duck | Flying {}
 
@@ -1281,7 +1281,7 @@ Duck.@composed_types.include?(Flying)    # true — the set holds the string 'Fl
 
 ### Logical
 
-```tape
+```disk
 && and        # Logical AND
 || or         # Logical OR
 ! not         # Logical NOT
@@ -1289,7 +1289,7 @@ Duck.@composed_types.include?(Flying)    # true — the set holds the string 'Fl
 
 ### Assignment
 
-```tape
+```disk
 :=            # Declaration — introduces a new identifier, infers and locks its type
 =             # Assignment — requires the identifier to already be declared
 += -= *= /=   # Compound assignment
@@ -1304,7 +1304,7 @@ Duck.@composed_types.include?(Flying)    # true — the set holds the string 'Fl
 3. Precedence controls how overloaded operators combine with each other and with built-ins
 4. If a type declares its own overload for an operator, that always wins over a same-named overload declared elsewhere — dispatch is by the left operand's type first, falling back to whatever's in scope only if the operand doesn't have its own
 
-```tape
+```disk
 # Redefine + only inside this function — everywhere else, + still adds
 scoped := compute (;
     @operator + @infix 700 ( left, right;
@@ -1376,28 +1376,28 @@ a ~> 1          # 42 — Wrapped's own ~> wins
 
 1. `:=` infers a type from its right-hand side and locks the identifier to it
 2. Subsequent `=` assignments are checked against that locked type; `:=` again re-infers and re-locks
-3. A mismatch raises `Tape::Type_Contract_Violation`, not the static type checker's `Type_Mismatch`
+3. A mismatch raises `Disk::Type_Contract_Violation`, not the static type checker's `Type_Mismatch`
 
-```tape
+```disk
 x := 4        # declares x, infers Number, locks x to that type
 x = 8         # ok — same type
-x = 'hello'   # raises Tape::Type_Contract_Violation ("expected Number, got String")
+x = 'hello'   # raises Disk::Type_Contract_Violation ("expected Number, got String")
 
 x := 4
 x := 'hello'  # fine — re-declaring with := re-infers and re-locks the type
 x             # 'hello'
 
-y = 4         # raises Tape::Cannot_Assign_Undeclared_Identifier — y was never declared
+y = 4         # raises Disk::Cannot_Assign_Undeclared_Identifier — y was never declared
 ```
 
 ## Function Signatures
 
 1. `(Param, Param -> Type;)` is a signature — a value describing a function's shape (its param types and return type), with no implementation — same `-> Type` placement a real function uses, just with no body
 2. A real function always declares its own return type inside its body, with `-> Type` at the end of its param list before `;` — a self-declaring signature uses the same shape under its name (`double: (Number -> Number;)`)
-3. Assigning a function to a signature-typed identifier checks its actual shape, not just a name — mismatches raise `Tape::Type_Contract_Violation`, the same runtime type contract `:=` uses
+3. Assigning a function to a signature-typed identifier checks its actual shape, not just a name — mismatches raise `Disk::Type_Contract_Violation`, the same runtime type contract `:=` uses
 4. Any function with a declared return type is checked on every call — what it actually returns has to match, signature or not
 
-```tape
+```disk
 Currency_Formatter := (Number -> String;)    # takes a Number, returns a String
 
 format_usd ( cents: Number -> String;
@@ -1414,14 +1414,14 @@ formatter(1050)               # "$10.5"
 formatter = format_eur        # ok — same shape: (Number) -> String
 formatter(1050)               # "€10.5"
 
-formatter = ( cents; cents )  # raises Tape::Type_Contract_Violation — wrong shape
+formatter = ( cents; cents )  # raises Disk::Type_Contract_Violation — wrong shape
 ```
 
 A declared return type is enforced on its own, with no signature involved:
 
-```tape
+```disk
 lying ( a -> Number; 'not a number' )
-lying(5)   # raises Tape::Type_Contract_Violation — declared Number, actually returned String
+lying(5)   # raises Disk::Type_Contract_Violation — declared Number, actually returned String
 ```
 
 ## Structs
@@ -1429,13 +1429,13 @@ lying(5)   # raises Tape::Type_Contract_Violation — declared Number, actually 
 1. `<...>` attaches runtime-inspectable metadata (a struct) to a standalone value. Tagging a *Type* declaration/reference itself uses `\` instead, to stay unambiguous with a plain struct value and with comparisons — `Array\<String> {}` (inline literal), `Array\Task_Schema {}`/`Array\String {}` (a named reference to an already-declared struct or Type), `Primary_Key\4815` (a bare integer, a "version tag")
 2. `\` chains: `Thing\One\Two {}` tags `Thing` with `One`, which is itself tagged with `Two`. `.tag` is `One`, `.tag.tag` is `Two`
 3. Each declared tag is its own type — `Abc\<Number> {}` and `Abc\<String> {}` don't share `Self`/methods, and `Thing\One\Two` and `Thing\One\Three` are distinct too
-4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Tape::Undeclared_Tagged_Type`
+4. A reference matches a declared tag by type (like overload resolution), including types it composes and not just its own name, at every link of the chain. Referencing a real Type with no matching variant yet auto-declares one; referencing anything else with no match raises `Disk::Undeclared_Tagged_Type`
 5. Reachable through `.tag` (`.tag.types`, or `.tag.some_name` for named members) — bound before `Self(;)` runs, never forwarded as constructor args
-6. `x.tag = new_tag` re-tags at runtime, but only on a value whose type was declared with a tag, and only when `new_tag` composes at least everything the current tag does, at every chain link (`=>=`) — otherwise `Tape::Tag_Signature_Violation`
+6. `x.tag = new_tag` re-tags at runtime, but only on a value whose type was declared with a tag, and only when `new_tag` composes at least everything the current tag does, at every chain link (`=>=`) — otherwise `Disk::Tag_Signature_Violation`
 7. Naming an *undeclared* identifier with bare `<...>` (no `\`, e.g. `Named<...>`) builds a plain, named struct instead of raising — a name that's already taken by a real Type still takes priority and behaves as above
-8. A bare named struct's member can be annotated with the struct's own name (`Node <name: String, parent: Node>`) — and two structs can reference each other. An empty `Name <>` is a forward declaration a later `Name <...>` fills in; redeclaring an already-filled struct with a *different* shape raises `Tape::Undeclared_Tagged_Type`
+8. A bare named struct's member can be annotated with the struct's own name (`Node <name: String, parent: Node>`) — and two structs can reference each other. An empty `Name <>` is a forward declaration a later `Name <...>` fills in; redeclaring an already-filled struct with a *different* shape raises `Disk::Undeclared_Tagged_Type`
 
-```tape
+```disk
 String\<dict: Dictionary> {
     to_s (; "dict: `tag.dict`" )
 }
@@ -1465,7 +1465,7 @@ Tree <
 
 ## Enums (not finalized — don't rely on yet)
 
-```tape
+```disk
 Task_Type [
 	TODO
 	BUG,
@@ -1485,7 +1485,7 @@ Enums are syntactically present but not finalized: each member's `: Type` annota
 
 Trailing comma declares variable as nil if undefined. 
 
-```tape
+```disk
 Type {
 	undefined_var,      # equivalent to `undefined_var := nil`	
 }
@@ -1495,7 +1495,7 @@ here_too,               # here_too := nil
 
 A bare annotated identifier with nothing assigned behaves the same way — no need to write `= nil` just to make an already-self-declaring annotation (`x: Number`, or a struct annotation) actually declare something:
 
-```tape
+```disk
 thing: <String, Number>   # same as thing: <String, Number> = nil
 thing                     # nil
 

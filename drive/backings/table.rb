@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Table < Instance
 		extend Ruby_Proxies
 		include Declaration_Accessors
@@ -15,7 +15,7 @@ module Tape
 
 		def proxy_all
 			records = table.all.map { |row| row_to_struct row }
-			Tape::Array.new records
+			Disk::Array.new records
 		end
 
 		def proxy_find id
@@ -26,28 +26,28 @@ module Tape
 		end
 
 		def proxy_find_by struct
-			Drive.assert struct.is_a? Tape::Struct
+			Drive.assert struct.is_a? Disk::Struct
 			check_filter_columns! struct
 			row = table.where(struct.to_h).first
 			row_to_struct(row)
 		end
 
 		def proxy_where struct
-			Drive.assert struct.is_a? Tape::Struct
+			Drive.assert struct.is_a? Disk::Struct
 			check_filter_columns! struct
 			rows = table.where(struct.to_h).all
-			Tape::Array.new rows.map { |row| row_to_struct(row) }
+			Disk::Array.new rows.map { |row| row_to_struct(row) }
 		end
 
 		def proxy_create struct
-			Drive.assert struct.is_a? Tape::Struct
+			Drive.assert struct.is_a? Disk::Struct
 			id = table.insert struct.to_h
 			proxy_find id
 		end
 
 		def proxy_update id, struct
 			Drive.assert id.is_a? ::Numeric
-			Drive.assert struct.is_a? Tape::Struct
+			Drive.assert struct.is_a? Disk::Struct
 			table.where(id: id).update struct.to_h
 		end
 
@@ -87,11 +87,11 @@ module Tape
 			when 'Bool'
 				![nil, 0, 0.0, false, '0', 'f', 'false'].include?(raw)
 			when 'Date'
-				raw.nil? ? nil : linked_temporal(Tape::Date.new(raw.is_a?(::Date) ? raw : ::Date.parse(raw.to_s)), 'Date')
+				raw.nil? ? nil : linked_temporal(Disk::Date.new(raw.is_a?(::Date) ? raw : ::Date.parse(raw.to_s)), 'Date')
 			when 'Time'
-				raw.nil? ? nil : linked_temporal(Tape::Time.new(raw.is_a?(::Time) ? raw : ::Time.parse(raw.to_s)), 'Time')
+				raw.nil? ? nil : linked_temporal(Disk::Time.new(raw.is_a?(::Time) ? raw : ::Time.parse(raw.to_s)), 'Time')
 			when 'Date_Time'
-				raw.nil? ? nil : linked_temporal(Tape::Date_Time.new(raw.is_a?(::DateTime) ? raw : ::DateTime.parse(raw.to_s)), 'Date_Time')
+				raw.nil? ? nil : linked_temporal(Disk::Date_Time.new(raw.is_a?(::DateTime) ? raw : ::DateTime.parse(raw.to_s)), 'Date_Time')
 			else
 				raw
 			end
@@ -103,7 +103,7 @@ module Tape
 		end
 
 		def table
-			raise Tape::Database_Not_Set_For_Table_Instance unless database
+			raise Disk::Database_Not_Set_For_Table_Instance unless database
 			database.connection[table_name.to_sym]
 		end
 
@@ -112,7 +112,7 @@ module Tape
 			unknown = struct.names.compact - known
 			return if unknown.empty?
 
-			raise Tape::Table_Invalid_Filter_Column,
+			raise Disk::Table_Invalid_Filter_Column,
 			      "#{table_name} has no column(s) named #{unknown.join(', ')} -- known columns: #{known.join(', ')}"
 		end
 

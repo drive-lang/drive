@@ -16,7 +16,7 @@ module Ruby_Proxies
 	end
 
 	# Walks the superclass chain -- `@proxy_delegate_name` is a class-level ivar, so a subclass
-	# (Tape::Integer < Tape::Number) doesn't inherit it and would otherwise report nil, breaking
+	# (Disk::Integer < Disk::Number) doesn't inherit it and would otherwise report nil, breaking
 	# Instance#[]='s sync of the delegate member.
 	def proxy_delegate_name
 		@proxy_delegate_name || (superclass.proxy_delegate_name if superclass.respond_to?(:proxy_delegate_name))
@@ -24,7 +24,7 @@ module Ruby_Proxies
 
 	def proxy method_name, as: method_name
 		@proxy_methods ||= []
-		@proxy_methods << { tape_name: as, ruby_method: method_name }
+		@proxy_methods << { disk_name: as, ruby_method: method_name }
 		define_method "proxy_#{as}" do |*args|
 			_proxy_delegate_.send method_name, *args
 		end
@@ -32,12 +32,12 @@ module Ruby_Proxies
 
 	# For an Drive method with multiple param-typed declarations (`find_table (struct: Struct;)`, `find_table (name: String;)`) --
 	# Drive itself doesn't support overload dispatch (a repeated name just overwrites the earlier declaration), so only declare
-	# ONE `find_table (; @ruby)` in the .tape file. This dispatches by the first argument's own Ruby class instead, in mapping
+	# ONE `find_table (; @ruby)` in the .disk file. This dispatches by the first argument's own Ruby class instead, in mapping
 	# order (first match wins, same as a `case`/`when` chain), to the matching Ruby method:
 	#
 	#   proxy_overload :find_table,
-	#       Tape::Struct => :find_table_struct,
-	#       Tape::String => :find_table_named
+	#       Disk::Struct => :find_table_struct,
+	#       Disk::String => :find_table_named
 	def proxy_overload method_name, mapping
 		define_method "proxy_#{method_name}" do |*args|
 			arg     = args.first

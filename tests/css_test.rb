@@ -2,10 +2,10 @@ require 'minitest/autorun'
 require_relative '../drive/drive'
 require_relative 'base_test'
 
-# tapes/css.tape: the AST node structs, Css_Formatter_Visitor (format + minify), and
+# disks/css.disk: the AST node structs, Css_Formatter_Visitor (format + minify), and
 # Css_Lint_Visitor (duplicate properties, vendor prefixes, redundant zero-units).
 class Css_Test < Base_Test
-	CSS = "@load 'tapes/css.tape'"
+	CSS = "@load 'disks/css.disk'"
 
 	# --- Css_Formatter_Visitor -------------------------------------------------
 
@@ -158,7 +158,7 @@ class Css_Test < Base_Test
 	end
 
 	# The shorthand branch (`node.hex.has_all_same_characters?()` true) relies on String positional
-	# dot-index (`node.hex.0`) -- regression coverage from the css.tape side, now that #interp_dot_string
+	# dot-index (`node.hex.0`) -- regression coverage from the css.disk side, now that #interp_dot_string
 	# makes `.N` on a String work (see test/interpreter_test.rb for the interpreter-level tests).
 	def test_format_color_single_repeated_character_shorthand
 		out = Drive.interp "#{CSS}\nCss_Formatter_Visitor().format(Color('f'))"

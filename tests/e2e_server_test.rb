@@ -17,9 +17,9 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# `#start_server` used to spawn WEBrick in a Thread.new and return immediately, with nothing synchronizing the caller to when WEBrick actually starts listening. Thread.new returns before the new thread has run at all, so `webrick_server.status` was still :Stop right after start_server returned.
-	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and tape almost every time, so `bin/drive run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
+	# Interpreter#run's own "did a server start?" check (`servers.any? { status == :Running }`) raced that and disk almost every time, so `bin/drive run`/`@start` would just silently exit instead of staying up. start_server now blocks on a StartCallback until WEBrick is genuinely :Running (or raises if it failed to start), so this must be true with no sleep at all.
 	def test_start_server_blocks_until_webrick_is_actually_running_regression
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := #{@port};
@@ -32,13 +32,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -46,7 +46,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	def test_server_starts_and_responds
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := #{@port};
@@ -65,13 +65,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -92,10 +92,10 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# A route matching every segment literally wins over one that leaned on a `:param`, regardless of
-	# declaration order. This is what makes `tapes/server.tape`'s `get://favicon.ico` route actually
+	# declaration order. This is what makes `disks/server.disk`'s `get://favicon.ico` route actually
 	# shield an app's own `get://:id` from the browser's automatic icon probes.
 	def test_literal_route_beats_a_param_route_regardless_of_order
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := #{@port};
@@ -109,13 +109,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -130,7 +130,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	def test_query_parameters
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := #{@port};
@@ -145,13 +145,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -162,7 +162,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	def test_post_route
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := #{@port};
@@ -177,13 +177,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -194,15 +194,15 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# `request.body[:key]` (and even `request.body['key']`) silently missed and returned `nil` --
-	# `Tape::Dictionary#normalize_dict_key` always converts a subscript key to a Symbol before
+	# `Disk::Dictionary#normalize_dict_key` always converts a subscript key to a Symbol before
 	# checking `@hash`, but `body_hash` (from CGI.parse/JSON.parse) is String-keyed, so neither form
 	# ever actually matched the one key that was really stored. `query_params`/`url_params` already
 	# worked around this same problem by hand (storing each entry under both its String and Symbol
 	# form) -- `body_hash`/`headers_hash` didn't get the same treatment. Fixed with a shared
 	# `#double_key_with_symbols` helper, applied to both in `#handle_request`.
 	def test_request_body_subscript_access
-		code = <<~TAPE
-		    @load 'tapes/server'
+		code = <<~DISK
+		    @load 'disks/server'
 
 		    Web_App | Server {
 		    	Self ( port := #{@port}; self.port = port )
@@ -213,13 +213,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -229,15 +229,15 @@ class E2E_Server_Test < Minitest::Test
 		assert_equal 'symbol: World, string: World', response.body
 	end
 
-	# `response.redirect` was completely unreachable: Response is a plain Scope, not a Tape::Instance,
-	# and #build_tape_response pokes `declarations` directly rather than running the Type's own body
-	# on it, so `redirect` (declared in tapes/server.tape's `Response {}`) never got copied onto the
+	# `response.redirect` was completely unreachable: Response is a plain Scope, not a Disk::Instance,
+	# and #build_disk_response pokes `declarations` directly rather than running the Type's own body
+	# on it, so `redirect` (declared in disks/server.disk's `Response {}`) never got copied onto the
 	# instance -- and the Instance-fallback lookup that would normally rescue that is gated on
-	# `is_a?(Tape::Instance)`, so it never fired either. Every call raised `Undeclared_Identifier:
-	# redirect has not been declared`. Fixed with a real `Tape::Response#proxy_redirect` (scopes.rb).
+	# `is_a?(Disk::Instance)`, so it never fired either. Every call raised `Undeclared_Identifier:
+	# redirect has not been declared`. Fixed with a real `Disk::Response#proxy_redirect` (scopes.rb).
 	def test_response_redirect
-		code = <<~TAPE
-		    @load 'tapes/server'
+		code = <<~DISK
+		    @load 'disks/server'
 
 		    Web_App | Server {
 		    	Self ( port := #{@port}; self.port = port )
@@ -248,13 +248,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -266,8 +266,8 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	def test_dialog_and_popover_render_through_a_real_route
-		code = <<~TAPE
-		    @load 'tapes/html'
+		code = <<~DISK
+		    @load 'disks/html'
 
 		    Server {
 		    	port,
@@ -289,13 +289,13 @@ class E2E_Server_Test < Minitest::Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		@interpreter    = Drive::Interpreter.new
 		server_instance = @interpreter.run code
 
 		@server_runner        = server_instance
-		@server_runner.port   = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner.port   = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner.routes = @interpreter.collect_routes_from_instance server_instance
 		@interpreter.start_server @server_runner
 
@@ -311,7 +311,7 @@ class E2E_Server_Test < Minitest::Test
 		port_a = @port
 		port_b = @port + 1
 
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port;
@@ -333,7 +333,7 @@ class E2E_Server_Test < Minitest::Test
 
 		    a := Server_A(#{port_a})
 		    b := Server_B(#{port_b})
-		TAPE
+		DISK
 
 		interpreter = Drive::Interpreter.new
 		interpreter.run code
@@ -345,11 +345,11 @@ class E2E_Server_Test < Minitest::Test
 		routes_b = interpreter.collect_routes_from_instance b_instance
 
 		@server_runner_a        = a_instance
-		@server_runner_a.port   = Integer(a_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner_a.port   = Integer(a_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner_a.routes = routes_a
 
 		@server_runner_b        = b_instance
-		@server_runner_b.port   = Integer(b_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		@server_runner_b.port   = Integer(b_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 		@server_runner_b.routes = routes_b
 
 		interpreter.start_server @server_runner_a

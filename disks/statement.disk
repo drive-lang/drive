@@ -1,0 +1,30 @@
+Statement {
+	# When true, `()` resolves free identifiers against wherever it's *called from* instead of the scope it was originally captured in. See demos/statements.disk.
+	use_caller_scope := false
+
+	# When true, the first `()` call's result is cached and returned by every call after that, instead of re-running the expression. See demos/statements.disk.
+	memoize := false
+
+	# Internal bookkeeping for `memoize`, above -- read/written by Interpreter#invoke_statement on the first `()` call. Not meant to be set directly.
+	_expression     := nil   # The raw wrapped AST expression (an Disk::*_Expr, not an Disk::Statement) -- untyped on purpose
+	_memoized       := false
+	_memoized_value := nil
+
+	# Currently you cannot directly init this with a plain value -- you have to build it from a backtick literal such as `x := 1`, or by wrapping an existing Statement: `Statement(x)`.
+	Self ( literal := nil; # A literal here is --> `1+1` <-- including the backticks
+		from(literal)
+	)
+
+	# `Statement(other)` should behave exactly like reusing `other` itself, not like capturing a fresh scope at wherever this call happens to be written -- see statement.rb#proxy_from for why that needs a Ruby proxy (captured_scope, which this copies over too, isn't an Drive-level declaration).
+	from ( other: Statement;
+		@ruby
+	)
+
+	to_s (; @ruby )
+}
+
+###
+
+Modifying .memoize or .use_caller_scope directly on an existing Statement instance introduces mutable state side-effects. If a single Statement reference is passed to multiple components and one toggles .memoize = true, it mutates it for everyone. Toggling these via a builder pattern or immutable copy (e.g., stmt.memoized()) would keep shared statements safe.
+
+###

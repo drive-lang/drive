@@ -1,4 +1,4 @@
-# Mixin for Tape::Instance subclasses (external/ruby/*.rb). Forwards unknown method
+# Mixin for Disk::Instance subclasses (external/ruby/*.rb). Forwards unknown method
 # calls to @declarations instead of requiring a hand-written getter/setter pair for
 # every Drive-declared member. A real method (hand-written, or from a superclass)
 # always wins -- method_missing only runs after Ruby fails to find one.

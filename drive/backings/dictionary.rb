@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Dictionary < Instance
 		extend Ruby_Proxies
 		attr_accessor :hash
@@ -15,20 +15,20 @@ module Tape
 		proxy :clear
 
 		def proxy_keys
-			Tape::Array.new hash.keys
+			Disk::Array.new hash.keys
 		end
 
 		def proxy_values
-			Tape::Array.new hash.values
+			Disk::Array.new hash.values
 		end
 
 		def proxy_merge other_hash
-			Tape::Dictionary.new hash.merge other_hash.hash
+			Disk::Dictionary.new hash.merge other_hash.hash
 		end
 
-		# A key argument reaching any of these five can be a raw Ruby String/Symbol (a literal interpreted directly, e.g. by #interp_infix_assignment's own subscript handling) or a real Tape::String instance (an ordinary call argument, e.g. a variable holding one) -- Tape::String has no #to_sym of its own, so unwrap it to its real Ruby value first either way.
+		# A key argument reaching any of these five can be a raw Ruby String/Symbol (a literal interpreted directly, e.g. by #interp_infix_assignment's own subscript handling) or a real Disk::String instance (an ordinary call argument, e.g. a variable holding one) -- Disk::String has no #to_sym of its own, so unwrap it to its real Ruby value first either way.
 		def normalize_dict_key key
-			(key.is_a?(Tape::String) ? key.value : key).to_sym
+			(key.is_a?(Disk::String) ? key.value : key).to_sym
 		end
 
 		# note; To prevent Scope#[] or Scope#get from missing out on the actual location of the hash. Standard members still call through to [] and get. I'm manually calling these proxy methods in some places. @copypaste from array.rb

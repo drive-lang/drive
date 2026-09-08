@@ -13,15 +13,15 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def server_code port
-		<<~TAPE
-		    @load 'tapes/server'
+		<<~DISK
+		    @load 'disks/server'
 		    App | Server {
 		    	Self (; self.port = #{port} )
 		    	get:// (; "ok" )
 		    }
 		    app := App()
 		    @start_server app
-		TAPE
+		DISK
 	end
 
 	def test_serve_in_foreground_false_makes_run_return_instead_of_blocking
@@ -31,7 +31,7 @@ class Hot_Reload_Test < Base_Test
 		# With the default (true) this call never returns -- it sits in #loop_servers until ^C.
 		result = Timeout.timeout(5) { @interpreter.run server_code(9810 + rand(80)) }
 
-		assert_instance_of Tape::Server, result
+		assert_instance_of Disk::Server, result
 		assert_equal 1, @interpreter.servers.length
 		assert_equal :Running, @interpreter.servers.first.webrick_server.status
 	end
@@ -49,7 +49,7 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def test_reset_file_caches_clears_every_parse_cache
-		Drive.interp "@load 'tests/fixtures/test_module.tape'"
+		Drive.interp "@load 'tests/fixtures/test_module.disk'"
 		refute_empty Drive::Interpreter.cached_expressions_by_filepath
 
 		Drive::Interpreter.reset_file_caches!
@@ -62,15 +62,15 @@ class Hot_Reload_Test < Base_Test
 	# --- live reload (browser auto-refresh) -------------------------------------------------------
 
 	def html_server_code port
-		<<~TAPE
-		    @load 'tapes/server'
+		<<~DISK
+		    @load 'disks/server'
 		    App | Server {
 		    	Self (; self.port = #{port} )
 		    	get:// (; "<html><head></head><body>hi</body></html>" )
 		    }
 		    app := App()
 		    @start_server app
-		TAPE
+		DISK
 	end
 
 	# Reads a Server-Sent-Events response for `seconds` then returns whatever arrived. Net::HTTP would
@@ -146,8 +146,8 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def test_reset_file_caches_with_paths_only_drops_those_paths
-		fixture = File.expand_path 'tests/fixtures/test_module.tape'
-		Drive.interp "@load 'tests/fixtures/test_module.tape'" # caches stdlib + the fixture
+		fixture = File.expand_path 'tests/fixtures/test_module.disk'
+		Drive.interp "@load 'tests/fixtures/test_module.disk'" # caches stdlib + the fixture
 		stdlib = Drive::STANDARD_LIBRARY_PATH
 
 		assert Drive::Interpreter.cached_expressions_by_filepath.key?(stdlib)

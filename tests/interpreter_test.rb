@@ -5,9 +5,9 @@ require_relative 'base_test'
 # These tests are mostly in chronological order. I may have inserted some at times. It would be great to preserve this order.
 
 class Interpreter_Test < Base_Test
-	def test_global_tape
+	def test_global_disk
 		refute_raises RuntimeError do
-			Drive.interp_file './tapes/global.tape'
+			Drive.interp_file './disks/global.disk'
 		end
 	end
 
@@ -29,13 +29,13 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_raises_undeclared_identifier_when_reading
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp 'hatch'
 		end
 	end
 
 	def test_does_not_raise_undeclared_identifier_when_declaring
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp 'found := true'
 		end
 	end
@@ -52,12 +52,12 @@ class Interpreter_Test < Base_Test
 
 	def test_cannot_assign_incompatible_type
 		# todo; raises Cannot_Reassign_Undeclared_Identifier
-		assert_raises Tape::Cannot_Assign_Incompatible_Type do
+		assert_raises Disk::Cannot_Assign_Incompatible_Type do
 			Drive.interp 'MyType {}
 			My_Type = :anything'
 		end
 
-		refute_raises Tape::Cannot_Assign_Incompatible_Type do
+		refute_raises Disk::Cannot_Assign_Incompatible_Type do
 			Drive.interp 'MyType {}
 			My_Type = Other {}'
 		end
@@ -70,14 +70,14 @@ class Interpreter_Test < Base_Test
 
 	def test_anonymous_func_expr
 		out = Drive.interp '(;)'
-		assert_instance_of Tape::Func, out
+		assert_instance_of Disk::Func, out
 		assert_empty out.expressions
 		refute out.name
 	end
 
 	def test_empty_func_declaration
 		out = Drive.interp 'open (;)'
-		assert_instance_of Tape::Func, out
+		assert_instance_of Disk::Func, out
 		assert_empty out.expressions
 		assert_equal 'open', out.name.value
 	end
@@ -86,15 +86,15 @@ class Interpreter_Test < Base_Test
 		out = Drive.interp 'enter ( numbers := "4815162342"; )'
 		assert_equal 1, out.parameters.count
 		assert_empty out.expressions
-		assert_instance_of Tape::Param_Expr, out.parameters.first
-		assert_instance_of Tape::String_Expr, out.parameters.first.default
+		assert_instance_of Disk::Param_Expr, out.parameters.first
+		assert_instance_of Disk::String_Expr, out.parameters.first.default
 	end
 
 	def test_advanced_func_declaration
 		out = Drive.interp 'add ( a, b; a + b )'
 		assert_equal 2, out.parameters.count
 		assert_equal 1, out.expressions.count
-		assert_instance_of Tape::Infix_Expr, out.expressions.last
+		assert_instance_of Disk::Infix_Expr, out.expressions.last
 		refute out.parameters.first.default
 	end
 
@@ -123,12 +123,12 @@ class Interpreter_Test < Base_Test
 		assert d.label
 		assert d.default
 
-		assert_instance_of Tape::Infix_Expr, out.expressions.last
+		assert_instance_of Disk::Infix_Expr, out.expressions.last
 	end
 
 	def test_empty_type_declaration
 		out = Drive.interp 'Island {}'
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 		assert_empty out.expressions
 		assert_equal 'Island', out.name
 	end
@@ -141,15 +141,15 @@ class Interpreter_Test < Base_Test
 				# do something with the numbers
 			)
 		}'
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 		assert_instance_of NilClass, out[:computer]
-		assert_instance_of Tape::Func, out[:enter]
+		assert_instance_of Disk::Func, out[:enter]
 	end
 
 	def test_inline_type_composition_declaration
 		out = Drive.interp 'Number {}
 		Integer | Number {}'
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 		assert_equal Set['Integer', 'Number'], out.types
 	end
 
@@ -161,12 +161,12 @@ class Interpreter_Test < Base_Test
 		Float {
 			| Number
 		}'
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 		assert_equal Set['Float', 'Number', 'Numeric'], out.types
 	end
 
 	def test_invalid_type_declaration
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp 'Number | Numeric {}'
 		end
 	end
@@ -176,8 +176,8 @@ class Interpreter_Test < Base_Test
 		assert_instance_of NilClass, out
 
 		out = Drive.interp 'func ( assign_to_nil; )'
-		assert_instance_of Tape::Func, out
-		assert_instance_of Tape::Param_Expr, out.parameters.first
+		assert_instance_of Disk::Func, out
+		assert_instance_of Disk::Param_Expr, out.parameters.first
 		assert_equal 'assign_to_nil', out.parameters.first.name.value
 	end
 
@@ -199,11 +199,11 @@ class Interpreter_Test < Base_Test
 		}
 
 		Island.Hatch.Commodore_64'
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 	end
 
 	def test_constants_cannot_be_reassigned
-		assert_raises Tape::Cannot_Reassign_Constant do
+		assert_raises Disk::Cannot_Reassign_Constant do
 			Drive.interp 'ENVIRONMENT := :development
 			ENVIRONMENT = :production'
 		end
@@ -232,11 +232,11 @@ class Interpreter_Test < Base_Test
 		assert_equal 8, out
 	end
 
-	# Tape::Range is now an Instance wrapping a Ruby ::Range (`.range`), not a ::Range subclass -- so
+	# Disk::Range is now an Instance wrapping a Ruby ::Range (`.range`), not a ::Range subclass -- so
 	# the raw-Range comparison is against `out.range`; `out.include?` still works via Enumerable.
 	def test_inclusive_range
 		out = Drive.interp '4...42'
-		assert_instance_of Tape::Range, out
+		assert_instance_of Disk::Range, out
 		assert_equal 4..42, out.range
 		assert out.include? 4
 		assert out.include? 23
@@ -245,7 +245,7 @@ class Interpreter_Test < Base_Test
 
 	def test_right_exclusive_range
 		out = Drive.interp '4..<42'
-		assert_instance_of Tape::Range, out
+		assert_instance_of Disk::Range, out
 		assert_equal 4...42, out.range
 		assert out.include? 4
 		assert out.include? 41
@@ -254,7 +254,7 @@ class Interpreter_Test < Base_Test
 
 	def test_left_exclusive_range
 		out = Drive.interp '4>..42'
-		assert_instance_of Tape::Range, out
+		assert_instance_of Disk::Range, out
 		assert_equal 5..42, out.range
 		refute out.include? 4
 		assert out.include? 5
@@ -263,7 +263,7 @@ class Interpreter_Test < Base_Test
 
 	def test_left_and_right_exclusive_range
 		out = Drive.interp '4>.<42'
-		assert_instance_of Tape::Range, out
+		assert_instance_of Disk::Range, out
 		assert_equal 5...42, out.range
 		refute out.include? 4
 		assert out.include? 5
@@ -326,22 +326,22 @@ class Interpreter_Test < Base_Test
 	def test_empty_array
 		out = Drive.interp '[]'
 		assert_equal [], out.values
-		assert_instance_of Tape::Array, out
+		assert_instance_of Disk::Array, out
 	end
 
 	def test_non_empty_arrays
 		out = Drive.interp '[1]'
-		assert_instance_of Tape::Array, out
+		assert_instance_of Disk::Array, out
 		assert_equal [1], out.values
 
 		out = Drive.interp '[1, "test", 5]'
-		assert_instance_of Tape::Array, out
-		assert_equal Tape::Array.new([1, 'test', 5]).values, out.values
+		assert_instance_of Disk::Array, out
+		assert_equal Disk::Array.new([1, 'test', 5]).values, out.values
 	end
 
 	def test_tuples
 		out = Drive.interp '(1, 2)'
-		assert_kind_of Tape::Tuple, out
+		assert_kind_of Disk::Tuple, out
 		assert_equal [1, 2], out.values
 
 		out = Drive.interp 't := ("Hello", "from" ,"Tuple")
@@ -356,7 +356,7 @@ class Interpreter_Test < Base_Test
 
 	def test_empty_dictionary
 		out = Drive.interp '{}'
-		assert_kind_of Tape::Dictionary, out
+		assert_kind_of Disk::Dictionary, out
 		assert_equal out.hash, {}
 	end
 
@@ -474,7 +474,7 @@ class Interpreter_Test < Base_Test
 		assert_equal 42, out
 	end
 
-	# The key normalization fix has to work for a real Tape::String value (an ordinary call argument, e.g. a variable), not just a raw Ruby string literal interpreted directly by `[]`/`[]=`'s own subscript handling.
+	# The key normalization fix has to work for a real Disk::String value (an ordinary call argument, e.g. a variable), not just a raw Ruby string literal interpreted directly by `[]`/`[]=`'s own subscript handling.
 	def test_dictionary_has_key_with_a_variable_holding_a_string_still_matches
 		out = Drive.interp "d := {}
 		d[:x] = 1
@@ -485,14 +485,14 @@ class Interpreter_Test < Base_Test
 
 	# `:=` declares an identifier -- a subscript target isn't one, so `d[key] := value` isn't meaningful the way `d[key] = value` is (and used to silently declare a bogus identifier instead of writing to the dictionary).
 	def test_dictionary_subscript_assignment_via_declare_operator_raises
-		assert_raises Tape::Cannot_Declare_Subscript_Target do
+		assert_raises Disk::Cannot_Declare_Subscript_Target do
 			Drive.interp "d := {}
 			d[:x] := 5"
 		end
 	end
 
-	# Tape::Array had no `[]=` of its own, so `a[i] = value` fell through to the generic declarations-hash write every other Scope uses, silently declaring a bogus member instead of writing into `.values`.
-	# A Tape::Range subscript slices an Array -- each of the four range operators keeps its own
+	# Disk::Array had no `[]=` of its own, so `a[i] = value` fell through to the generic declarations-hash write every other Scope uses, silently declaring a bogus member instead of writing into `.values`.
+	# A Disk::Range subscript slices an Array -- each of the four range operators keeps its own
 	# inclusive/exclusive end behavior (`...` inclusive, `..<` exclusive end, `>..` exclusive start).
 	def test_array_range_subscript
 		assert_equal [20, 30, 40], Drive.interp('[10, 20, 30, 40, 50][1...3]').values
@@ -548,26 +548,26 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_array_subscript_assignment_out_of_bounds_raises
-		assert_raises Tape::Invalid_Array_Index do
+		assert_raises Disk::Invalid_Array_Index do
 			Drive.interp "a := [1, 2, 3]
 			a[10] = 99"
 		end
 	end
 
 	def test_array_subscript_assignment_via_declare_operator_raises
-		assert_raises Tape::Cannot_Declare_Subscript_Target do
+		assert_raises Disk::Cannot_Declare_Subscript_Target do
 			Drive.interp "a := [1, 2, 3]
 			a[1] := 99"
 		end
 	end
 
 	def test_too_many_dictionary_subscript_arguments
-		assert_raises Tape::Too_Many_Subscript_Expressions do
+		assert_raises Disk::Too_Many_Subscript_Expressions do
 			Drive.interp "dict := {x=4815}
 			dict[:x, 123]"
 		end
 
-		assert_raises Tape::Too_Many_Subscript_Expressions do
+		assert_raises Disk::Too_Many_Subscript_Expressions do
 			Drive.interp "dict := {x=4815}
 			dict[:x, 123] = 162342"
 		end
@@ -599,7 +599,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_invalid_dictionary_infix
-		assert_raises Tape::Invalid_Dictionary_Infix_Operator do
+		assert_raises Disk::Invalid_Dictionary_Infix_Operator do
 			Drive.interp '{ x > x }'
 		end
 	end
@@ -617,9 +617,9 @@ class Interpreter_Test < Base_Test
 			| Transform
 			~ Rotation
 		}'
-		assert_kind_of Tape::Type, out
-		assert_kind_of Tape::Composition_Expr, out.expressions.first
-		assert_kind_of Tape::Composition_Expr, out.expressions.last
+		assert_kind_of Disk::Type, out
+		assert_kind_of Disk::Composition_Expr, out.expressions.first
+		assert_kind_of Disk::Composition_Expr, out.expressions.last
 		assert_equal 'Rotation', out.expressions.last.identifier.value
 		assert_equal '~', out.expressions.last.operator.value
 	end
@@ -628,9 +628,9 @@ class Interpreter_Test < Base_Test
 		out = Drive.interp '
 		Transform {}, Physics {}
 		Entity | Transform ~ Physics {}'
-		assert_kind_of Tape::Type, out
-		assert_kind_of Tape::Composition_Expr, out.expressions.first
-		assert_kind_of Tape::Composition_Expr, out.expressions.last
+		assert_kind_of Disk::Type, out
+		assert_kind_of Disk::Composition_Expr, out.expressions.first
+		assert_kind_of Disk::Composition_Expr, out.expressions.last
 		assert_equal 'Physics', out.expressions.last.identifier.value
 		assert_equal '~', out.expressions.last.operator.value
 	end
@@ -647,29 +647,29 @@ class Interpreter_Test < Base_Test
 				"Transform!"
 			)
 		}'
-		assert_kind_of Tape::Infix_Expr, out.expressions[0]
-		assert_kind_of Tape::Infix_Expr, out.expressions[1]
-		assert_kind_of Tape::Infix_Expr, out.expressions[2]
-		assert_kind_of Tape::Infix_Expr, out.expressions[3]
-		assert_kind_of Tape::Func_Expr, out.expressions[4]
+		assert_kind_of Disk::Infix_Expr, out.expressions[0]
+		assert_kind_of Disk::Infix_Expr, out.expressions[1]
+		assert_kind_of Disk::Infix_Expr, out.expressions[2]
+		assert_kind_of Disk::Infix_Expr, out.expressions[3]
+		assert_kind_of Disk::Func_Expr, out.expressions[4]
 	end
 
 	def test_undeclared_type_init_via_call
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp 'Type()'
 		end
 	end
 
 	# `Self` is deleted off an instance right after construction finishes, so a dot-access to it from an already-built value (a lowercase-receiver `x.Self`, as opposed to a Type's own `Ident.Self`) just fails like any other missing member.
 	def test_ident_dot_self_fails_after_construction
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp 'x := 1, x.Self'
 		end
 	end
 
 	def test_declared_type_init_via_call
 		out = Drive.interp 'Type {}, Type()'
-		assert_instance_of Tape::Instance, out
+		assert_instance_of Disk::Instance, out
 		assert_equal 'Type', out.name
 	end
 
@@ -682,7 +682,7 @@ class Interpreter_Test < Base_Test
 				self.x = 123
 			)
 		}, Thing.Self'
-		assert_kind_of Tape::Func, out
+		assert_kind_of Disk::Func, out
 
 		out = Drive.interp 'Thing {
 			x,
@@ -707,11 +707,11 @@ class Interpreter_Test < Base_Test
 
 			Self ( position := 0; )
 		}, Transform()'
-		assert_kind_of Tape::Instance, out
+		assert_kind_of Disk::Instance, out
 		assert_equal 'Transform', out.name
 		assert_kind_of ::Array, out.expressions
 		assert_equal 6, out.expressions.count
-		assert_kind_of Tape::Func_Expr, out.expressions.last
+		assert_kind_of Disk::Func_Expr, out.expressions.last
 	end
 
 	def test_complex_type_with_value_lookup
@@ -729,22 +729,22 @@ class Interpreter_Test < Base_Test
 		t := Transform()
 		(t.position, t.position.y)
 		'
-		assert_kind_of Tape::Tuple, out
-		assert_kind_of Tape::Instance, out.values.first
+		assert_kind_of Disk::Tuple, out
+		assert_kind_of Disk::Instance, out.values.first
 		assert_equal 2, out.values.last
 	end
 
 	def test_type_declaration_with_parens
 		out = Drive.interp 'Vector2 { x := 0, y := 1 }
 		pos := Vector2()'
-		assert_instance_of Tape::Instance, out
+		assert_instance_of Disk::Instance, out
 		data = { 'x' => 0, 'y' => 1 }
 		assert_equal data, out.declarations
 	end
 
-	# `.name`/`.types` are `@`-only (`@.name`/`@.composed_types`), stored as plain Ruby attrs; when the backing Ruby class is shared with a *composed* type (`Tasks | Table {}` resolves to Tape::Table, a Ruby-backed builtin), that class's own Type#initialize baked its own name ("Table") into the attr at construction, which `build_instance_of_type` must overwrite with the real composed type's name.
+	# `.name`/`.types` are `@`-only (`@.name`/`@.composed_types`), stored as plain Ruby attrs; when the backing Ruby class is shared with a *composed* type (`Tasks | Table {}` resolves to Disk::Table, a Ruby-backed builtin), that class's own Type#initialize baked its own name ("Table") into the attr at construction, which `build_instance_of_type` must overwrite with the real composed type's name.
 	def test_composed_instance_reports_its_own_name_not_the_backing_ruby_class_regression
-		out = Drive.interp "@load 'tapes/table'
+		out = Drive.interp "@load 'disks/table'
 			Tasks | Table {}
 			t := Tasks()
 			(t.@name, t.@composed_types)"
@@ -753,13 +753,13 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_self_scope_write_outside_instance
-		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
+		assert_raises Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
 			Drive.interp 'self.x := 123'
 		end
 	end
 
 	def test_type_scope_write_outside_type
-		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
+		assert_raises Disk::Cannot_Use_Type_Scope_Operator_Outside_Type do
 			Drive.interp 'Self.x := 123'
 		end
 	end
@@ -789,21 +789,21 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_positional_argument_after_named_raises
-		assert_raises Tape::Positional_Argument_After_Named do
+		assert_raises Disk::Positional_Argument_After_Named do
 			Drive.interp 'add ( a, b; a + b )
 				add(a := 1, 2)'
 		end
 	end
 
 	def test_duplicate_named_argument_raises
-		assert_raises Tape::Duplicate_Named_Argument do
+		assert_raises Disk::Duplicate_Named_Argument do
 			Drive.interp 'add ( a, b; a + b )
 				add(a := 1, a := 2)'
 		end
 	end
 
 	def test_argument_given_by_name_and_position_raises
-		assert_raises Tape::Argument_Given_By_Name_And_Position do
+		assert_raises Disk::Argument_Given_By_Name_And_Position do
 			Drive.interp 'add ( a, b; a + b )
 				add(1, a := 2)'
 		end
@@ -811,7 +811,7 @@ class Interpreter_Test < Base_Test
 
 	# An unknown name is the actual mistake, so it has to be reported even when some other (unrelated) param is also left without a value as a side effect of that same typo -- not masked by a confusing Missing_Argument that never mentions the real problem.
 	def test_unknown_named_argument_raises_even_when_another_param_is_also_left_missing
-		assert_raises Tape::Unknown_Named_Argument do
+		assert_raises Disk::Unknown_Named_Argument do
 			Drive.interp 'add ( a, b; a + b )
 				add(a := 1, c := 2)' # `c` isn't a param; `b` is consequently never filled
 		end
@@ -826,7 +826,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_named_call_arguments_do_not_leak_into_caller_scope
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp 'add ( a, b; a + b )
 				add(a := 1, b := 2)
 				a' # `a` was never declared in the caller -- only inside add's own call scope
@@ -907,7 +907,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal [9, 8], out.values
 
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    f ( a, rest...; rest )
 			    f(1, rest := 99)
@@ -951,7 +951,7 @@ class Interpreter_Test < Base_Test
 		assert_equal [2, 3], out.values[1].values
 		assert_equal 9, out.values[2]
 
-		assert_raises Tape::Missing_Argument do
+		assert_raises Disk::Missing_Argument do
 			Drive.interp <<~CODE
 			    f ( a, mid..., z; z )
 			    f(1, 2, 3)
@@ -971,7 +971,7 @@ class Interpreter_Test < Base_Test
 	# Naming the variadic param itself (`rest := ...`) goes through the spread/reject path, never
 	# the by-name nicety -- regression for a bug where it silently overwrote `rest` with a scalar.
 	def test_naming_the_variadic_parameter_does_not_bypass_the_spread_check
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    f ( a, rest...; rest )
 			    f(1, rest := 99)
@@ -980,21 +980,21 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_variadic_keeps_the_positional_before_named_ordering_rules
-		assert_raises Tape::Positional_Argument_After_Named do
+		assert_raises Disk::Positional_Argument_After_Named do
 			Drive.interp <<~CODE
 			    f ( a, rest...; a )
 			    f(a := 1, 2)
 			CODE
 		end
 
-		assert_raises Tape::Argument_Given_By_Name_And_Position do
+		assert_raises Disk::Argument_Given_By_Name_And_Position do
 			Drive.interp <<~CODE
 			    f ( a, rest...; a )
 			    f(1, a := 2)
 			CODE
 		end
 
-		assert_raises Tape::Duplicate_Named_Argument do
+		assert_raises Disk::Duplicate_Named_Argument do
 			Drive.interp <<~CODE
 			    f ( args...; x )
 			    f(x := 1, x := 2)
@@ -1073,11 +1073,11 @@ class Interpreter_Test < Base_Test
 
 		out = Drive.interp "#{shared_code}
 		A.B"
-		assert_instance_of Tape::Type, out
+		assert_instance_of Disk::Type, out
 
 		out = Drive.interp "#{shared_code}
 		A.B.C()"
-		assert_instance_of Tape::Instance, out
+		assert_instance_of Disk::Instance, out
 
 		out = Drive.interp "#{shared_code}
 		A.B.C().d"
@@ -1147,7 +1147,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_array_nested_non_array_dot_index
-		assert_raises Tape::Invalid_Dot_Infix_Left_Operand do
+		assert_raises Disk::Invalid_Dot_Infix_Left_Operand do
 			Drive.interp 'things := [4, 8, 15]
 		things.0.1'
 		end
@@ -1156,7 +1156,7 @@ class Interpreter_Test < Base_Test
 	def test_nested_array_access_by_dot_index
 		out = Drive.interp 'things := [4, [8, 15, 16], 23, [42, 108, 418, 3]]
 		(things.1.0, things.3.1)'
-		assert_instance_of Tape::Tuple, out
+		assert_instance_of Disk::Tuple, out
 		assert_equal 8, out.values.first
 		assert_equal 108, out.values.last
 	end
@@ -1181,7 +1181,7 @@ class Interpreter_Test < Base_Test
 
 	def test_returns
 		out = Drive.interp 'return 1'
-		assert_instance_of Tape::Return, out
+		assert_instance_of Disk::Return, out
 		assert_equal 1, out.value
 
 		out = Drive.interp '
@@ -1358,13 +1358,13 @@ class Interpreter_Test < Base_Test
 		assert_equal "Transform(4,8)", out.values[0]
 		assert_equal "Transform(12,24)", out.values[1]
 
-		assert_instance_of Tape::Instance, out.values[2]
+		assert_instance_of Disk::Instance, out.values[2]
 		assert_equal 12, out.values[2][:x]
 		assert_equal 24, out.values[2][:y]
 	end
 
 	def test_random_composition_example
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			out = Drive.interp "
 			Vec2 {
 				x := 0, y := 0
@@ -1390,13 +1390,13 @@ class Interpreter_Test < Base_Test
 			}
 			x := Xform(v)
 			"
-			assert_instance_of Tape::Instance, out
+			assert_instance_of Disk::Instance, out
 			assert_equal Set['Xform', 'Transform'], out.types
 		end
 	end
 
 	def test_union_composition
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			out = Drive.interp '
 			Aa {
 				a := 1
@@ -1434,7 +1434,7 @@ class Interpreter_Test < Base_Test
 
 			d := Diff()".freeze
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			out = Drive.interp "#{shared_code}
 			a := Aa()
 			b := Bb()
@@ -1442,7 +1442,7 @@ class Interpreter_Test < Base_Test
 			assert_equal [8, 15, 16, 23], out.values
 		end
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			d.b"
 		end
@@ -1457,18 +1457,18 @@ class Interpreter_Test < Base_Test
 
 			i := Intersected()"
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			out = Drive.interp "#{shared_code}
 			i.common"
 			assert_equal 8, out
 		end
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			i.a"
 		end
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			i.b"
 		end
@@ -1485,7 +1485,7 @@ class Interpreter_Test < Base_Test
 		out = Drive.interp "#{shared_code} (s.a, s.b)"
 		assert_equal [4, 8], out.values
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code} s.common"
 		end
 	end
@@ -1518,7 +1518,7 @@ class Interpreter_Test < Base_Test
 			do_something()
 		)'
 
-		assert_instance_of Tape::Route, out
+		assert_instance_of Disk::Route, out
 		assert_equal 'get', out.http_method.value
 		assert_equal 'some/thing/:id', out.path
 		assert_equal 1, out.handler.parameters.count
@@ -1540,92 +1540,92 @@ class Interpreter_Test < Base_Test
 
 		it := My_Div()
 		(My_Div, it, it.render())"
-		assert_instance_of Tape::Type, out.values[0]
-		assert_instance_of Tape::Instance, out.values[1]
+		assert_instance_of Disk::Type, out.values[0]
+		assert_instance_of Disk::Instance, out.values[1]
 		assert_instance_of String, out.values[2]
 		assert_equal 'Text content of this div', out.values[2]
 	end
 
 	def test_loading_external_source_files
-		out = Drive.interp "@load 'tapes/global.tape'
+		out = Drive.interp "@load 'disks/global.disk'
 		(Bool, Bool())"
 
-		assert_instance_of Tape::Type, out.values[0]
-		assert_kind_of Tape::Instance, out.values[1]
-		assert_instance_of Tape::Bool, out.values[1]
+		assert_instance_of Disk::Type, out.values[0]
+		assert_kind_of Disk::Instance, out.values[1]
+		assert_instance_of Disk::Bool, out.values[1]
 	end
 
 	def test_standalone_load_into_current_scope
-		out = Drive.interp "@load 'tests/fixtures/test_module.tape'
+		out = Drive.interp "@load 'tests/fixtures/test_module.disk'
 		(MODULE_NAME, MODULE_VALUE, module_func(10))"
 
-		assert_instance_of Tape::Tuple, out
+		assert_instance_of Disk::Tuple, out
 		assert_equal "Test_Module", out.values[0]
 		assert_equal 42, out.values[1]
 		assert_equal 20, out.values[2]
 	end
 
 	def test_load_assignment_into_variable_identifier
-		out = Drive.interp "mod := @load 'tests/fixtures/test_module.tape'
+		out = Drive.interp "mod := @load 'tests/fixtures/test_module.disk'
 		(mod, mod.MODULE_NAME, mod.MODULE_VALUE, mod.module_func(10))"
 
-		assert_instance_of Tape::Tuple, out
-		assert_instance_of Tape::Scope, out.values[0]
+		assert_instance_of Disk::Tuple, out
+		assert_instance_of Disk::Scope, out.values[0]
 		assert_equal "Test_Module", out.values[1]
 		assert_equal 42, out.values[2]
 		assert_equal 20, out.values[3]
 
 		# Verify declarations are NOT in current scope
-		assert_raises Tape::Undeclared_Identifier do
-			Drive.interp "mod := @load 'tests/fixtures/test_module.tape'
+		assert_raises Disk::Undeclared_Identifier do
+			Drive.interp "mod := @load 'tests/fixtures/test_module.disk'
 			MODULE_NAME"
 		end
 	end
 
 	def test_load_assignment_into_class_identifier
-		out = Drive.interp "Module := @load 'tests/fixtures/test_module.tape'
+		out = Drive.interp "Module := @load 'tests/fixtures/test_module.disk'
 		(Module, Module.MODULE_NAME, Module.MODULE_VALUE, Module.module_func(10))"
 
-		assert_instance_of Tape::Tuple, out
-		assert_instance_of Tape::Scope, out.values[0]
+		assert_instance_of Disk::Tuple, out
+		assert_instance_of Disk::Scope, out.values[0]
 		assert_equal "Test_Module", out.values[1]
 		assert_equal 42, out.values[2]
 		assert_equal 20, out.values[3]
 
 		# Verify declarations are NOT in current scope
-		assert_raises Tape::Undeclared_Identifier do
-			Drive.interp "Module := @load 'tests/fixtures/test_module.tape'
+		assert_raises Disk::Undeclared_Identifier do
+			Drive.interp "Module := @load 'tests/fixtures/test_module.disk'
 			MODULE_NAME"
 		end
 	end
 
 	def test_load_assignment_into_constant_identifier
-		out = Drive.interp "MODULE := @load 'tests/fixtures/test_module.tape'
+		out = Drive.interp "MODULE := @load 'tests/fixtures/test_module.disk'
 		(MODULE, MODULE.MODULE_NAME, MODULE.MODULE_VALUE, MODULE.module_func(10))"
 
-		assert_instance_of Tape::Tuple, out
-		assert_instance_of Tape::Scope, out.values[0]
+		assert_instance_of Disk::Tuple, out
+		assert_instance_of Disk::Scope, out.values[0]
 		assert_equal "Test_Module", out.values[1]
 		assert_equal 42, out.values[2]
 		assert_equal 20, out.values[3]
 
 		# Verify declarations are NOT in current scope
-		assert_raises Tape::Undeclared_Identifier do
-			Drive.interp "MODULE := @load 'tests/fixtures/test_module.tape'
+		assert_raises Disk::Undeclared_Identifier do
+			Drive.interp "MODULE := @load 'tests/fixtures/test_module.disk'
 			MODULE_NAME"
 		end
 	end
 
 	def test_load_same_file_into_multiple_scopes
 		out = Drive.interp "
-		lib1 := @load 'tests/fixtures/test_module.tape'
-		lib2 := @load 'tests/fixtures/test_module.tape'
+		lib1 := @load 'tests/fixtures/test_module.disk'
+		lib2 := @load 'tests/fixtures/test_module.disk'
 
 		(lib1, lib2, lib1.MODULE_VALUE, lib2.MODULE_VALUE, lib1 != lib2)"
 
-		assert_instance_of Tape::Tuple, out
-		assert_instance_of Tape::Scope, out.values[0]
-		assert_instance_of Tape::Scope, out.values[1]
+		assert_instance_of Disk::Tuple, out
+		assert_instance_of Disk::Scope, out.values[0]
+		assert_instance_of Disk::Scope, out.values[1]
 		assert_equal 42, out.values[2]
 		assert_equal 42, out.values[3]
 		assert out.values[4]
@@ -1635,9 +1635,9 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_double_loading_file
-		assert_raises Tape::Cannot_Reassign_Constant do
+		assert_raises Disk::Cannot_Reassign_Constant do
 			out = Drive.interp "
-			@load 'tests/fixtures/constants.tape'
+			@load 'tests/fixtures/constants.disk'
 			CODE = 123"
 		end
 	end
@@ -1656,7 +1656,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_for_loop_with_scopes
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    Numbers {
 		    	numbers := []
 
@@ -1674,7 +1674,7 @@ class Interpreter_Test < Base_Test
 		    }
 
 		    Numbers([1, 2, 3]).multiply(2)
-		TAPE
+		DISK
 		assert_equal [2, 4, 6], out.values
 	end
 
@@ -2156,22 +2156,22 @@ class Interpreter_Test < Base_Test
 		Type.calling_static_private_through_static()"
 		assert_equal 16, out
 
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Type()._private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Type()._static_private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Static_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Private_Static_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Type._static_private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "
 			Inner { _secret := 42 }
 		    Outer { inner := Inner() }
@@ -2187,22 +2187,22 @@ class Interpreter_Test < Base_Test
 		Type.nilled"
 		assert_nil out
 
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Type()._private = 100"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Static_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Private_Static_Member_On_Type do
 			Drive.interp "#{shared_code}
 		    Type._static_private = 100"
 		end
 
-		assert_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Type.number"
 		end
 
-		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
+		assert_raises Disk::Cannot_Use_Type_Scope_Operator_Outside_Type do
 			Drive.interp "Self.whatever"
 		end
 	end
@@ -2226,15 +2226,15 @@ class Interpreter_Test < Base_Test
 		out = Drive.interp "'WALT!'.downcase()"
 		assert_equal "walt!", out
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
+		assert_raises Disk::Invalid_Ruby_Proxy_Usage do
 			Drive.interp "@ruby whatever"
 		end
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
+		assert_raises Disk::Invalid_Ruby_Proxy_Usage do
 			Drive.interp "@ruby 123"
 		end
 
-		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
+		assert_raises Disk::Invalid_Ruby_Proxy_Usage do
 			Drive.interp "Type { @ruby 123, }"
 		end
 	end
@@ -2283,32 +2283,32 @@ class Interpreter_Test < Base_Test
 		assert_equal 10, out
 
 		# Privacy preserved through union
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Merged | Base | Other {}
 			Merged()._base_instance_private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Merged | Base | Other {}
 			Merged()._other_private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Static_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Private_Static_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Merged | Base | Other {}
 			Merged._base_static_private"
 		end
 
 		# Binding preserved - cannot access instance members on Type
-		assert_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Merged | Base | Other {}
 			Merged.base_instance_public"
 		end
 
-		assert_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Merged | Base | Other {}
 			Merged.other_instance"
@@ -2320,7 +2320,7 @@ class Interpreter_Test < Base_Test
 		Diff().base_instance_public"
 		assert_equal 1, out
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Diff | Base ~ Other {}
 			Diff().other_instance"
@@ -2332,14 +2332,14 @@ class Interpreter_Test < Base_Test
 		Diff.base_static_public"
 		assert_equal 10, out
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Diff | Base ~ Other {}
 			Diff.other_static_public"
 		end
 
 		# Privacy maintained after difference
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Diff | Base ~ Other {}
 			Diff()._base_instance_private"
@@ -2375,13 +2375,13 @@ class Interpreter_Test < Base_Test
 		assert_equal 1, out
 
 		# Intersection removes non-shared instance members
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter().left_only"
 		end
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter().right_only"
@@ -2394,33 +2394,33 @@ class Interpreter_Test < Base_Test
 		assert_equal 10, out
 
 		# Intersection removes non-shared static members
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter.left_static_only"
 		end
 
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter.right_static_only"
 		end
 
 		# Privacy preserved through intersection
-		assert_raises Tape::Cannot_Call_Private_Instance_Member do
+		assert_raises Disk::Cannot_Call_Private_Instance_Member do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter()._shared_private"
 		end
 
-		assert_raises Tape::Cannot_Call_Private_Static_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Private_Static_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter._shared_static_private"
 		end
 
 		# Binding preserved through intersection
-		assert_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Inter | Left & Right {}
 			Inter.shared_instance"
@@ -2440,7 +2440,7 @@ class Interpreter_Test < Base_Test
 		assert_equal 6, out
 
 		# Symmetric diff removes shared instance members
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Sym | Left ^ Right {}
 			Sym().shared_instance"
@@ -2459,14 +2459,14 @@ class Interpreter_Test < Base_Test
 		assert_equal 60, out
 
 		# Symmetric diff removes shared static members
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "#{shared_code}
 			Sym | Left ^ Right {}
 			Sym.shared_static"
 		end
 
 		# Binding preserved through symmetric difference
-		assert_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		assert_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp "#{shared_code}
 			Sym | Left ^ Right {}
 			Sym.left_only"
@@ -2474,7 +2474,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_static_declarations_fixture
-		out = Drive.interp_file 'tests/fixtures/static_declarations.tape'
+		out = Drive.interp_file 'tests/fixtures/static_declarations.disk'
 		assert_equal true, out
 	end
 
@@ -2494,7 +2494,7 @@ class Interpreter_Test < Base_Test
 		assert_equal "'Walt!'\n", printed # strings always display single-quoted
 	end
 
-	# `@puts` is a Context method now (tapes/context.tape) -- multiple args, parens optional, and
+	# `@puts` is a Context method now (disks/context.disk) -- multiple args, parens optional, and
 	# it can be captured / aliased.
 	def test_puts_takes_multiple_args_and_returns_them
 		printed = nil
@@ -2531,10 +2531,10 @@ class Interpreter_Test < Base_Test
 		assert_equal "at #{Drive::ROOT_PATH}", Drive.interp('"at `@root_path`"')
 	end
 
-	# `@` is a struct (tapes/context.tape) the interpreter fills -- reflective vitals as computed
+	# `@` is a struct (disks/context.disk) the interpreter fills -- reflective vitals as computed
 	# values, the function members (`to_s`/`puts`/...) as synthesized callable stand-ins.
 	def test_context_is_a_filled_struct
-		assert_kind_of Tape::Context, Drive.interp('@')
+		assert_kind_of Disk::Context, Drive.interp('@')
 		assert_equal '@Global', Drive.interp('@.to_s()')
 		assert_equal 'Point', Drive.interp("Point { x, }\nPoint.@name")
 		assert_equal '@Point', Drive.interp("Point { x, }\nPoint().@to_s()")
@@ -2563,10 +2563,10 @@ class Interpreter_Test < Base_Test
 		assert_equal true, Drive.interp('@assert 1 == 1')
 		assert_equal false, Drive.interp('@refute 1 == 2')
 
-		err = assert_raises(Tape::Assert_Triggered) { Drive.interp "@assert 1 == 2, 'nope'" }
+		err = assert_raises(Disk::Assert_Triggered) { Drive.interp "@assert 1 == 2, 'nope'" }
 		assert_equal 'nope', err.assertion_message
 
-		assert_raises(Tape::Refute_Triggered) { Drive.interp '@refute true' }
+		assert_raises(Disk::Refute_Triggered) { Drive.interp '@refute true' }
 
 		# a parenthesized condition followed by more of the expression, then the message
 		refute_raises { Drive.interp "@assert (1 == 1) == true, 'grouped condition'" }
@@ -2616,34 +2616,34 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 'gadget', out
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp "Thing { @a := 1 }\nThing.@b = 2"
 		end
 	end
 
 	def test_context_declaration_outside_a_type_raises
-		assert_raises Tape::Context_Declaration_Outside_Type do
+		assert_raises Disk::Context_Declaration_Outside_Type do
 			Drive.interp '@x := 1'
 		end
 	end
 
 	def test_context_declaration_cannot_shadow_a_builtin_member
-		assert_raises Tape::Cannot_Override_Context_Member do
+		assert_raises Disk::Cannot_Override_Context_Member do
 			Drive.interp 'Thing { @name := "x" }'
 		end
-		assert_raises Tape::Cannot_Override_Context_Member do
+		assert_raises Disk::Cannot_Override_Context_Member do
 			Drive.interp 'Thing { @types := "x" }'
 		end
 	end
 
 	def test_context_member_does_not_leak_into_plain_dot_access
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp "Thing { @label := \"w\" }\nThing.label"
 		end
 	end
 
 	def test_multiple_unpacks
-		shared_code = <<~TAPE
+		shared_code = <<~DISK
 		    Point {
 		    	a := 0
 		    	b := 0
@@ -2653,7 +2653,7 @@ class Interpreter_Test < Base_Test
 		    		self.b = b
 		    	)
 		    }
-		TAPE
+		DISK
 
 		out = Drive.interp "#{shared_code}
 		p := Point(4, 8)
@@ -2715,7 +2715,7 @@ class Interpreter_Test < Base_Test
 
 	def test_html_fence_in_route_handler
 		out = Drive.interp "
-		@load 'tapes/server.tape'
+		@load 'disks/server.disk'
 
 		App | Server {
 			get:// home (;
@@ -2762,13 +2762,13 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_walrus_type_contract_violation
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'x := 4, x = "hello"'
 		end
 	end
 
 	def test_walrus_contract_violation_message
-		err = assert_raises Tape::Type_Contract_Violation do
+		err = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'x := 4, x = "hello"'
 		end
 		assert_match 'Number', err.message
@@ -2776,7 +2776,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_manual_type_annotation_contract
-		err = assert_raises Tape::Type_Contract_Violation do
+		err = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'x: Number = 4, x = "hey"'
 		end
 		assert_match 'Number', err.message
@@ -2785,7 +2785,7 @@ class Interpreter_Test < Base_Test
 		# Fine if redeclared
 		Drive.interp 'x: Number = 4, x := "hey"'
 
-		err = assert_raises Tape::Type_Contract_Violation do
+		err = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'x: Number = 4, x := "hey", x = 8'
 		end
 		assert_match 'Number', err.message # the actual value 8 -- reported as the family name
@@ -2795,7 +2795,7 @@ class Interpreter_Test < Base_Test
 	# `x: Number = 'oops'` (a literal RHS) is caught statically before the interpreter ever runs (see type_checker_test.rb) -- these cover the gap that leaves open: a *non-literal* RHS (an identifier, a function, ...) whose actual value mismatches the annotation on the very first, self-declaring assignment. The static checker silently skips non-literal RHS entirely, so this has to be caught dynamically in #interp_infix_assignment, the same place reassignment already is.
 	def test_first_assignment_type_contract_with_non_literal_rhs
 		# Plain nominal annotation.
-		err = assert_raises Tape::Type_Contract_Violation do
+		err = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'bad := "oops"
 				x: Number = bad'
 		end
@@ -2803,20 +2803,20 @@ class Interpreter_Test < Base_Test
 		assert_match 'String', err.message
 
 		# Signature-typed annotation, assigning a real function whose actual shape doesn't match.
-		err = assert_raises Tape::Type_Contract_Violation do
+		err = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'wrong ( a, b; a + b )
 				x: (Number -> String;) = wrong'
 		end
 		assert_match '(Number -> String;)', err.message
 
 		# Inline signature form (no separate alias), same check.
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'wrong ( a, b; a + b )
 				x: (Number -> String;) = wrong'
 		end
 
 		# Same check applies to a typed member declared inside a Type/Instance body, not just top level.
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'bad := "oops"
 				Thing {
 					x: Number = bad
@@ -2825,7 +2825,7 @@ class Interpreter_Test < Base_Test
 		end
 
 		# And inside a constructor, self-declaring from a param.
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'Thing {
 					Self ( v;
 						x: Number = v
@@ -2836,7 +2836,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_new_comma_nil_init
-		assert_raises(Tape::Undeclared_Identifier) do
+		assert_raises(Disk::Undeclared_Identifier) do
 			Drive.interp <<~CODE
 			    x := (abc,1)
 				(x, abc)
@@ -2874,7 +2874,7 @@ class Interpreter_Test < Base_Test
 			# You can now make `11:22pm` evaluate to something!
 			11:22pm
 		CODE
-		assert_instance_of Tape::Instance, out
+		assert_instance_of Disk::Instance, out
 		assert_equal 11, out.get('hour')
 		assert_equal 22, out.get('minute')
 		assert_equal 'pm', out.get('period')
@@ -2898,7 +2898,7 @@ class Interpreter_Test < Base_Test
 
 		    $42
 		CODE
-		assert_instance_of Tape::Instance, out
+		assert_instance_of Disk::Instance, out
 		assert_equal 42, out.get('amount')
 		assert_equal 'US Dollar', out.get('name')
 		assert_equal 'USD', out.get('code')
@@ -2997,7 +2997,7 @@ class Interpreter_Test < Base_Test
 		    collection
 		CODE
 		assert_equal 2, out.values.count
-		assert_equal [Tape::Tuple.new([:x, 4]), Tape::Tuple.new([:y, 8])], out.values
+		assert_equal [Disk::Tuple.new([:x, 4]), Disk::Tuple.new([:y, 8])], out.values
 	end
 
 	def test_dictionary_in_for_loops_key_and_value_builtins
@@ -3015,7 +3015,7 @@ class Interpreter_Test < Base_Test
 		    collection
 		CODE
 		assert_equal 2, out.values.count
-		assert_equal [Tape::Tuple.new([:x, 4]), Tape::Tuple.new([:y, 8])], out.values
+		assert_equal [Disk::Tuple.new([:x, 4]), Disk::Tuple.new([:y, 8])], out.values
 	end
 
 	def test_dictionary_in_for_loops_stride_is_ignored
@@ -3034,7 +3034,7 @@ class Interpreter_Test < Base_Test
 		    collection
 		CODE
 		assert_equal 3, out.values.count
-		assert_equal [Tape::Tuple.new([:a, 15]), Tape::Tuple.new([:b, 16]), Tape::Tuple.new([:c, 23])], out.values
+		assert_equal [Disk::Tuple.new([:a, 15]), Disk::Tuple.new([:b, 16]), Disk::Tuple.new([:c, 23])], out.values
 	end
 
 	def test_type_comparison_operators
@@ -3118,7 +3118,7 @@ class Interpreter_Test < Base_Test
 		assert_equal [true, false, false, false, true, false, false], out.values
 	end
 
-	# `Any` (tapes/global.tape) is a universal wildcard -- everything except nil counts as Any via `==`/`===`, with no composition required (`Thing | Any {}` isn't needed).
+	# `Any` (disks/global.disk) is a universal wildcard -- everything except nil counts as Any via `==`/`===`, with no composition required (`Thing | Any {}` isn't needed).
 	def test_any_type_is_universally_equal_via_double_and_triple_equals
 		out = Drive.interp <<~CODE
 		    Thing { x := 1 }
@@ -3212,7 +3212,7 @@ class Interpreter_Test < Base_Test
 
 	def test_function_signatures
 		out = Drive.interp 'Num_To_Str := (Number -> String;)'
-		assert_kind_of Tape::Func_Signature, out
+		assert_kind_of Disk::Func_Signature, out
 		assert_equal ['Number'], out.param_types
 		assert_equal 'String', out.return_type
 
@@ -3232,23 +3232,23 @@ class Interpreter_Test < Base_Test
 		assert_equal 'String', out.return_type
 
 		# Named param with no type annotation is a malformed signature — every param slot in a signature literal must carry a type.
-		assert_raises Tape::Invalid_Func_Signature do
+		assert_raises Disk::Invalid_Func_Signature do
 			Drive.interp '(a -> String;)'
 		end
 
 		# Bare as a top-level expression, not just as the RHS of :=.
 		out = Drive.interp '(Number -> String;)'
-		assert_kind_of Tape::Func_Signature, out
+		assert_kind_of Disk::Func_Signature, out
 
 		# `name: (...)` with no return type is still a signature (the colon form opts in) -- a bare
 		# `foo (;)` without the colon stays a real empty function.
 		out = Drive.interp 'takes_a_number: (Number;)'
-		assert_kind_of Tape::Func_Signature, out
+		assert_kind_of Disk::Func_Signature, out
 		assert_equal ['Number'], out.param_types
 		assert_nil out.return_type
 
-		assert_kind_of Tape::Func_Signature, Drive.interp('does_nothing: (;)')
-		assert_kind_of Tape::Func, Drive.interp('empty (;)') # no colon -> a real function, not a signature
+		assert_kind_of Disk::Func_Signature, Drive.interp('does_nothing: (;)')
+		assert_kind_of Disk::Func, Drive.interp('empty (;)') # no colon -> a real function, not a signature
 
 		# Regression: an ordinary Type declaration with a method must still parse as a real type — now unambiguous, since a signature literal never starts with a Capitalized type name anymore.
 		out = Drive.interp <<~CODE
@@ -3269,14 +3269,14 @@ class Interpreter_Test < Base_Test
 		assert_equal 5, out
 
 		# Return types are not validated until the functino is called, so this will not raise a contra t violation
-		refute_raises Tape::Type_Contract_Violation do
+		refute_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    identity ( a: Number -> String; 'not a number' )
 			CODE
 		end
 
 		# Declared return type doesn't match the actual value.
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    identity ( a: Number -> Number; 'not a number' )
 			    identity(5)
@@ -3286,14 +3286,14 @@ class Interpreter_Test < Base_Test
 		assert_equal 'String', error.actual
 
 		# A signature has no implementation, so it can't be called.
-		assert_raises Tape::Cannot_Call_Func_Signature do
+		assert_raises Disk::Cannot_Call_Func_Signature do
 			Drive.interp <<~CODE
 			    double: (Number -> Number;)
 			    double()
 			CODE
 		end
 
-		refute_raises Tape::Cannot_Call_Func_Signature do
+		refute_raises Disk::Cannot_Call_Func_Signature do
 			Drive.interp <<~CODE
 			    double: (Number -> Number;) = (a: Number -> Number; a*2)
 			    double(2)
@@ -3327,7 +3327,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 42, out
 
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    f := ( a: Number -> Number; 'oops' )
 			    f(1)
@@ -3347,7 +3347,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal %w(Task Table), out.set.to_a
 
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    Table {}
 			    Unrelated {}
@@ -3372,7 +3372,7 @@ class Interpreter_Test < Base_Test
 		assert_equal 'ok', out
 
 		# First declaration with a mismatched shape raises immediately.
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    Num_to_str := (Number -> String;)
 			    to_string: Num_to_str = ( x, y; x + y )
@@ -3382,7 +3382,7 @@ class Interpreter_Test < Base_Test
 		assert_equal '(, -> ;)', error.actual
 
 		# Reassigning an already-valid signature-typed identifier to a mismatched shape raises too, comparing structurally rather than as a plain type name.
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    Num_to_str := (Number -> String;)
 			    stringify ( n: Number -> String; 'x' )
@@ -3401,7 +3401,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 8, out
 
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    x: Number = 4
 			    x = 'oops'
@@ -3410,7 +3410,7 @@ class Interpreter_Test < Base_Test
 
 		# First declaration of an ordinary nominal type is now checked too, even
 		# with a non-literal RHS the static checker can't see.
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    n := 4
 			    x: String = n
@@ -3447,14 +3447,14 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 1, out
 
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp '(x: String, y) := (1, 2)'
 		end
 		assert_equal 'String', error.contract
 		assert_equal 'Number', error.actual
 
 		# Asking for more values than the source has raises, rather than padding with nil.
-		error = assert_raises Tape::Destructuring_Arity_Mismatch do
+		error = assert_raises Disk::Destructuring_Arity_Mismatch do
 			Drive.interp '(a, b, c) := <Number, Number>(1, 2)'
 		end
 		assert_equal 3, error.expected
@@ -3466,12 +3466,12 @@ class Interpreter_Test < Base_Test
 		assert_equal 3, out
 
 		# Only a Tuple/Struct can be destructured.
-		assert_raises Tape::Invalid_Destructuring_Source do
+		assert_raises Disk::Invalid_Destructuring_Source do
 			Drive.interp '(a, b) := 5'
 		end
 
 		# Every target must be a plain identifier or an existing-member dot-target.
-		assert_raises Tape::Invalid_Destructuring_Target do
+		assert_raises Disk::Invalid_Destructuring_Target do
 			Drive.interp '(1, c) := (1, 2)'
 		end
 
@@ -3492,7 +3492,7 @@ class Interpreter_Test < Base_Test
 		assert_equal [1, 1], out.values
 
 		# The member must already exist -- destructuring can't silently create one.
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    Thing { member, Self (; self.member = 0 ) }
 			    thing := Thing()
@@ -3501,7 +3501,7 @@ class Interpreter_Test < Base_Test
 		end
 
 		# A constant member can't be reassigned this way either.
-		assert_raises Tape::Cannot_Reassign_Constant do
+		assert_raises Disk::Cannot_Reassign_Constant do
 			Drive.interp <<~CODE
 			    Thing { MEMBER, Self (; self.MEMBER = 0 ) }
 			    thing := Thing()
@@ -3510,7 +3510,7 @@ class Interpreter_Test < Base_Test
 		end
 
 		# If the member has a previously-recorded type (via `:=`), the extracted value must match it.
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    Thing {
 					Self (;
@@ -3529,7 +3529,7 @@ class Interpreter_Test < Base_Test
 	def test_struct_member_display_regression
 		%w(" ').each do |q|
 			out = Drive.interp <<~CODE
-			    @load 'tapes/struct.tape'
+			    @load 'disks/struct.disk'
 			    quad := <1, id := 2, ix: Number, String>(4, 8, 1, #{q}five#{q})
 			    quad.to_s()
 			CODE
@@ -3540,14 +3540,14 @@ class Interpreter_Test < Base_Test
 	def test_string_equality_regression
 		assert Drive.interp('String("Alice") == String("Alice")')
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    s := <name: String>("Alice")
 		    s.@members.0.value == "Alice"
 		CODE
 		assert out
 	end
 
-	# `!=` derives from a declared `==` (see the `!=` note two entries up) -- tapes/string.tape's own `==` overload used to assume its right operand was always another String and crashed reading `.value` off anything else. `!= nil` is the common case this broke (a String compared against something that turned out not to exist).
+	# `!=` derives from a declared `==` (see the `!=` note two entries up) -- disks/string.disk's own `==` overload used to assume its right operand was always another String and crashed reading `.value` off anything else. `!= nil` is the common case this broke (a String compared against something that turned out not to exist).
 	def test_string_not_equal_to_nil_regression
 		refute_raises do
 			assert Drive.interp("String('hi') != nil")
@@ -3556,11 +3556,11 @@ class Interpreter_Test < Base_Test
 		end
 	end
 
-	# Same class of bug in tapes/member.tape/tapes/struct.tape's own `==` overloads -- each assumed its right operand was already Member/Struct-shaped.
+	# Same class of bug in disks/member.disk/disks/struct.disk's own `==` overloads -- each assumed its right operand was already Member/Struct-shaped.
 	def test_member_and_struct_not_equal_to_nil_regression
 		refute_raises do
 			out = Drive.interp <<~CODE
-			    @load 'tapes/struct.tape'
+			    @load 'disks/struct.disk'
 			    m := Member('x', String, 4)
 			    s := <1, 2>
 			    (m != nil, m == nil, s != nil, s == nil)
@@ -3581,7 +3581,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 123, out
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			# but actually it raises something about not being able to declare members on the type outside of Self(;) or the explicit class body declarations
 			Drive.interp <<~CODE
 			    Thing {
@@ -3594,15 +3594,15 @@ class Interpreter_Test < Base_Test
 			CODE
 		end
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp 'Number.yolo = 123'
 		end
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp 'Number.yolo := 123'
 		end
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    Thing { member, Self (; self.member = 0 ) }
 			    thing := Thing()
@@ -3612,7 +3612,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_declare_command_on_structs
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    # @declare <id: Number, name: String = "Locke">
 				(it, name)
@@ -3661,14 +3661,14 @@ class Interpreter_Test < Base_Test
 	def test_declare_with_no_value_argument_still_registers_the_name
 		# Undeclared before, so a plain (non-annotated) read would normally raise --
 		# @declare "foo" alone should self-declare it, same as the nil-init idiom.
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp '@declare "foo"
 			foo'
 		end
 	end
 
 	def test_declare_too_many_arguments_raises
-		assert_raises Tape::Invalid_Context_Function_Usage do
+		assert_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp '@declare "foo", 42, Number, "extra"'
 		end
 	end
@@ -3683,7 +3683,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_declare_with_type_rejects_mismatched_reassignment
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp <<~CODE
 			    @declare "foo", 42, Number
 			    foo = "oops"
@@ -3712,7 +3712,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_declare_inside_function_scope_does_not_leak_out
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    make (;
 			    	@declare "local_thing", 5
@@ -3768,7 +3768,7 @@ class Interpreter_Test < Base_Test
 
 	def test_percent_literal_is_a_real_array
 		out = Drive.interp "%str(a b c)"
-		assert_kind_of Tape::Array, out
+		assert_kind_of Disk::Array, out
 		assert_equal 3, out.values.count
 	end
 
@@ -3778,14 +3778,14 @@ class Interpreter_Test < Base_Test
 		    %str(481516 `cool`)
 		CODE
 		assert_equal ['481516', '2342'], out.values
-		# assert out.values.all? { _1.is_a? Tape::String } # todo; this is currently false
+		# assert out.values.all? { _1.is_a? Disk::String } # todo; this is currently false
 	end
 
 	def test_statement_expressions
 		out = Drive.interp "`1+2`"
-		assert_kind_of Tape::Statement, out
-		assert_kind_of Tape::Infix_Expr, out.expression
-		assert_equal "Statement{Tape::Infix_Expr}", out.proxy_to_s
+		assert_kind_of Disk::Statement, out
+		assert_kind_of Disk::Infix_Expr, out.expression
+		assert_equal "Statement{Disk::Infix_Expr}", out.proxy_to_s
 
 		out = Drive.interp "`1+2`()"
 		assert_equal 3, out
@@ -3821,7 +3821,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_statement_expression_can_be_displayed
-		# Tape::Statement is a real Instance -- @puts must not crash on one, called or not.
+		# Disk::Statement is a real Instance -- @puts must not crash on one, called or not.
 		output          = StringIO.new
 		original_stdout = $stdout
 		$stdout         = output
@@ -3835,8 +3835,8 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_fancier_statement_example
-		out = Drive.interp "x := `@load 'tapes/string'`"
-		assert_kind_of Tape::Statement, out
+		out = Drive.interp "x := `@load 'disks/string'`"
+		assert_kind_of Disk::Statement, out
 	end
 
 	def test_nested_statements_with_mixed_memoization
@@ -3901,13 +3901,13 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_self_raises_outside_instance_context
-		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
+		assert_raises Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
 			Drive.interp 'self'
 		end
 	end
 
 	def test_Self_raises_outside_type_context
-		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
+		assert_raises Disk::Cannot_Use_Type_Scope_Operator_Outside_Type do
 			Drive.interp 'Self'
 		end
 	end
@@ -3923,7 +3923,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 123, out
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    Thing {
 			        not_new_func (;
@@ -3944,7 +3944,7 @@ class Interpreter_Test < Base_Test
 		CODE
 		assert_equal 0, out
 
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    Thing {
 			        bump_late (; Self.new_static := 1 )
@@ -4052,7 +4052,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_string_positional_dot_index_out_of_range_raises
-		assert_raises Tape::Invalid_Array_Index do
+		assert_raises Disk::Invalid_Array_Index do
 			Drive.interp '"abc".5'
 		end
 	end

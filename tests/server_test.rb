@@ -6,7 +6,7 @@ require 'uri'
 
 class Server_Test < Base_Test
 	def test_server_instance_creation
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3000;
@@ -15,15 +15,15 @@ class Server_Test < Base_Test
 		    }
 
 		    server := Server()
-		TAPE
+		DISK
 
 		result = Drive.interp code
-		assert_instance_of Tape::Server, result
+		assert_instance_of Disk::Server, result
 		assert_equal 3000, result[:port]
 	end
 
 	def test_web_app_with_server_composition
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3001;
@@ -38,15 +38,15 @@ class Server_Test < Base_Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		result = Drive.interp code
-		assert_instance_of Tape::Server, result
+		assert_instance_of Disk::Server, result
 		assert_equal 3001, result[:port]
 	end
 
 	def test_route_defined_in_server_type
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3002;
@@ -65,7 +65,7 @@ class Server_Test < Base_Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		interpreter = Drive::Interpreter.new
 		interpreter.run code
@@ -74,7 +74,7 @@ class Server_Test < Base_Test
 	end
 
 	def test_server_runner_initialization
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 8888;
@@ -82,18 +82,18 @@ class Server_Test < Base_Test
 		    	)
 		    }
 		    app := Server()
-		TAPE
+		DISK
 
 		interpreter     = Drive::Interpreter.new
 		server_instance = interpreter.run code
 
-		server_instance.port = Integer(server_instance.get(:port) || Tape::Server::DEFAULT_PORT)
+		server_instance.port = Integer(server_instance.get(:port) || Disk::Server::DEFAULT_PORT)
 
 		assert_equal 8888, server_instance.port
 	end
 
 	def test_route_collection
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3003;
@@ -112,7 +112,7 @@ class Server_Test < Base_Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		interpreter = Drive::Interpreter.new
 		interpreter.run code
@@ -121,7 +121,7 @@ class Server_Test < Base_Test
 	end
 
 	def test_route_matching
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3004;
@@ -140,7 +140,7 @@ class Server_Test < Base_Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		interpreter     = Drive::Interpreter.new
 		server_instance = interpreter.run code
@@ -159,7 +159,7 @@ class Server_Test < Base_Test
 	end
 
 	def test_url_param_extraction
-		code = <<~TAPE
+		code = <<~DISK
 		    Server {
 		    	port,
 		    	Self ( port := 3005;
@@ -174,7 +174,7 @@ class Server_Test < Base_Test
 		    }
 
 		    app := Web_App()
-		TAPE
+		DISK
 
 		interpreter = Drive::Interpreter.new
 		interpreter.run code

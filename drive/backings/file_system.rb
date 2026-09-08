@@ -1,7 +1,7 @@
-module Tape
+module Disk
 	class File_System < Instance
 		def proxy_read_file_to_string filepath
-			Tape::String.new ::File.read(filepath)
+			Disk::String.new ::File.read(filepath)
 		end
 
 		def proxy_write_string_to_file filepath, string

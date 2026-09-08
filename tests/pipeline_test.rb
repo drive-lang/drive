@@ -10,14 +10,14 @@ class Pipeline_Test < Base_Test
 	def test_lex
 		result = Drive::Lexer.new("42").output
 		assert_instance_of ::Array, result
-		assert_instance_of Tape::Lexeme, result.first
+		assert_instance_of Disk::Lexeme, result.first
 	end
 
 	def test_parse
 		lexemes = Drive::Lexer.new("42").output
 		result  = Drive::Parser.new(lexemes).output
 		assert_instance_of ::Array, result
-		assert_instance_of Tape::Number_Expr, result.first
+		assert_instance_of Disk::Number_Expr, result.first
 	end
 
 	def test_documenter

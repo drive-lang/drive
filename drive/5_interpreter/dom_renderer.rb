@@ -1,6 +1,6 @@
 module Drive
 	class Dom_Renderer
-		include Tape
+		include Disk
 		HTML_PREFIX  = 'html_'.freeze
 		CSS_PREFIX   = 'css_'.freeze
 		ELEMENT_ATTR = 'html_element'.freeze
@@ -20,14 +20,14 @@ module Drive
 		end
 
 		def has_inner_html? # aka void tag
-			!Tape::VOID_HTML_TAGS.include?(element)
+			!Disk::VOID_HTML_TAGS.include?(element)
 		end
 
 		# nil/false attribute values render nothing at all -- an unset `html_selected: Bool` (which
 		# self-declares to nil) or an explicit `= false` drops the attribute instead of emitting
 		# `selected=""`. `""` and `0` are real values and stay.
 		def blank_attr_value? value
-			value.nil? || value == false || (value.is_a?(Tape::Bool) && !value.truthiness)
+			value.nil? || value == false || (value.is_a?(Disk::Bool) && !value.truthiness)
 		end
 
 		def html_attrs
@@ -69,7 +69,7 @@ module Drive
 		end
 
 		def true_value? value
-			value == true || (value.is_a?(Tape::Bool) && value.truthiness)
+			value == true || (value.is_a?(Disk::Bool) && value.truthiness)
 		end
 
 		def css_attrs_string

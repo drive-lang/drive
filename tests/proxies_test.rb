@@ -4,7 +4,7 @@ require_relative 'base_test'
 
 class ProxiesTest < Base_Test
 	def test_invalid_proxy_directive_usage
-		assert_raises Tape::Invalid_Ruby_Proxy_Usage do
+		assert_raises Disk::Invalid_Ruby_Proxy_Usage do
 			Drive.interp '@ruby'
 		end
 	end
@@ -49,14 +49,14 @@ class ProxiesTest < Base_Test
 	end
 
 	def test_array_proxies
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    x := [1, 2, 3]
 		    y := []
 		    x.each(( item;
 		        y << item * 2
 		    ))
 		    y
-		TAPE
+		DISK
 		assert_equal [2, 4, 6], out.values
 
 		out = Drive.interp("arr := [1, 2], arr.push(3), arr")
@@ -243,7 +243,7 @@ class ProxiesTest < Base_Test
 		assert_equal 5, Drive.interp("(1...5).max()")
 		assert_equal '1..<5', Drive.interp("(1..<5).to_s()")
 
-		# tape-level higher-order methods iterate the range directly (`for self`)
+		# disk-level higher-order methods iterate the range directly (`for self`)
 		assert_equal [1, 4, 9], Drive.interp("(1...3).map((n; n * n))").values
 		assert_equal [2, 4], Drive.interp("(1...5).filter((n; n % 2 == 0))").values
 		assert_equal 15, Drive.interp("(1...5).reduce(0, (acc, n; acc + n))")
@@ -259,7 +259,7 @@ class ProxiesTest < Base_Test
 	# Set has no literal syntax and no Ruby-stdlib behavior worth re-verifying here -- these cover
 	# only the seams our layer adds: `@ruby` proxy dispatch, `Set(...)` construction + dedup,
 	# operator dispatch (#interp_logical_infix / #interp_arithmetic_infix) with #maybe_instance
-	# re-linking the result, `for` iteration, and the tape-level methods in tapes/set.tape.
+	# re-linking the result, `for` iteration, and the disk-level methods in disks/set.disk.
 	def test_set_proxies
 		# construction dedups; values() is an Array snapshot
 		assert_equal [1, 2, 3], Drive.interp("Set([1, 2, 2, 3, 1]).values()").values
@@ -294,14 +294,14 @@ class ProxiesTest < Base_Test
 		# for-loop iterates the members
 		assert_equal 60, Drive.interp("t := 0\nfor Set([10, 20, 30, 10])\n\tt += it\nend\nt")
 
-		# tape-level higher-order methods
+		# disk-level higher-order methods
 		assert_equal [2, 4, 6], Drive.interp("Set([1, 2, 3]).map((n; n * 2))").values
 		assert_equal [2, 4], Drive.interp("Set([1, 2, 3, 4]).filter((n; n % 2 == 0)).values()").values
 		assert Drive.interp("Set([1, 2, 3]).any?((n; n > 2))")
 		refute Drive.interp("Set([1, 2, 3]).all?((n; n > 2))")
 	end
 
-	# `@operator ==` in tapes/set.tape compares elements through the interpreter, so a custom
+	# `@operator ==` in disks/set.disk compares elements through the interpreter, so a custom
 	# element type's own `==` overload is honored (a bare Ruby Set#== would miss it).
 	def test_set_equality_respects_custom_equality_overload
 		src = <<~CODE
@@ -361,7 +361,7 @@ class ProxiesTest < Base_Test
 		assert_equal 5, Drive.interp("25.sqrt()")
 	end
 
-	# Numbers mirror Ruby: an int literal is a Tape::Integer, a float literal a Tape::Float, both
+	# Numbers mirror Ruby: an int literal is a Disk::Integer, a float literal a Disk::Float, both
 	# composing Number. `value` is the wrapped Ruby Numeric; numerator/denominator delegate to it.
 	def test_numeric_family
 		assert_equal 4,   Drive.interp("4.value")
@@ -383,7 +383,7 @@ class ProxiesTest < Base_Test
 		assert_equal 2, Drive.interp("2.5.denominator()")
 	end
 
-	# `Int` / `Flo` / `Dec` are plain aliases in tapes/number.tape (`Int := Integer`, not
+	# `Int` / `Flo` / `Dec` are plain aliases in disks/number.disk (`Int := Integer`, not
 	# `Int | Integer {}`), so each *is* its full type -- same type-set, not a narrower one.
 	def test_numeric_type_shorthands
 		# construction + coercion, identical to the full names
@@ -406,7 +406,7 @@ class ProxiesTest < Base_Test
 		assert_equal "0.3", Drive.interp("(Dec('0.1') + Dec('0.2')).to_s()")  # exact, unlike Float
 	end
 
-	# A proxy method that builds and returns a fresh Tape:: instance (`Tape::String.new` here) seeds `@types` from its Ruby class name (`"Tape::String"`), so the return value used to fail every type-identity check. `read_file_to_string` itself declares `-> String`, so this raised `Type_Contract_Violation` ("expected String, got String") before it could even return.
+	# A proxy method that builds and returns a fresh Disk:: instance (`Disk::String.new` here) seeds `@types` from its Ruby class name (`"Disk::String"`), so the return value used to fail every type-identity check. `read_file_to_string` itself declares `-> String`, so this raised `Type_Contract_Violation` ("expected String, got String") before it could even return.
 	def test_proxy_return_value_satisfies_type_identity
 		fixture = "'tests/fixtures/hello_read.txt'"
 

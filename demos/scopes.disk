@@ -1,0 +1,240 @@
+### Splatting a scope into lookup
+
+Every scope keeps two extra fallback places identifier lookup checks, *after* its own declarations: they never override anything already reachable, and once resolution moves past a scope it keeps going outward, scope by scope, to Global.
+
+`@splatr x` adds `x` as a **read-only** fallback -- its members resolve unprefixed, but nothing writes through it. `@splat x` adds it as a **writable** fallback: a plain write (`=`, `+=`, ...) to a name the scope already has lands on that member instead of declaring a fresh local. `@unsplat x` takes it back out.
+###
+Raft {
+	length := 0
+	crew := 0
+}
+
+r := Raft()
+r.length = 12
+r.crew = 4
+
+@splatr r
+@assert length == 12, 'a splatted-in scope resolves its members with no r. prefix'
+@unsplat r
+# `length` here would now raise Disk::Undeclared_Identifier -- r is no longer in lookup
+
+
+### In a function param list
+
+`@splat` / `@splatr` on a param unpacks that argument for the whole body -- the common reason to splat, and where the shorthand earns its keep:
+###
+Vector {
+	x := 0
+	y := 0
+}
+
+magnitude ( @splatr vec;
+	(x ** 2 + y ** 2).sqrt()
+)
+
+v := Vector()
+v.x = 3
+v.y = 4
+@assert magnitude(v) == 5.0, '@splatr unpacks the argument so x / y resolve directly in the body'
+
+
+### Type-checking a splatted param
+
+A `@splat` / `@splatr` param can carry a type annotation, and unlike a plain param annotation it's *enforced* at the call. The annotation names the members the body reaches unprefixed, so the wrong shape has to fail right here -- otherwise it only surfaces later as a confusing `Disk::Undeclared_Identifier` deep in the body.
+
+A *nominal* annotation (`: Vector`) means the argument has to actually be a `Vector`, or compose one:
+###
+Coordinate {
+	x := 0
+	y := 0
+}
+
+nominal_magnitude ( @splatr vec: Vector;
+	(x ** 2 + y ** 2).sqrt()
+)
+
+@assert nominal_magnitude(v) == 5.0, 'a real Vector satisfies the : Vector annotation'
+
+# nominal_magnitude(Coordinate())  -- raises Disk::Type_Contract_Violation: expected Vector not
+#                                     Coordinate, even though Coordinate happens to have x and y too
+
+
+### A structural annotation checks shape, not name
+
+`@splatr vec: <x: Number, y: Number>` is the duck-typing form -- it accepts *any* value carrying an `x` and a `y`, whatever that value's own type is:
+###
+structural_magnitude ( @splatr vec: <x: Number, y: Number>;
+	(x ** 2 + y ** 2).sqrt()
+)
+
+c := Coordinate()
+c.x = 6
+c.y = 8
+@assert structural_magnitude(c) == 10.0, 'a Coordinate satisfies <x: Number, y: Number> without being a Vector'
+@assert structural_magnitude(v) == 5.0, 'and a Vector satisfies it too -- shape is all that matters'
+
+# structural_magnitude(nil)  -- raises Disk::Type_Contract_Violation: nil has neither member
+
+
+### Writes land on the splatted instance
+
+`@splat` (writable) redirects a write to a name the instance already has straight onto that instance. Declaring a fresh name with `:=` always stays local either way -- only a write to an existing member gets redirected:
+###
+Compass {
+	x := 0
+	y := 0
+}
+
+double_bearing ( @splat vec;
+	x *= 2
+	y *= 2
+	vec
+)
+
+cv := Compass()
+cv.x = 3
+cv.y = 4
+doubled := double_bearing(cv)
+@assert doubled.x == 6 && doubled.y == 8, '@splat routes the writes back onto the argument'
+
+
+### Stays visible to functions declared afterward, even nested ones
+
+A splatted scope is just another place lookup checks, not a one-time substitution -- so its members stay reachable from any function declared later in that scope, including one nested inside another:
+###
+Camp {
+	survivors := 0
+	water := 0
+
+	Self ( survivors, water;
+		self.survivors = survivors
+		self.water = water
+	)
+}
+
+ration_report (;
+	c := Camp(12, 40)
+	@splatr c
+
+	summarize (;
+		"`survivors` survivors, `water` units of water"
+	)
+
+	summarize()
+)
+
+@assert ration_report() == '12 survivors, 40 units of water', 'a nested function still sees the splatted scope'
+
+
+### Lookup order: own declarations, then writable, then read-only
+
+When a name exists in more than one place the priority is `[self, writable, read-only]` -- for reads *and* writes. An own declaration always wins, even over a same-named member reachable through a writable splat:
+###
+Marker { val := 0 }
+
+val := 100
+w := Marker()
+w.val = 1
+ro := Marker()
+ro.val = 2
+
+@splat w
+@splatr ro
+
+@assert val == 100, "the own declaration wins, not w's or ro's"
+val = 999
+@assert val == 999 && w.val == 1, 'the write lands on the own declaration too, never redirects through w'
+
+
+### Writable beats read-only when nothing owns the name
+
+With no own `y` in the way, a name reachable through both resolves through the writable splat:
+###
+Marker2 { y := 0 }
+
+w2 := Marker2()
+w2.y = 10
+ro2 := Marker2()
+ro2.y = 20
+
+@splat w2
+@splatr ro2
+
+@assert y == 10, 'no own declaration, so writable wins over read-only'
+
+
+### Weak references, not strong ones
+
+Splatting something in doesn't keep it alive -- it's a *weak* reference. Once nothing else refers to it, it's free to be garbage collected even though it's technically still "in", so `@unsplat` is only for cutting something off early, not for avoiding a leak. This matters most for long-lived scopes -- the top level of a program, or anything a running `@start_server` reuses across requests.
+###
+tmp := Vector()
+tmp.x = 3
+tmp.y = 4
+@assert magnitude(tmp) == 5.0, 'no @unsplat needed after the call -- the weak reference just goes away'
+
+
+### The standard library works this way too
+
+`String` / `Array` / etc. are reachable through Global's own read-only splat, not declared on Global directly -- see demos/loading_code.disk. Reassigning a built-in name shadows it for the rest of the program without touching the real one; if the replacement still composes the original, every literal keeps working and picks up whatever else you added:
+###
+Mine | Array { extra := true }
+Array = Mine
+
+@assert [1,2,3].length() == 3, 'reassigning Array keeps literals working -- Mine composes Array'
+@assert [1].extra == true, 'every array literal now picks up what Mine added'
+
+
+### Global -- the scope keyword
+
+`Global` is a bare scope keyword, the same shape as `self` and `Self`: alone it's the global scope as a value, and `Global.name` reaches a name on it specifically -- past any local shadow, without an outward search:
+###
+Global.tally := 0
+
+count_up ( n;
+	tally := 999          # a fresh local shadow -- doesn't touch the global
+	Global.tally = Global.tally + n
+)
+
+count_up(5)
+count_up(3)
+@assert Global.tally == 8, 'Global. reaches the global member, never the local shadow'
+@assert tally == 8, 'and bare `tally` finds it too, once nothing local is in the way'
+
+
+### Reopening a scope directly
+
+`@push_scope <Type or instance>` pushes that scope onto the stack, so declarations made while it's active become real members of the target -- unlike a splat, which only adds a lookup fallback without mutating anything. `@pop_scope <same target>` pops back out, asserting the target matches what was pushed.
+###
+Button {
+	label := 'default'
+}
+
+@push_scope Button
+css_filter := 'invert()'
+@pop_scope Button
+
+b := Button()
+@assert b.css_filter == 'invert()', 'a member declared while pushed onto the Type shows up on an instance'
+
+
+### Reopening a Type extends every instance
+
+`css_filter` went onto the `Button` type, so every `Button()` -- built before or after -- sees it, exactly as if it were in the original body:
+###
+another_button := Button()
+@assert another_button.css_filter == 'invert()', 'the declaration is shared by every Button'
+
+
+### Reopening one instance changes just that instance
+
+`@push_scope` also takes an instance directly -- then the new declarations land only on that one value:
+###
+button_c := Button()
+button_d := Button()
+
+@push_scope button_c
+onclick := 'clicked'
+@pop_scope button_c
+
+@assert button_c.onclick == 'clicked', 'the reopened instance has the new member'
+# button_d.onclick would raise Disk::Undeclared_Identifier -- only button_c was reopened, not the type

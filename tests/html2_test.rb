@@ -2,11 +2,11 @@ require 'minitest/autorun'
 require_relative '../drive/drive'
 require_relative 'base_test'
 
-# tapes/html2.tape: the Element/Attribute structs, Html_Formatter_Visitor (render + minify, void
+# disks/html2.disk: the Element/Attribute structs, Html_Formatter_Visitor (render + minify, void
 # tags, embedded css), Html_Stats_Visitor, Html_Sanitizer_Visitor, Html_Lint_Visitor, and the
 # lowercase element constructors.
 class Html2_Test < Base_Test
-	HTML = "@load 'tapes/html2.tape'"
+	HTML = "@load 'disks/html2.disk'"
 
 	# --- Html_Formatter_Visitor: render -----------------------------------------
 

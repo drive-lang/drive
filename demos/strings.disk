@@ -1,0 +1,44 @@
+### Introduction
+
+Strings use single or double quotes. Backed by `Disk::String`, wrapping a real Ruby string in `.value`. `length` is a plain property, no parens -- everything else below is a method call.
+###
+name := 'Jack Shephard'
+@assert name.length == 13, 'length should count the characters'
+@assert 'J'.ord == 74, 'ord should give the ordinal of the first character'
+
+
+### upcase and downcase
+
+###
+@assert name.upcase() == 'JACK SHEPHARD', 'upcase should uppercase every character'
+@assert name.downcase() == 'jack shephard', 'downcase should lowercase every character'
+
+
+### split and trim
+
+###
+@assert name.split(' ') == ['Jack', 'Shephard'], 'split should divide the string on the delimiter'
+@assert '  castaway  '.trim() == 'castaway', 'trim should remove leading and trailing whitespace'
+
+
+### chars and reverse
+
+###
+@assert 'raft'.chars() == ['r', 'a', 'f', 't'], 'chars should split into individual characters'
+@assert 'raft'.reverse() == 'tfar', 'reverse should flip the character order'
+
+
+### include?, start_with?, end_with?
+
+###
+@assert name.include?('Shephard') == true, 'include? should find a present substring'
+@assert name.start_with?('Jack') == true, 'start_with? should check the beginning of the string'
+@assert name.end_with?('phard') == true, 'end_with? should check the end of the string'
+
+
+### gsub and to_i
+
+`gsub` replaces every match of a substring, `to_i` parses a leading integer out of a string.
+###
+@assert name.gsub('Shephard', 'Shepard') == 'Jack Shepard', 'gsub should replace every match of the substring'
+@assert '108'.to_i() == 108, 'to_i should parse a leading integer out of the string'

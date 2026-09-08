@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Scope
 		attr_accessor :enclosing_scope, :readable_scopes, :writable_scopes, :declarations, :name, :type_by_identifier, :static_declarations, :tagged_type_variants, :context, :display_name
 
@@ -157,7 +157,7 @@ module Tape
 				delegate_value = value.respond_to?(key) ? value.send(key) : value
 				send "#{key}=", delegate_value
 				# Read back what the setter actually stored, not the raw input -- a subclass setter may
-				# coerce (Tape::Integer#value= runs to_i, Tape::Decimal#value= builds a BigDecimal).
+				# coerce (Disk::Integer#value= runs to_i, Disk::Decimal#value= builds a BigDecimal).
 				@declarations[key.to_s] = send key
 			else
 				super
@@ -220,7 +220,7 @@ module Tape
 		FALSE = new(false)
 	end
 
-	# Tape::Range is an Instance wrapping a Ruby ::Range -- see drive/backings/range.rb + tapes/range.tape.
+	# Disk::Range is an Instance wrapping a Ruby ::Range -- see drive/backings/range.rb + disks/range.disk.
 
 	class Server < Instance
 		DEFAULT_PORT = 8080

@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Range < Instance
 		extend Ruby_Proxies
 		include ::Enumerable
@@ -26,11 +26,11 @@ module Tape
 		proxy :min
 		proxy :max
 		proxy :sum
-		proxy :cover?, as: :include? # `covers?` is a tape-level alias (tapes/range.tape)
+		proxy :cover?, as: :include? # `covers?` is a disk-level alias (disks/range.disk)
 
 		# A fresh Array of every element.
 		def proxy_values
-			Tape::Array.new @range.to_a
+			Disk::Array.new @range.to_a
 		end
 
 		def proxy_to_s
@@ -40,7 +40,7 @@ module Tape
 
 		def == other
 			case other
-			when Tape::Range then @range == other.range
+			when Disk::Range then @range == other.range
 			when ::Range then @range == other
 			else false
 			end

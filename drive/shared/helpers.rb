@@ -61,7 +61,7 @@ module Helpers
 
 		return nil unless scope.has? ident
 
-		if scope.is_a?(Tape::Type) && scope.static_declarations&.include?(ident)
+		if scope.is_a?(Disk::Type) && scope.static_declarations&.include?(ident)
 			:static
 		else
 			:instance

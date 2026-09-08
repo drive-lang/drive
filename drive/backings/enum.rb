@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Enum < Instance
 		attr_accessor :enum_keys, :enum_values, :enum_types, :enum_type
 

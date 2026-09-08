@@ -5,14 +5,14 @@ require 'securerandom' # #initialize mints @live_reload_token with this
 
 module Drive
 	class Interpreter
-		include Tape
+		include Disk
 		extend Cached_By_Path
 
 		# Source lines by filepath, keyed the same way #register_source always has -- kept class-level (not per-instance) so Error_Formatter can read a snippet without holding a live Interpreter, which used to be the only reason errors.rb needed a `runtime` reference at all.
 		cache_by_path :cached_source_by_filename # {filepath: [String]}
 
-		# Parsed ASTs by resolved filepath, kept class-level (not per-instance) for the same reason: `tapes/global.tape` (and everything it transitively @loads) is immutable source, identical for every Interpreter in the process, so re-lexing/re-parsing it fresh on every `Drive.interp` call was pure waste -- it used to be instance-level, meaning a brand-new Interpreter (which every `Drive.interp` call constructs) never saw a warm cache. Doesn't cache the *interpretation* of that AST (each Interpreter still builds its own fresh Standard_Library scope from it), only the lex+parse step, so per-instance isolation (mutating a builtin in one test can't leak into another) is unaffected.
-		cache_by_path :cached_expressions_by_filepath # {filepath: [Tape::Expression]}
+		# Parsed ASTs by resolved filepath, kept class-level (not per-instance) for the same reason: `disks/global.disk` (and everything it transitively @loads) is immutable source, identical for every Interpreter in the process, so re-lexing/re-parsing it fresh on every `Drive.interp` call was pure waste -- it used to be instance-level, meaning a brand-new Interpreter (which every `Drive.interp` call constructs) never saw a warm cache. Doesn't cache the *interpretation* of that AST (each Interpreter still builds its own fresh Standard_Library scope from it), only the lex+parse step, so per-instance isolation (mutating a builtin in one test can't leak into another) is unaffected.
+		cache_by_path :cached_expressions_by_filepath # {filepath: [Disk::Expression]}
 
 		# Resolved filepaths whose AST has already passed type-checking at least once, kept class-level alongside the cache above. Type-checking is a pure function of the AST (no interpreter state involved) -- a cached, never-changing file that already passed once will always pass, so re-walking it on every subsequent load is pure waste, same as re-parsing was.
 		cache_by_path :type_checked_filepaths # {filepath: true}
@@ -39,18 +39,18 @@ module Drive
 		attr_accessor :input, :lexer, :parser, :load_standard_library, :stack, :route_functions_by_route_name, :servers, :dom_onclick_function_handlers, :dom_input_elements, :last_output, :current_source_file, :stdlib_scope, :declarations, :global, :serve_in_foreground, :live_reload, :live_reload_token
 
 		def initialize
-			@dom_input_elements            = {} # {element_hash: Tape::Instance} for inputs/textareas
-			@dom_onclick_function_handlers = {} # {handler_hash: Tape::Func}
-			@route_functions_by_route_name = {} # {route: Tape::Route}
+			@dom_input_elements            = {} # {element_hash: Disk::Instance} for inputs/textareas
+			@dom_onclick_function_handlers = {} # {handler_hash: Disk::Func}
+			@route_functions_by_route_name = {} # {route: Disk::Route}
 
 			@load_standard_library = true
 			@serve_in_foreground   = true # Hot_Reloader flips this -- see #run
-			@input                 = [] # [Tape::Expression]
-			@stack                 = [] # [Tape::Scope]
-			@servers               = [] # [Tape::Server]
+			@input                 = [] # [Disk::Expression]
+			@stack                 = [] # [Disk::Scope]
+			@servers               = [] # [Disk::Server]
 
 			# Live reload (browser auto-refresh on save). Only Hot_Reloader turns @live_reload on, so a
-			# plain `tape interpf` / production server never streams events or injects the client script.
+			# plain `disk interpf` / production server never streams events or injects the client script.
 			# @live_reload_token is unique per Interpreter instance: a hot reload builds a fresh
 			# Interpreter, so the token the /_drive/live-reload stream reports changes, which is exactly
 			# the "the server rebooted, refresh now" signal the browser watches for.
@@ -59,8 +59,8 @@ module Drive
 
 			@lexer               = Lexer.new
 			@parser              = Parser.new
-			@declarations        = {} # {::String => Tape::Declaration}, see Declarator
-			@forced_declarations = ::Set.new # identity-tracked Tape::Expression, see #resolve_forward_declaration
+			@declarations        = {} # {::String => Disk::Declaration}, see Declarator
+			@forced_declarations = ::Set.new # identity-tracked Disk::Expression, see #resolve_forward_declaration
 
 			Interpreter.current = self
 		end
@@ -69,14 +69,14 @@ module Drive
 			top_level_source_file = current_source_file
 
 			if @stack.empty?
-				# todo; Global should be created by interping tapes/global.tape, which is what I want to rename tapes/global.tape to
+				# todo; Global should be created by interping disks/global.disk, which is what I want to rename disks/global.disk to
 				global  = Global.new
 				@global = global # kept separately from @stack -- #interp_member_access temporarily swaps @stack out for dot-access resolution, so `stack.first` isn't reliably Global the way this needs
 				@stack << global
 				if load_standard_library
 					# Stdlib lives in its own Scope, reachable via Global's readable scope -- not Global's own declarations. Reassigning a builtin can't mutate it (readable_scopes never redirects writes), just shadows locally. Composing and deliberate @push_scope reopening still work. `global` is pushed before this load so `~/` still resolves to Global while the stdlib itself loads.
 					# Also held here as a real instance var, not just the WeakMap entry above -- readable/writable scope membership deliberately never keeps anything alive on its own (see CLAUDE.md), which is correct for things a caller adds and is expected to hold their own reference to elsewhere, but @stdlib_scope has no other holder anywhere. Without this, it's one GC pass away from being collected mid-program, taking the entire standard library (String, Array, everything) down with it.
-					@stdlib_scope = Tape::Scope.new('Standard_Library')
+					@stdlib_scope = Disk::Scope.new('Standard_Library')
 					load_file_into_scope STANDARD_LIBRARY_PATH, @stdlib_scope
 					global.add_readable_scope @stdlib_scope
 				end
@@ -140,11 +140,11 @@ module Drive
 
 		# `@load 'file'` -- parses as a Call_Expr on `@.load` (see Parser#parse_context_call).
 		def load_call_expr? expr
-			return false unless expr.is_a?(Tape::Call_Expr)
+			return false unless expr.is_a?(Disk::Call_Expr)
 			r = expr.receiver
-			r.is_a?(Tape::Infix_Expr) && r.operator&.value == '.' &&
-				r.left.is_a?(Tape::Identifier_Expr) && r.left.value == Tape::CONTEXT_OPERATOR &&
-				r.right.is_a?(Tape::Identifier_Expr) && r.right.value == 'load'
+			r.is_a?(Disk::Infix_Expr) && r.operator&.value == '.' &&
+				r.left.is_a?(Disk::Identifier_Expr) && r.left.value == Disk::CONTEXT_OPERATOR &&
+				r.right.is_a?(Disk::Identifier_Expr) && r.right.value == 'load'
 		end
 
 		# @param [::String] name
@@ -167,7 +167,7 @@ module Drive
 				keep_running = true
 
 				trap_fn = Proc.new do
-					puts Tape::Ascii.dim "Shutting down..."
+					puts Disk::Ascii.dim "Shutting down..."
 					keep_running = false
 					puts "\n\s\s(V) (;,,;) (V)"
 					Thread.main.exit
@@ -195,12 +195,12 @@ module Drive
 
 		# Preserves its @input, interprets given file, then restores its @input.
 		# @param [::String] filepath of the code to load
-		# @param [Tape::Scope] scope to load code into
+		# @param [Disk::Scope] scope to load code into
 		# @return The output of the interpreted file
 		def load_file_into_scope filepath, into_scope
-			filepath.insert(-1, '.tape') unless filepath.end_with? '.tape' # note; I feel like this isn't the smartestest way to achieve this.
+			filepath.insert(-1, '.disk') unless filepath.end_with? '.disk' # note; I feel like this isn't the smartestest way to achieve this.
 
-			resolved_path = if filepath.start_with? 'tapes/'
+			resolved_path = if filepath.start_with? 'disks/'
 				File.join ROOT_PATH, filepath
 			else
 				File.expand_path filepath
@@ -287,7 +287,7 @@ module Drive
 		# is what let handlers move out of new() and into render(). `render_scope` is `{ anchor:, slot: }`
 		# seeded in #render_dom_to_html; the slot counter advances in depth-first render order.
 		#
-		# An `element_key` (the element's own `key := '...'`, see tapes/html.tape) pins the token by
+		# An `element_key` (the element's own `key := '...'`, see disks/html.disk) pins the token by
 		# name instead of position and does not touch the slot counter -- so a conditional element
 		# appearing or vanishing between renders can't shift its siblings' tokens.
 		def next_render_token render_scope, element_key = nil
@@ -299,7 +299,7 @@ module Drive
 		end
 
 		def scope_for_identifier expr
-			unless expr.is_a? Tape::Identifier_Expr
+			unless expr.is_a? Disk::Identifier_Expr
 				return stack.last
 			end
 
@@ -308,7 +308,7 @@ module Drive
 				global
 			when 'Self' # the enclosing type -- where statics live (`Self.count`)
 				stack.reverse_each.find do |scope|
-					scope.instance_of? Tape::Type
+					scope.instance_of? Disk::Type
 				end
 			when 'self' # the enclosing instance
 				current_instance
@@ -319,7 +319,7 @@ module Drive
 					if scope.has?(expr.value) || scope.respond_to?("proxy_#{expr.value}")
 						found_scope = scope
 						break
-					elsif scope.is_a?(Tape::Instance) && scope.enclosing_scope&.has?(expr.value)
+					elsif scope.is_a?(Disk::Instance) && scope.enclosing_scope&.has?(expr.value)
 						# Method exists on the Type - return the instance as the scope so lookups happen in instance context
 						found_scope = scope
 						break
@@ -330,33 +330,33 @@ module Drive
 		end
 
 		def maybe_instance expr
-			# todo, when String and so on, because everything needs to be some type of scope to live inside the runtime. Every object in Tape::Scope.declarations{} is either a primitive like String, Integer, Float, or they're an instanced version like Tape::Number.
+			# todo, when String and so on, because everything needs to be some type of scope to live inside the runtime. Every object in Disk::Scope.declarations{} is either a primitive like String, Integer, Float, or they're an instanced version like Disk::Number.
 			case expr
 			when ::Integer, ::Float, ::BigDecimal
-				# Tape::Number_Expr is already handled in #interpret but this is short-circuiting that for cases like 1.something where we have to make sure the 1 is no longer a numeric literal, but instead a runtime object version of the number 1. The Ruby class of the already-evaluated value picks the matching Drive numeric type (Ruby's own Integer/Float/Rational tower, minus Rational for now). `Integer`/`Float` are bare here (not `::`) on purpose -- they mean `Tape::Integer`/`Tape::Float`.
-				tape_class, type_name = case expr
-				when ::Integer then [Tape::Integer, 'Integer']
-				when ::Float then [Tape::Float, 'Float']
-				when ::BigDecimal then [Tape::Decimal, 'Decimal']
+				# Disk::Number_Expr is already handled in #interpret but this is short-circuiting that for cases like 1.something where we have to make sure the 1 is no longer a numeric literal, but instead a runtime object version of the number 1. The Ruby class of the already-evaluated value picks the matching Drive numeric type (Ruby's own Integer/Float/Rational tower, minus Rational for now). `Integer`/`Float` are bare here (not `::`) on purpose -- they mean `Disk::Integer`/`Disk::Float`.
+				disk_class, type_name = case expr
+				when ::Integer then [Disk::Integer, 'Integer']
+				when ::Float then [Disk::Float, 'Float']
+				when ::BigDecimal then [Disk::Decimal, 'Decimal']
 				end
 
-				finish_intrinsic_instance tape_class.new(expr), type_name
+				finish_intrinsic_instance disk_class.new(expr), type_name
 			when ::String
-				finish_intrinsic_instance Tape::String.new(expr), 'String'
+				finish_intrinsic_instance Disk::String.new(expr), 'String'
 			when ::Array
-				finish_intrinsic_instance Tape::Array.new(expr), 'Array'
+				finish_intrinsic_instance Disk::Array.new(expr), 'Array'
 			when ::Hash
-				finish_intrinsic_instance Tape::Dictionary.new(expr), 'Dictionary'
-			when Tape::Set
+				finish_intrinsic_instance Disk::Dictionary.new(expr), 'Dictionary'
+			when Disk::Set
 				finish_intrinsic_instance expr, 'Set'
-			when Tape::Range
+			when Disk::Range
 				finish_intrinsic_instance expr, 'Range'
 			when true
-				finish_intrinsic_instance Tape::Bool.truthy, 'Bool'
+				finish_intrinsic_instance Disk::Bool.truthy, 'Bool'
 			when false
-				finish_intrinsic_instance Tape::Bool.falsy, 'Bool'
+				finish_intrinsic_instance Disk::Bool.falsy, 'Bool'
 			when nil
-				adopt_type Tape::Nil.new, 'Nil'
+				adopt_type Disk::Nil.new, 'Nil'
 			else
 				expr
 			end
@@ -387,7 +387,7 @@ module Drive
 
 		def context_for scope
 			scope.context ||= begin
-				instance = Tape::Context.new scope
+				instance = Disk::Context.new scope
 				link_instance_to_type instance, 'Context'
 				# `Context` is always a stdlib global -- fall back to it directly, since `context_for` also
 				# runs mid dot-access resolution (`x.@`), when `stack` is narrowed to just the receiver and
@@ -400,10 +400,10 @@ module Drive
 		end
 
 		def fill_context instance, scope, decl
-			data_members = (decl.respond_to?(:names) && decl.names&.compact || []) - Tape::Context::FUNCTIONS
+			data_members = (decl.respond_to?(:names) && decl.names&.compact || []) - Disk::Context::FUNCTIONS
 
-			set_of = ->(list) { finish_intrinsic_instance(Tape::Set.new.tap { |s| s.set.merge(list) }, 'Set') }
-			name   = scope.name.is_a?(Tape::Lexeme) ? scope.name.value : scope.name
+			set_of = ->(list) { finish_intrinsic_instance(Disk::Set.new.tap { |s| s.set.merge(list) }, 'Set') }
+			name   = scope.name.is_a?(Disk::Lexeme) ? scope.name.value : scope.name
 
 			# todo; This is a mess. Pick a better way to organize this.
 			# todo; Add these values to the Context
@@ -420,61 +420,61 @@ module Drive
 				'size_in_bytes'       => ObjectSpace.memsize_of(scope),
 				'root_path'           => Drive::ROOT_PATH,
 				'static_declarations' => set_of.call(scope.respond_to?(:static_declarations) && scope.static_declarations ? scope.static_declarations.to_a : []),
-				'names'               => (wrap_tape_array(scope.names) if scope.is_a?(Tape::Struct)),
-				'type_names'          => (wrap_tape_array(scope.type_names) if scope.is_a?(Tape::Struct)),
+				'names'               => (wrap_disk_array(scope.names) if scope.is_a?(Disk::Struct)),
+				'type_names'          => (wrap_disk_array(scope.type_names) if scope.is_a?(Disk::Struct)),
 				'values'              => context_values_for(scope),
-				'members'             => (scope.members if scope.is_a?(Tape::Struct)),
-				'keys'                => (wrap_tape_array(scope.enum_keys) if scope.is_a?(Tape::Enum)),
-				'count'               => (scope.enum_keys.length if scope.is_a?(Tape::Enum)),
-				'parameters'          => (wrap_tape_array(scope.parameters) if scope.is_a?(Tape::Func)),
-				'arguments'           => (wrap_tape_array(scope.arguments) if scope.is_a?(Tape::Func)),
-				'func_signature'      => (scope.func_signature if scope.is_a?(Tape::Func)),
+				'members'             => (scope.members if scope.is_a?(Disk::Struct)),
+				'keys'                => (wrap_disk_array(scope.enum_keys) if scope.is_a?(Disk::Enum)),
+				'count'               => (scope.enum_keys.length if scope.is_a?(Disk::Enum)),
+				'parameters'          => (wrap_disk_array(scope.parameters) if scope.is_a?(Disk::Func)),
+				'arguments'           => (wrap_disk_array(scope.arguments) if scope.is_a?(Disk::Func)),
+				'func_signature'      => (scope.func_signature if scope.is_a?(Disk::Func)),
 			}
 
 			data_members.each { |member| instance.declare member, values[member] }
-			Tape::Context::FUNCTIONS.each do |fn|
+			Disk::Context::FUNCTIONS.each do |fn|
 				result = synthesized_context_func(fn, instance)
 				instance.declare fn, result
 			end
 		end
 
 		def context_types_for scope
-			return wrap_tape_array(scope.type_objects) if scope.is_a?(Tape::Struct)
-			return wrap_tape_array(scope.enum_types) if scope.is_a?(Tape::Enum)
-			wrap_tape_array(scope.respond_to?(:types) && scope.types ? scope.types.to_a : [])
+			return wrap_disk_array(scope.type_objects) if scope.is_a?(Disk::Struct)
+			return wrap_disk_array(scope.enum_types) if scope.is_a?(Disk::Enum)
+			wrap_disk_array(scope.respond_to?(:types) && scope.types ? scope.types.to_a : [])
 		end
 
 		def context_type_for scope
-			return scope.type_objects&.first if scope.is_a?(Tape::Struct)
-			return scope.enum_type if scope.is_a?(Tape::Enum)
+			return scope.type_objects&.first if scope.is_a?(Disk::Struct)
+			return scope.enum_type if scope.is_a?(Disk::Enum)
 			(scope.types&.first if scope.respond_to?(:types)) || scope.class.name.split('::').last
 		end
 
 		def context_values_for scope
-			return wrap_tape_array(scope.enum_values) if scope.is_a?(Tape::Enum)
-			wrap_tape_array(scope.values) if scope.is_a?(Tape::Struct)
+			return wrap_disk_array(scope.enum_values) if scope.is_a?(Disk::Enum)
+			wrap_disk_array(scope.values) if scope.is_a?(Disk::Struct)
 		end
 
 		# A callable stand-in for a Context function member (`@puts`, `@push_scope`, ...)
 		def synthesized_context_func member, enclosing
-			func                       = Tape::Func.new Tape::Lexeme.new(:identifier, member)
-			func.name                  = Tape::Lexeme.new :identifier, member
+			func                       = Disk::Func.new Disk::Lexeme.new(:identifier, member)
+			func.name                  = Disk::Lexeme.new :identifier, member
 			func.context_function_name = member
 			func.parameters            = []
 			func.expressions           = []
 			func.enclosing_scope       = enclosing
-			func.func_signature        = Tape::Func_Signature.new [], nil
+			func.func_signature        = Disk::Func_Signature.new [], nil
 			func
 		end
 
 		def track_static_declaration scope, ident_expr
-			return unless ident_expr.is_a?(Tape::Identifier_Expr) && ident_expr.scope_operator&.value == 'Self'
+			return unless ident_expr.is_a?(Disk::Identifier_Expr) && ident_expr.scope_operator&.value == 'Self'
 			scope.static_declarations ||= ::Set.new
 			scope.static_declarations.add ident_expr.value.to_s
 		end
 
 		def current_instance
-			stack.reverse_each.find { |scope| scope.is_a? Tape::Instance }
+			stack.reverse_each.find { |scope| scope.is_a? Disk::Instance }
 		end
 
 		def check_dot_access_permissions! scope, ident, expr
@@ -482,32 +482,32 @@ module Drive
 			privacy = Drive.privacy_of_ident ident
 
 			case scope
-			when Tape::Instance
+			when Disk::Instance
 				if privacy == :private && !current_instance.equal?(scope)
-					raise Tape::Cannot_Call_Private_Instance_Member.new(expr)
+					raise Disk::Cannot_Call_Private_Instance_Member.new(expr)
 				end
-			when Tape::Type
+			when Disk::Type
 				if binding == :instance
 					# todo: This does not print the correct code location, here is a paste of the output:
 					#       Cannot_Call_Instance_Member_On_Type
 					#       :1:1
-					raise Tape::Cannot_Call_Instance_Member_On_Type.new(expr)
+					raise Disk::Cannot_Call_Instance_Member_On_Type.new(expr)
 				elsif privacy == :private
-					raise Tape::Cannot_Call_Private_Static_Member_On_Type.new(expr)
+					raise Disk::Cannot_Call_Private_Static_Member_On_Type.new(expr)
 				end
 			end
 		end
 
 		def find_ruby_class_for_type type
 			candidates = type.types.filter_map do |type_name|
-				tape_name = "Tape::#{type_name}"
-				next unless Object.const_defined? tape_name
-				k = Object.const_get tape_name
-				k if k.is_a?(Class) && k < Tape::Instance && k != Tape::Instance
+				disk_name = "Disk::#{type_name}"
+				next unless Object.const_defined? disk_name
+				k = Object.const_get disk_name
+				k if k.is_a?(Class) && k < Disk::Instance && k != Disk::Instance
 			end
 
-			# Most-derived wins: `Integer | Number {}` matches both Tape::Integer and Tape::Number, and
-			# we want Tape::Integer (its `value=` coerces via `to_i`). Longest ancestor chain = deepest
+			# Most-derived wins: `Integer | Number {}` matches both Disk::Integer and Disk::Number, and
+			# we want Disk::Integer (its `value=` coerces via `to_i`). Longest ancestor chain = deepest
 			# subclass. Unrelated candidates (no shared lineage) just pick one deterministically.
 			candidates.max_by { |k| k.ancestors.size }
 		end
@@ -527,20 +527,20 @@ module Drive
 
 		def type_name_to_string value
 			case value
-			when Tape::Integer then 'Integer'
-			when Tape::Float then 'Float'
-			when Tape::Decimal then 'Decimal'
-			when Tape::Number then 'Number'
+			when Disk::Integer then 'Integer'
+			when Disk::Float then 'Float'
+			when Disk::Decimal then 'Decimal'
+			when Disk::Number then 'Number'
 			when ::Integer then 'Integer'
 			when ::Float then 'Float'
 			when ::BigDecimal then 'Decimal'
-			when Tape::String then 'String'
-			when Tape::Array then 'Array'
-			when Tape::Range then 'Range'
-			when Tape::Dictionary then 'Dictionary'
-			when Tape::Bool then 'Bool'
-			when Tape::Instance then value.types.first
-			when Tape::Type then value.name
+			when Disk::String then 'String'
+			when Disk::Array then 'Array'
+			when Disk::Range then 'Range'
+			when Disk::Dictionary then 'Dictionary'
+			when Disk::Bool then 'Bool'
+			when Disk::Instance then value.types.first
+			when Disk::Type then value.name
 			# todo: Why are these here? Excluding the else clause
 			when true, false then 'Bool'
 			when ::String then 'String'
@@ -566,7 +566,7 @@ module Drive
 		# `nil` -- the universal unset value every typed slot starts as -- satisfies any contract.
 		def type_contract_satisfied? value, expected
 			return true if expected.nil? || expected == 'Any'
-			return true if value.nil? || value.is_a?(Tape::Nil)
+			return true if value.nil? || value.is_a?(Disk::Nil)
 			return true if type_name_to_string(value) == expected
 
 			value_types = composed_types_for value
@@ -581,7 +581,7 @@ module Drive
 
 		def composed_types_for value
 			case value
-			when Tape::Type
+			when Disk::Type
 				value.types
 			else
 				# Covers backings (Number/String/Array/Dictionary/Bool) and anything else -- neither needs special handling, both resolve by name.
@@ -602,18 +602,18 @@ module Drive
 			types_superset && members_superset
 		end
 
-		# If `name` is already an Tape::Func_Signature, return it as-is (an inline signature has no name to look up). Otherwise, if it's bound to one anywhere on the stack, return that. Otherwise nil — meaning `name` is an ordinary nominal type name (e.g. 'Number').
+		# If `name` is already an Disk::Func_Signature, return it as-is (an inline signature has no name to look up). Otherwise, if it's bound to one anywhere on the stack, return that. Otherwise nil — meaning `name` is an ordinary nominal type name (e.g. 'Number').
 		def resolve_func_signature name
-			return name if name.is_a? Tape::Func_Signature
+			return name if name.is_a? Disk::Func_Signature
 			return nil unless name
 			value = find_in_stack name
-			value.is_a?(Tape::Func_Signature) ? value : nil
+			value.is_a?(Disk::Func_Signature) ? value : nil
 		end
 
-		# @param expr [Tape::Func_Signature_Expr]
+		# @param expr [Disk::Func_Signature_Expr]
 		def build_func_signature expr
 			param_types = expr.params.map { |param| param.type&.value }
-			Tape::Func_Signature.new param_types, expr.type&.value
+			Disk::Func_Signature.new param_types, expr.type&.value
 		end
 
 		# Readable description of a value's shape for Type_Contract_Violation messages — a func-like value's param/return types if it has them, otherwise its plain type name.
@@ -634,7 +634,7 @@ module Drive
 			                                  StartCallback: -> { ready << true }
 
 			webrick.mount_proc '/onclick/' do |req, res|
-				puts Tape::Ascii.dim "#{'DOM'.rjust(7, ' ')} #{req.path}"
+				puts Disk::Ascii.dim "#{'DOM'.rjust(7, ' ')} #{req.path}"
 				handle_request server, req, res
 			end
 
@@ -744,12 +744,12 @@ module Drive
 							end
 						end
 
-						route             = Tape::Route.new
+						route             = Disk::Route.new
 						route.handler     = entry[:handler]
 						route.param_names = []
 
-						req = build_tape_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
-						res = build_tape_response response
+						req = build_disk_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
+						res = build_disk_response response
 
 						interp_route_body route, req, res
 
@@ -758,7 +758,7 @@ module Drive
 						# handler defined in a `.map` callback or a plain helper works the same as one in a
 						# method.
 						component = entry[:component]
-						if component.is_a?(Tape::Instance) && component.declarations['render']
+						if component.is_a?(Disk::Instance) && component.declarations['render']
 							new_html = render_dom_to_html component
 							html_id  = component.declarations['html_id']
 
@@ -793,10 +793,10 @@ module Drive
 				url_params   = extract_url_params path_parts, route_function
 				query_params = parse_query_string query_string
 
-				req = build_tape_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+				req = build_disk_request path_string, http_method, body_hash, query_params, url_params, headers_hash
 
 				begin
-					res    = build_tape_response response
+					res    = build_disk_response response
 					result = interp_route_body route_function, req, res, url_params, server_instance: server
 
 					response.status = res.declarations['status']
@@ -917,12 +917,12 @@ module Drive
 			query_params
 		end
 
-		def build_tape_request path_string, http_method, body_hash, query_params, url_params, headers_hash
-			req          = Tape::Request.new
-			body_dict    = Tape::Dictionary.new body_hash
-			query_dict   = Tape::Dictionary.new query_params
-			params_dict  = Tape::Dictionary.new url_params
-			headers_dict = Tape::Dictionary.new headers_hash
+		def build_disk_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+			req          = Disk::Request.new
+			body_dict    = Disk::Dictionary.new body_hash
+			query_dict   = Disk::Dictionary.new query_params
+			params_dict  = Disk::Dictionary.new url_params
+			headers_dict = Disk::Dictionary.new headers_hash
 			link_instance_to_type req, 'Request'
 			link_instance_to_type body_dict, 'Dictionary'
 			link_instance_to_type query_dict, 'Dictionary'
@@ -938,8 +938,8 @@ module Drive
 			req
 		end
 
-		def build_tape_response webrick_response
-			res                                  = Tape::Response.new
+		def build_disk_response webrick_response
+			res                                  = Disk::Response.new
 			res.webrick_response                 = webrick_response
 			res.declarations['webrick_response'] = webrick_response
 			res.declarations['status']           = 200
@@ -981,7 +981,7 @@ module Drive
 			render = dom_instance.declarations['render']
 
 			inner_html = if render
-				call_expr           = Tape::Call_Expr.new
+				call_expr           = Disk::Call_Expr.new
 				call_expr.receiver  = render
 				call_expr.arguments = []
 
@@ -1009,9 +1009,9 @@ module Drive
 			renderer.to_html_string
 		end
 
-		# A render() result can be a String, a single Dom-composing Instance, or an Tape::Array of
+		# A render() result can be a String, a single Dom-composing Instance, or an Disk::Array of
 		# either (or of further-nested Arrays -- e.g. `things.map((it; A(...)))` embedded inline among
-		# other children, same as `Form([input, button, list])` in demos/*.tape's Dom examples).
+		# other children, same as `Form([input, button, list])` in demos/*.disk's Dom examples).
 		# Recurses into a nested Array rather than requiring exactly one flat level, so a mapped
 		# collection of elements renders each element individually instead of being silently dropped
 		# (neither a String nor a Dom Instance on its own) or, if handled some other way, rendered as
@@ -1022,10 +1022,10 @@ module Drive
 			case value
 			when ::String
 				html << value
-			when Tape::Array
+			when Disk::Array
 				value.values.each { |child| append_dom_child_html child, html, render_scope }
 			else
-				html << render_dom_to_html(value, render_scope: render_scope) if value.is_a?(Tape::Instance) && value.types.include?('Dom')
+				html << render_dom_to_html(value, render_scope: render_scope) if value.is_a?(Disk::Instance) && value.types.include?('Dom')
 			end
 		end
 
@@ -1033,9 +1033,9 @@ module Drive
 		def raise_missing_scope_operator_target! expr, scope_operator_value
 			case scope_operator_value
 			when 'self'
-				raise Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
+				raise Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
 			when 'Self'
-				raise Tape::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
+				raise Disk::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
 			end
 		end
 
@@ -1051,7 +1051,7 @@ module Drive
 		# only while still unbound (`instance_of?`, not `is_a?`: Instance < Type, so `is_a?` would also
 		# match an already-bound method and re-rebind it to whatever unrelated scope it's later read from).
 		def rebind_func_to_scope value, scope
-			return value unless value.is_a?(Tape::Func) && value.enclosing_scope.instance_of?(Tape::Type)
+			return value unless value.is_a?(Disk::Func) && value.enclosing_scope.instance_of?(Disk::Type)
 			func                 = value.dup
 			func.enclosing_scope = scope
 			func
@@ -1062,7 +1062,7 @@ module Drive
 		def interp_at_word_on scope, ident_expr
 			# `@.values` / `@.members` on a struct read straight off the (write-synced) struct rather
 			# than the Context, which snapshots its data members once on first `@` access.
-			if scope.is_a?(Tape::Struct) && %w(values members).include?(ident_expr.value)
+			if scope.is_a?(Disk::Struct) && %w(values members).include?(ident_expr.value)
 				live = ident_expr.value == 'members' ? scope.members : scope.values
 				return live.is_a?(::Array) ? maybe_instance(live) : live
 			end
@@ -1071,8 +1071,8 @@ module Drive
 			plain.prefixed_with_at = false
 			result                 = begin
 				interp_member_access context_for(scope), plain, exclude_global_scope: true
-			rescue Tape::Undeclared_Identifier
-				raise unless scope.is_a?(Tape::Instance) && scope.enclosing_scope.is_a?(Tape::Type)
+			rescue Disk::Undeclared_Identifier
+				raise unless scope.is_a?(Disk::Instance) && scope.enclosing_scope.is_a?(Disk::Type)
 				interp_member_access context_for(scope.enclosing_scope), plain, exclude_global_scope: true
 			end
 			# Reflective collection proxies (`@.names`, `@.types`, ...) hand back a raw Ruby Array --
@@ -1084,15 +1084,15 @@ module Drive
 		# Context (`@name` / `x.@name`), never as a plain `.` member. Type scope only; `expr` is the
 		# whole Infix_Expr, or the bare annotated Identifier_Expr for the no-value form.
 		def interp_context_declaration expr
-			left = expr.is_a?(Tape::Infix_Expr) ? expr.left : expr
+			left = expr.is_a?(Disk::Infix_Expr) ? expr.left : expr
 			name = left.value
 
-			raise Tape::Context_Declaration_Outside_Type.new(expr) unless stack.last.instance_of?(Tape::Type)
+			raise Disk::Context_Declaration_Outside_Type.new(expr) unless stack.last.instance_of?(Disk::Type)
 
-			raise Tape::Cannot_Override_Context_Member.new(expr) if context_builtin_member? name
+			raise Disk::Cannot_Override_Context_Member.new(expr) if context_builtin_member? name
 
 			id    = context_for stack.last
-			value = expr.is_a?(Tape::Infix_Expr) ? interpret(expr.right) : nil
+			value = expr.is_a?(Disk::Infix_Expr) ? interpret(expr.right) : nil
 			id.declare name, value
 			value
 		end
@@ -1100,7 +1100,7 @@ module Drive
 		# A member the Context struct already provides -- a reflective vital (its own declared members)
 		# or a function (Context::FUNCTIONS). User `@x` declarations can't shadow these.
 		def context_builtin_member? name
-			return true if Tape::Context::FUNCTIONS.include? name
+			return true if Disk::Context::FUNCTIONS.include? name
 			decl = find_in_stack 'Context'
 			decl.respond_to?(:names) && decl.names&.compact&.include?(name) || false
 		end
@@ -1109,13 +1109,13 @@ module Drive
 		# declared in the type body; a built-in accessor can't be shadowed.
 		def assign_context_member dot_expr, word_ident, value
 			receiver = maybe_instance interpret dot_expr.left
-			type     = receiver.is_a?(Tape::Instance) ? receiver.enclosing_scope : receiver
+			type     = receiver.is_a?(Disk::Instance) ? receiver.enclosing_scope : receiver
 			name     = word_ident.value
 
-			raise Tape::Cannot_Override_Context_Member.new(dot_expr) if context_builtin_member? name
+			raise Disk::Cannot_Override_Context_Member.new(dot_expr) if context_builtin_member? name
 
 			id = context_for type
-			raise Tape::Cannot_Assign_Undeclared_Identifier.new(dot_expr) unless id.has?(name)
+			raise Disk::Cannot_Assign_Undeclared_Identifier.new(dot_expr) unless id.has?(name)
 
 			id.declare name, value
 			value
@@ -1124,15 +1124,15 @@ module Drive
 		# Either `@x := v` / `@x = v` / `@x: T` -- a declaration onto a Type's Context, which runs once
 		# in the type body (like a static), not per instance.
 		def context_declaration_expr? expr
-			return true if expr.is_a?(Tape::Identifier_Expr) && expr.prefixed_with_at && expr.type
-			expr.is_a?(Tape::Infix_Expr) && %w(:= =).include?(expr.operator&.value) &&
-				expr.left.is_a?(Tape::Identifier_Expr) && expr.left.prefixed_with_at
+			return true if expr.is_a?(Disk::Identifier_Expr) && expr.prefixed_with_at && expr.type
+			expr.is_a?(Disk::Infix_Expr) && %w(:= =).include?(expr.operator&.value) &&
+				expr.left.is_a?(Disk::Identifier_Expr) && expr.left.prefixed_with_at
 		end
 
 		# The directive-flagged `@word` on the RHS of a `.` write target, if any.
 		def dot_target_at_word dot_expr
 			right = dot_expr.right
-			right if right.is_a?(Tape::Identifier_Expr) && right.prefixed_with_at
+			right if right.is_a?(Disk::Identifier_Expr) && right.prefixed_with_at
 		end
 
 		def interp_identifier expr
@@ -1142,39 +1142,39 @@ module Drive
 
 				# A bare `@word` reference (no call): a built-in / user-declared Context member. Resolve
 				# it against the current scope's Context, then any Type up the stack, then Global's.
-				candidates = [stack.last, *stack.select { |s| s.is_a?(Tape::Type) }.reverse, global]
+				candidates = [stack.last, *stack.select { |s| s.is_a?(Disk::Type) }.reverse, global]
 				seen       = []
 				candidates.each do |scope|
 					next if seen.any? { |s| s.equal?(scope) }
 					seen << scope
 					begin
 						return interp_at_word_on(scope, expr)
-					rescue Tape::Undeclared_Identifier
+					rescue Disk::Undeclared_Identifier
 						next
 					end
 				end
-				raise Tape::Undeclared_Identifier.new(expr)
+				raise Disk::Undeclared_Identifier.new(expr)
 			end
 
 			scope = case expr.value
 			when 'nil'
 				return nil
 			when 'true'
-				# todo; return Tape::Bool.truthy
+				# todo; return Disk::Bool.truthy
 				return true
 			when 'false'
-				# todo; return Tape::Bool.falsy
+				# todo; return Disk::Bool.falsy
 				return false
 			when 'Self'
-				found = stack.reverse_each.find { |scope| scope.instance_of? Tape::Type }
+				found = stack.reverse_each.find { |scope| scope.instance_of? Disk::Type }
 				return found if found
-				raise Tape::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
+				raise Disk::Cannot_Use_Type_Scope_Operator_Outside_Type.new(expr)
 			when 'self'
 				return current_instance if current_instance
-				raise Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
+				raise Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance.new(expr)
 			when 'Global'
 				return global
-			when Tape::CONTEXT_OPERATOR
+			when Disk::CONTEXT_OPERATOR
 				return context_for(stack.last) # bare `@` -- the current scope's own Context
 			else
 				scope_for_identifier expr
@@ -1188,7 +1188,7 @@ module Drive
 				if found && found.has?(expr.value)
 					found[expr.value]
 				else
-					raise Tape::Undeclared_Identifier.new(expr)
+					raise Disk::Undeclared_Identifier.new(expr)
 				end
 			elsif scope
 				# note: Delegate ruby calls automatically
@@ -1196,11 +1196,11 @@ module Drive
 				if scope.has?(expr.value) && !scope.respond_to?(proxy_method)
 					result = scope.get expr.value
 					# If the result is a function, duplicate it and set its enclosing_scope to the current scope. This ensures composed types (like `Thing | Record`) have functions that reference the correct type
-					return rebind_func_to_scope(result, scope) if result.is_a? Tape::Func
+					return rebind_func_to_scope(result, scope) if result.is_a? Disk::Func
 					result
 				elsif scope.respond_to? proxy_method
 					# Prefer the instance's own owning Type first -- for a tagged variant (e.g. `Array\Web_Server`) this is a distinct Type from the plain global one, and holds the actual override. Only fall back to a blind by-name search of the stack (which only ever finds the plain global type, e.g. plain "Array") when the instance isn't linked to a Type that declares this method itself.
-					type_def       = if scope.enclosing_scope.is_a?(Tape::Type) && scope.enclosing_scope.has?(expr.value)
+					type_def       = if scope.enclosing_scope.is_a?(Disk::Type) && scope.enclosing_scope.has?(expr.value)
 						scope.enclosing_scope
 					else
 						type_name  = scope.class.name.split('::').last
@@ -1209,14 +1209,14 @@ module Drive
 					end
 					declared_value = type_def[expr.value] if type_def
 
-					if declared_value.is_a? Tape::Func
+					if declared_value.is_a? Disk::Func
 						# Use the actual function from the Type, not an empty wrapper
 						return rebind_func_to_scope(declared_value, scope)
 					else
 						# It's a variable/property
 						return scope.send(proxy_method)
 					end
-				elsif scope.is_a?(Tape::Instance) && scope.enclosing_scope&.is_a?(Tape::Type) && scope.enclosing_scope&.has?(expr.value)
+				elsif scope.is_a?(Disk::Instance) && scope.enclosing_scope&.is_a?(Disk::Type) && scope.enclosing_scope&.has?(expr.value)
 					if expr.type || expr.tag
 						self_declare_annotated_identifier expr
 					else
@@ -1227,7 +1227,7 @@ module Drive
 				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				else
-					raise Tape::Undeclared_Identifier.new(expr)
+					raise Disk::Undeclared_Identifier.new(expr)
 				end
 			else
 				# When scope is nil, errors must be raised
@@ -1236,17 +1236,17 @@ module Drive
 				elsif expr.type || expr.tag
 					self_declare_annotated_identifier expr
 				elsif stack.any? { |s| s.equal? global } && resolve_forward_declaration(expr.value) && global.has?(expr.value)
-					# not reached yet in file order, but declared somewhere later on -- forced early. Context check (not #include?, which is `==` and can hit an Drive type's own overload -- e.g. Tape::Array#== assumes its operand also has .values). Global being absent from the stack means we're deliberately excluding it (a plain `x.y` dot access, #interp_dot_scope's exclude_global_scope: true) -- a member missing on x should stay missing, not quietly resolve to an unrelated global
+					# not reached yet in file order, but declared somewhere later on -- forced early. Context check (not #include?, which is `==` and can hit an Drive type's own overload -- e.g. Disk::Array#== assumes its operand also has .values). Global being absent from the stack means we're deliberately excluding it (a plain `x.y` dot access, #interp_dot_scope's exclude_global_scope: true) -- a member missing on x should stay missing, not quietly resolve to an unrelated global
 					global[expr.value]
 				elsif (variants = tagged_variants_for(expr.value)).length == 1
 					# A tagged declaration (`Task\Schema {}`) never binds its bare name like a plain `Type {}` does -- unambiguous with one variant, so allow it (mirrors Bare Named Structs). 2+ variants stay unreachable except via `Name\Tag`.
 					variants.first
 				else
-					raise Tape::Undeclared_Identifier.new(expr)
+					raise Disk::Undeclared_Identifier.new(expr)
 				end
 			end
 
-			if value.is_a?(Tape::Type)
+			if value.is_a?(Disk::Type)
 				if expr.respond_to?(:add_to_readable) && expr.add_to_readable
 					stack.last.add_readable_scope value
 				elsif expr.respond_to?(:add_to_writable) && expr.add_to_writable
@@ -1307,15 +1307,15 @@ module Drive
 				!interpret(expr.expression)
 			when 'return'
 				returned = expr.expression ? interpret(expr.expression) : nil
-				Tape::Return.new returned
+				Disk::Return.new returned
 			else
 				overload_func = find_in_stack expr.operator.value
-				if overload_func.is_a? Tape::Func
-					call           = Tape::Call_Expr.new
+				if overload_func.is_a? Disk::Func
+					call           = Disk::Call_Expr.new
 					call.arguments = [expr.expression]
 					interp_func_body overload_func, call
 				else
-					raise Tape::Unhandled_Prefix.new(expr)
+					raise Disk::Unhandled_Prefix.new(expr)
 				end
 			end
 		end
@@ -1323,19 +1323,19 @@ module Drive
 		# `d[key] = value` on a Dictionary or Array -- `:=` on a subscript raises instead (Cannot_Declare_Subscript_Target below), it doesn't come through here.
 		def assign_subscript target, value
 			if target.expression.expressions.count > 1
-				raise Tape::Too_Many_Subscript_Expressions.new(target)
+				raise Disk::Too_Many_Subscript_Expressions.new(target)
 			end
 			receiver = interpret target.receiver
 			key      = interpret target.expression.expressions.first # Circumfix_Expr stores subscript args as an array; only the first is the key
 
-			if receiver.is_a? Tape::Dictionary
+			if receiver.is_a? Disk::Dictionary
 				receiver.proxy_set key, value
 				receiver.proxy_get key
-			elsif receiver.is_a? Tape::Array
+			elsif receiver.is_a? Disk::Array
 				# Array has no `[]=` of its own -- without this it'd fall through to Instance#[]=, declaring a bogus member instead of writing `.values`.
-				index                  = key.is_a?(Tape::Number) ? key.value : key
+				index                  = key.is_a?(Disk::Number) ? key.value : key
 				unless index.is_a?(::Integer) && index.between?(-receiver.values.length, receiver.values.length - 1)
-					raise Tape::Invalid_Array_Index.new(target)
+					raise Disk::Invalid_Array_Index.new(target)
 				end
 				receiver.values[index] = value
 				receiver.values[index]
@@ -1345,25 +1345,25 @@ module Drive
 			end
 		end
 
-		# @param expr [Tape::Infix_Expr]
+		# @param expr [Disk::Infix_Expr]
 		def interp_infix_assignment expr
 			assignment_scope = scope_for_identifier expr.left # Reminder; this returns a scope whether or not the identifier exists
 
 			# A type annotation (`x: Number = value`) is itself a declaration, so it's allowed to introduce a brand-new identifier just like `:=`, even though plain `=` otherwise requires the identifier to already exist. An inline signature (`x: Type(Param;) = value`) is the same idea — expr.left is a Func_Signature_Expr instead of a plain annotated Identifier_Expr, but it's just as self-declaring. A bare struct annotation (`thing: <String, Number> = value`) is self-declaring the same way, even with no `expr.left.type`.
-			has_type_annotation = (expr.left.is_a?(Tape::Identifier_Expr) && (expr.left.type || expr.left.tag)) ||
-			                      expr.left.is_a?(Tape::Func_Signature_Expr)
+			has_type_annotation = (expr.left.is_a?(Disk::Identifier_Expr) && (expr.left.type || expr.left.tag)) ||
+			                      expr.left.is_a?(Disk::Func_Signature_Expr)
 			assignment_scope    ||= stack.last if has_type_annotation
 
 			# If using a scope operator but the scope doesn't exist, raise an error
-			if expr.left.is_a?(Tape::Identifier_Expr) && expr.left.scope_operator && assignment_scope.nil?
+			if expr.left.is_a?(Disk::Identifier_Expr) && expr.left.scope_operator && assignment_scope.nil?
 				raise_missing_scope_operator_target! expr, expr.left.scope_operator.value
 			end
 
-			# For plain identifiers (no scope operator) inside an Instance/Type body, new declarations should go to that Instance/Type, not to an enclosing scope that happens to have the same identifier. This fixes a bug that prevented HTML Layout's `title` from capturing Title's `title` declaration in demos/basic_html_page.tape.
-			if expr.left.is_a?(Tape::Identifier_Expr) && !expr.left.scope_operator
+			# For plain identifiers (no scope operator) inside an Instance/Type body, new declarations should go to that Instance/Type, not to an enclosing scope that happens to have the same identifier. This fixes a bug that prevented HTML Layout's `title` from capturing Title's `title` declaration in demos/basic_html_page.disk.
+			if expr.left.is_a?(Disk::Identifier_Expr) && !expr.left.scope_operator
 				current_scope = stack.last
 
-				if (current_scope.is_a?(Tape::Instance) || current_scope.is_a?(Tape::Type)) &&
+				if (current_scope.is_a?(Disk::Instance) || current_scope.is_a?(Disk::Type)) &&
 				   assignment_scope != current_scope && !current_scope.has?(expr.left.value)
 					# The identifier exists in some enclosing scope but not in the current Instance/Type. Treat this as a new declaration on the current scope.
 					assignment_scope = current_scope
@@ -1374,12 +1374,12 @@ module Drive
 			# Special handling for load directive assignment, subscript, and maybe more later.
 			#
 
-			if expr.left.is_a? Tape::Subscript_Expr
+			if expr.left.is_a? Disk::Subscript_Expr
 				return assign_subscript expr.left, interpret(expr.right)
 			end
 
 			# Handle dot assignment
-			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator.value == '.'
+			if expr.left.is_a?(Disk::Infix_Expr) && expr.left.operator.value == '.'
 				if (at_word = dot_target_at_word(expr.left))
 					return assign_context_member expr.left, at_word, interpret(expr.right)
 				end
@@ -1388,7 +1388,7 @@ module Drive
 
 			if load_call_expr?(expr.right)
 				filepath  = interpret expr.right.arguments.first
-				new_scope = Tape::Scope.new expr.left.value
+				new_scope = Disk::Scope.new expr.left.value
 				load_file_into_scope filepath, new_scope
 				right_value = new_scope
 			else
@@ -1396,7 +1396,7 @@ module Drive
 			end
 
 			# A Class-styled identifier (`My_Type = Other {}`) assigning a Scope value is itself a declaration, same reasoning as has_type_annotation above: `=` onto a fresh Class-styled name is how types get named/aliased, so it's allowed to introduce the identifier rather than requiring `:=` first.
-			is_class_declaration = Drive.type_of_identifier(expr.left.value) == :Identifier && right_value.is_a?(Tape::Scope)
+			is_class_declaration = Drive.type_of_identifier(expr.left.value) == :Identifier && right_value.is_a?(Disk::Scope)
 			assignment_scope     ||= stack.last if is_class_declaration
 
 			# Before the actual assignment, the identifier is checked for specific behavior errors based on its expression type (class, constant, variable/function)
@@ -1404,35 +1404,35 @@ module Drive
 			when :IDENTIFIER
 				# It can only be assigned once, so if the declaration exists, fail. An undeclared constant falls through to the Cannot_Reassign_Undeclared_Identifier check below.
 				if assignment_scope&.has? expr.left.value
-					raise Tape::Cannot_Reassign_Constant.new(expr.left)
+					raise Disk::Cannot_Reassign_Constant.new(expr.left)
 				end
 			when :Identifier
-				# It can only be assigned `value` of Tape::Scope, which includes Tape::Type
-				if !right_value.is_a?(Tape::Scope)
-					raise Tape::Cannot_Assign_Incompatible_Type.new(expr)
+				# It can only be assigned `value` of Disk::Scope, which includes Disk::Type
+				if !right_value.is_a?(Disk::Scope)
+					raise Disk::Cannot_Assign_Incompatible_Type.new(expr)
 				end
 			when :identifier
 				if assignment_scope
 					# If the left side of the expression was declared with a type annotation, the type of `right_value` is enforced here.
 					# `expr.left.type` covers the first, self-declaring assignment (the annotation is right here on this expression); the recorded type_by_identifier value covers every reassignment after that, once the annotation itself is gone. An inline signature (Func_Signature_Expr) supplies its own type directly, since it has no name to look up.
-					type      = if expr.left.is_a? Tape::Func_Signature_Expr
+					type      = if expr.left.is_a? Disk::Func_Signature_Expr
 						build_func_signature expr.left
-					elsif expr.left.type.is_a? Tape::Struct_Expr
+					elsif expr.left.type.is_a? Disk::Struct_Expr
 						# A bare struct annotation (`x: <String, Number>`) is structural, not nominal -- not enforced here.
 						assignment_scope.type_by_identifier[expr.left.value]
 					else
 						expr.left.type&.value || assignment_scope.type_by_identifier[expr.left.value]
 					end
-					type      = type.name if type.is_a?(Tape::Type)
+					type      = type.name if type.is_a?(Disk::Type)
 					signature = resolve_func_signature type
 
 					if signature
 						unless signature.matches? right_value
-							raise Tape::Type_Contract_Violation.new(expr, signature.to_s, describe_value_shape(right_value))
+							raise Disk::Type_Contract_Violation.new(expr, signature.to_s, describe_value_shape(right_value))
 						end
 					else
 						if type && !type_contract_satisfied?(right_value, type)
-							raise Tape::Type_Contract_Violation.new(expr, type, inferred_type_name(right_value))
+							raise Disk::Type_Contract_Violation.new(expr, type, inferred_type_name(right_value))
 						end
 					end
 				end
@@ -1440,12 +1440,12 @@ module Drive
 
 			unless assignment_scope && (assignment_scope.has?(expr.left.value) || has_type_annotation || is_class_declaration)
 				# it may not be declared using =
-				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
+				raise Disk::Cannot_Assign_Undeclared_Identifier.new(expr)
 			end
 
-			if expr.left.is_a?(Tape::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Tape::Struct_Expr)
+			if expr.left.is_a?(Disk::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Disk::Struct_Expr)
 				assignment_scope.type_by_identifier[expr.left.value] = expr.left.type.value
-			elsif expr.left.is_a? Tape::Func_Signature_Expr
+			elsif expr.left.is_a? Disk::Func_Signature_Expr
 				# Recorded so future reassignments (which are plain Identifier_Exprs with no annotation of their own) still resolve back to this signature to check against.
 				assignment_scope.type_by_identifier[expr.left.value] = build_func_signature expr.left
 			end
@@ -1457,14 +1457,14 @@ module Drive
 		end
 
 		# todo; Types may be composed of multiple types, what happens in that case?
-		# @param expr [Tape::Infix_Expr]
+		# @param expr [Disk::Infix_Expr]
 		def interp_infix_declaration expr
 			# `(a, b) := <tuple-or-struct-valued expr>` -- destructuring, handled entirely separately from the single-identifier case below (no scope operators, no type-by-identifier locking against a bare `.value`, none of it applies to a target list).
-			if expr.left.is_a?(Tape::Circumfix_Expr) && expr.left.grouping == '()'
+			if expr.left.is_a?(Disk::Circumfix_Expr) && expr.left.grouping == '()'
 				return interp_destructuring_declaration expr
 			end
 
-			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator&.value == '.'
+			if expr.left.is_a?(Disk::Infix_Expr) && expr.left.operator&.value == '.'
 				if (at_word = dot_target_at_word(expr.left))
 					return assign_context_member expr.left, at_word, interpret(expr.right)
 				end
@@ -1472,12 +1472,12 @@ module Drive
 			end
 
 			# `:=` declares an identifier; a subscript target isn't one -- raise rather than silently declaring a bogus identifier below.
-			if expr.left.is_a? Tape::Subscript_Expr
-				raise Tape::Cannot_Declare_Subscript_Target.new(expr)
+			if expr.left.is_a? Disk::Subscript_Expr
+				raise Disk::Cannot_Declare_Subscript_Target.new(expr)
 			end
 
 			# A `~/x` scope-operator form targets a specific scope. A plain `:=` always declares on the current scope, shadowing any identically-named identifier in an enclosing scope rather than re-declaring on it.
-			has_scope_operator = expr.left.is_a?(Tape::Identifier_Expr) && expr.left.scope_operator
+			has_scope_operator = expr.left.is_a?(Disk::Identifier_Expr) && expr.left.scope_operator
 			assignment_scope   = scope_for_identifier expr.left if has_scope_operator
 
 			# If using a scope operator but the scope doesn't exist, raise an error (mirrors interp_infix_assignment).
@@ -1488,13 +1488,13 @@ module Drive
 			assignment_scope ||= stack.last
 
 			# note; `self.`/`Self.` self-declaring a member that doesn't exist yet is valid but only while the type/instance is still under construction (see #still_under_construction?) -- calling a static method later and self-declaring a brand-new static from inside it isn't allowed.
-			if has_scope_operator && assignment_scope.is_a?(Tape::Type) && !assignment_scope.has?(expr.left.value)
-				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr) unless still_under_construction? assignment_scope
+			if has_scope_operator && assignment_scope.is_a?(Disk::Type) && !assignment_scope.has?(expr.left.value)
+				raise Disk::Cannot_Assign_Undeclared_Identifier.new(expr) unless still_under_construction? assignment_scope
 			end
 
 			right_value = if load_call_expr?(expr.right)
 				filepath  = interpret expr.right.arguments.first
-				new_scope = Tape::Scope.new expr.left.value
+				new_scope = Disk::Scope.new expr.left.value
 				load_file_into_scope filepath, new_scope
 				new_scope
 			else
@@ -1522,24 +1522,24 @@ module Drive
 			targets = expr.left.expressions
 
 			unless targets.all? { |target| destructuring_target? target }
-				raise Tape::Invalid_Destructuring_Target.new(expr)
+				raise Disk::Invalid_Destructuring_Target.new(expr)
 			end
 
 			right_value = interpret expr.right
 			values      = destructurable_values right_value
 
 			unless values
-				raise Tape::Invalid_Destructuring_Source.new(expr)
+				raise Disk::Invalid_Destructuring_Source.new(expr)
 			end
 
 			if targets.length > values.length
-				raise Tape::Destructuring_Arity_Mismatch.new(expr, targets.length, values.length)
+				raise Disk::Destructuring_Arity_Mismatch.new(expr, targets.length, values.length)
 			end
 
 			targets.each_with_index do |target, i|
 				value = values[i]
 
-				if target.is_a? Tape::Identifier_Expr
+				if target.is_a? Disk::Identifier_Expr
 					declare_destructuring_local expr, target, value
 				else
 					assign_dot_member expr, target, value
@@ -1550,15 +1550,15 @@ module Drive
 		end
 
 		def destructuring_target? target
-			target.is_a?(Tape::Identifier_Expr) ||
-				(target.is_a?(Tape::Infix_Expr) && target.operator&.value == '.' && target.right.is_a?(Tape::Identifier_Expr))
+			target.is_a?(Disk::Identifier_Expr) ||
+				(target.is_a?(Disk::Infix_Expr) && target.operator&.value == '.' && target.right.is_a?(Disk::Identifier_Expr))
 		end
 
 		def declare_destructuring_local expr, target, value
-			if target.type && !target.type.is_a?(Tape::Struct_Expr)
+			if target.type && !target.type.is_a?(Disk::Struct_Expr)
 				expected = target.type.value
 				unless type_contract_satisfied? value, expected
-					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
+					raise Disk::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
 				end
 			end
 
@@ -1569,16 +1569,16 @@ module Drive
 
 		# True for a top-level `Self.x := value` static declaration -- it runs once during the type's own body walk, not per constructed instance (see #run_type_body_on_instance). `Self.x := value` parses as a `.` dot-target with a bare `Self` identifier on the left.
 		def static_var_declaration_expr? expr
-			return false unless expr.is_a?(Tape::Infix_Expr) && expr.operator&.value == ':='
+			return false unless expr.is_a?(Disk::Infix_Expr) && expr.operator&.value == ':='
 
 			left = expr.left
-			left.is_a?(Tape::Infix_Expr) && left.operator&.value == '.' &&
-				left.left.is_a?(Tape::Identifier_Expr) && !left.left.scope_operator && left.left.value == 'Self'
+			left.is_a?(Disk::Infix_Expr) && left.operator&.value == '.' &&
+				left.left.is_a?(Disk::Identifier_Expr) && !left.left.scope_operator && left.left.value == 'Self'
 		end
 
 		# A scope that is "under construction" is still allowed to self-declare a brand-new member via `self` or `Self`
 		def still_under_construction? scope
-			if scope.is_a? Tape::Instance
+			if scope.is_a? Disk::Instance
 				scope.has? 'Self'
 			else
 				scope.respond_to?(:declaration_in_progress) && scope.declaration_in_progress
@@ -1591,21 +1591,21 @@ module Drive
 			property = target.right.value
 
 			# `interpret` here isn't run through #maybe_instance, so a nil receiver is still Ruby nil; a
-			# self-declared-but-unset member (`x,`) comes back as Tape::Nil. Either way `x.foo = 1` has no
+			# self-declared-but-unset member (`x,`) comes back as Disk::Nil. Either way `x.foo = 1` has no
 			# receiver to write to -- name that directly instead of a generic "undeclared identifier". A
 			# member `nil` itself declares is left alone, matching the read path in #interp_dot_scope.
-			if receiver.nil? || (receiver.is_a?(Tape::Nil) && !receiver.has?(property))
-				raise Tape::Receiver_Is_Nil.new(target)
+			if receiver.nil? || (receiver.is_a?(Disk::Nil) && !receiver.has?(property))
+				raise Disk::Receiver_Is_Nil.new(target)
 			end
 
 			# `.tag =` re-tags a value declared with a tag. The new tag must keep the declared
 			# signature: compose at least everything the current tag does, at every chain link
 			# (`=>=`). A value with no tag has no `.tag` to write -- Member Creation Is Strict
 			# handles that below.
-			if property == 'tag' && receiver.is_a?(Tape::Scope) && receiver.has?('tag')
+			if property == 'tag' && receiver.is_a?(Disk::Scope) && receiver.has?('tag')
 				new_tag               = tag_struct_for_reassignment value, target
 				unless tag_chains_satisfy? receiver.tag_instance, new_tag
-					raise Tape::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
+					raise Disk::Tag_Signature_Violation.new(expr, tag_display_name(receiver), stringify_for_display(new_tag))
 				end
 				receiver.tag_instance = new_tag
 				declare_tag receiver
@@ -1613,14 +1613,14 @@ module Drive
 			end
 
 			# Bare `self`/`Self` on the left of a `.` write target. The scope-operator write paths (#interp_infix_declaration's `scope_operator` branch, #interp_infix_assignment's general flow) never run Cannot_Reassign_Constant or check_dot_access_permissions! -- only the external-`.`-write rules below do (see "Member Creation Is Strict") -- so `self`/`Self` route around both entirely here too, for both `=` and `:=`, rather than only the not-yet-declared case.
-			self_keyword = target.left.is_a?(Tape::Identifier_Expr) && !target.left.scope_operator &&
-			               Tape::SCOPE_KEYWORDS.include?(target.left.value)
+			self_keyword = target.left.is_a?(Disk::Identifier_Expr) && !target.left.scope_operator &&
+			               Disk::SCOPE_KEYWORDS.include?(target.left.value)
 
-			if self_keyword && receiver.is_a?(Tape::Scope)
+			if self_keyword && receiver.is_a?(Disk::Scope)
 				# `Global.x := v` always declares -- the global scope has no "construction finished" moment
 				# the way an instance does. Plain `Global.x = v` still needs a prior declaration.
-				unless receiver.has?(property) || still_under_construction?(receiver) || (declare && receiver.is_a?(Tape::Global))
-					raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
+				unless receiver.has?(property) || still_under_construction?(receiver) || (declare && receiver.is_a?(Disk::Global))
+					raise Disk::Cannot_Assign_Undeclared_Identifier.new(expr)
 				end
 
 				if declare
@@ -1630,19 +1630,19 @@ module Drive
 
 				expected = receiver.type_by_identifier[property]
 				if expected && !type_contract_satisfied?(value, expected)
-					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
+					raise Disk::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
 				end
 
 				receiver[property] = value
 				return value
 			end
 
-			unless receiver.is_a?(Tape::Scope) && receiver.has?(property)
-				raise Tape::Cannot_Assign_Undeclared_Identifier.new(expr)
+			unless receiver.is_a?(Disk::Scope) && receiver.has?(property)
+				raise Disk::Cannot_Assign_Undeclared_Identifier.new(expr)
 			end
 
 			if Drive.type_of_identifier(property) == :IDENTIFIER
-				raise Tape::Cannot_Reassign_Constant.new(expr)
+				raise Disk::Cannot_Reassign_Constant.new(expr)
 			end
 
 			check_dot_access_permissions! receiver, property, expr
@@ -1652,7 +1652,7 @@ module Drive
 			else
 				expected = receiver.type_by_identifier[property]
 				if expected && !type_contract_satisfied?(value, expected)
-					raise Tape::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
+					raise Disk::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
 				end
 			end
 
@@ -1660,46 +1660,46 @@ module Drive
 			value
 		end
 
-		# Tape::Tuple/Tape::Struct both carry a plain Ruby-level `.values` reader holding the raw backing array (distinct from their Drive-level `.values` dot-access, which wraps the same data in an Tape::Array for Drive code to read).
+		# Disk::Tuple/Disk::Struct both carry a plain Ruby-level `.values` reader holding the raw backing array (distinct from their Drive-level `.values` dot-access, which wraps the same data in an Disk::Array for Drive code to read).
 		def destructurable_values value
 			case value
-			when Tape::Tuple, Tape::Struct
+			when Disk::Tuple, Disk::Struct
 				value.values
 			end
 		end
 
-		# @param expr [Tape::Infix_Expr]
+		# @param expr [Disk::Infix_Expr]
 		def interp_dot_infix expr
 			receiver = maybe_instance interpret expr.left
 
-			unless receiver.kind_of?(Tape::Scope)
-				raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr)
+			unless receiver.kind_of?(Disk::Scope)
+				raise Disk::Invalid_Dot_Infix_Left_Operand.new(expr)
 			end
 
 			# `x.@word` -- a member of x's Context, not of x (RHS is a directive-flagged Identifier_Expr)
-			at_word  = expr.right if expr.right.is_a?(Tape::Identifier_Expr) && expr.right.prefixed_with_at
+			at_word  = expr.right if expr.right.is_a?(Disk::Identifier_Expr) && expr.right.prefixed_with_at
 			return interp_at_word_on(receiver, at_word) if at_word
 
 			case receiver
-			when Tape::Array, Tape::Tuple, Tape::Struct
+			when Disk::Array, Disk::Tuple, Disk::Struct
 				# A Struct's own `.values` makes `.0`-style positional access work for it too, same as Array/Tuple.
 				interp_dot_array_or_tuple receiver, expr
-			when Tape::String
+			when Disk::String
 				# Separate dispatch, not shared with Array/Tuple/Struct's -- that one's `.each` shorthand would misfire, since String has no #each.
 				interp_dot_string receiver, expr
-			when Tape::Range
+			when Disk::Range
 				interp_dot_range receiver, expr
-			when Tape::Dictionary
+			when Disk::Dictionary
 				interp_dot_dictionary receiver, expr
 			else
 				# A tagged type reference on the right (`ns.Abc\<Number>`) isn't an Identifier_Expr, so it bypasses #interp_dot_scope's right-operand validation.
-				if expr.right.instance_of? Tape::Type_Expr
+				if expr.right.instance_of? Disk::Type_Expr
 					return interp_member_access receiver, expr.right
 				end
 
 				interp_dot_scope receiver, expr
 			end
-		rescue Tape::Undeclared_Identifier, Tape::Cannot_Call_Instance_Member_On_Type, Tape::Receiver_Is_Nil, Tape::Invalid_Dot_Infix_Left_Operand
+		rescue Disk::Undeclared_Identifier, Disk::Cannot_Call_Instance_Member_On_Type, Disk::Receiver_Is_Nil, Disk::Invalid_Dot_Infix_Left_Operand
 			# `.?` is lenient access -- a receiver that isn't even a Scope (a raw Func_Signature reached as
 			# a struct member's `type`, say) yields nil rather than raising, same as a nil receiver does.
 			raise unless expr.operator.value == '.?'
@@ -1709,26 +1709,26 @@ module Drive
 		def stringify_for_display value, show_quotes: false, pretty_print: false
 			value = maybe_instance value
 			# A bare Type's `to_s` (copied from its own body) assumes real instance context and crashes if called directly on the Type itself, so only attempt it on a genuine Instance.
-			return value unless value.is_a? Tape::Instance
+			return value unless value.is_a? Disk::Instance
 
 			# `@` (a Context) synthesizes its own `to_s` to the terse `@<name>` form -- but for display
 			# (`@puts @`, `` `@` `` interpolation) show the whole filled struct instead. An explicit
 			# `@.to_s()` call still goes through the synthesized stand-in. Also covers a directly
 			# constructed `Context()` / bare `Context` reference (a `Struct` composing `Context`, not the
-			# `Tape::Context` Ruby class) -- its func-signature members would otherwise crash `Struct#to_s`.
-			return stringify_context(value, pretty_print: pretty_print) if value.is_a?(Tape::Context) || (value.is_a?(Tape::Struct) && value.types&.include?('Context'))
+			# `Disk::Context` Ruby class) -- its func-signature members would otherwise crash `Struct#to_s`.
+			return stringify_context(value, pretty_print: pretty_print) if value.is_a?(Disk::Context) || (value.is_a?(Disk::Struct) && value.types&.include?('Context'))
 
-			method_name       = show_quotes && value.is_a?(Tape::String) ? 'to_string' : 'to_s'
-			to_s_ident        = Tape::Identifier_Expr.new
-			to_s_ident.lexeme = Tape::Lexeme.new(:identifier, method_name)
+			method_name       = show_quotes && value.is_a?(Disk::String) ? 'to_string' : 'to_s'
+			to_s_ident        = Disk::Identifier_Expr.new
+			to_s_ident.lexeme = Disk::Lexeme.new(:identifier, method_name)
 			func              = begin
 				interp_member_access value, to_s_ident
-			rescue Tape::Undeclared_Identifier
+			rescue Disk::Undeclared_Identifier
 				nil
 			end
-			return value unless func.is_a? Tape::Func
+			return value unless func.is_a? Disk::Func
 
-			call           = Tape::Call_Expr.new
+			call           = Disk::Call_Expr.new
 			call.arguments = []
 			# A synthesized Context function stand-in (`@`'s own `to_s`) has no body -- route it the same way #interp_call does, or the empty body just yields nil and `@` prints blank.
 			return interp_context_function(func, call) if func.context_function_name
@@ -1737,7 +1737,7 @@ module Drive
 		end
 
 		# Renders a Context (`@`) the same shape every other struct prints as -- `Context <name: Type =
-		# value, ...>`. Walks the `Context` struct declaration's own member list (tapes/context.tape), so
+		# value, ...>`. Walks the `Context` struct declaration's own member list (disks/context.disk), so
 		# only real declared members show -- not the extra short-alias function stand-ins `#fill_context`
 		# also puts on the instance (`add_readable`, `readable`, ...). Data members print their filled
 		# value (or `name: Type` when nil); function members print their `( -> ...;)` signature.
@@ -1753,7 +1753,7 @@ module Drive
 				# A function member -- either the synthesized `@`-dispatch stand-in, or (on a directly
 				# constructed `Context()`) the real `Struct#to_s` copied onto it. Neither has a
 				# displayable value; show just `name: signature`.
-				if val.is_a?(Tape::Func) || val.nil?
+				if val.is_a?(Disk::Func) || val.nil?
 					type ? "#{name}: #{type}" : "#{name}: Any"
 				else
 					shown = stringify_for_display(val, show_quotes: true)
@@ -1767,9 +1767,9 @@ module Drive
 		# Interprets `expr` (the right side of `x.y`) scoped only to `receiver` and global scope, so a missing member can't fall through to an unrelated identically-named one still active further down the caller's stack (this caused a real infinite recursion before the fix).
 		def interp_member_access receiver, expr, exclude_global_scope: false
 			# `X.Self`/`x.self` is an ordinary member lookup, not the bare `Self`/`self` keyword #interp_identifier special-cases -- bypass that branch so a declared `Self` resolves like any other name.
-			if expr.is_a?(Tape::Identifier_Expr) && !expr.scope_operator && Tape::SCOPE_KEYWORDS.include?(expr.value)
-				return receiver[expr.value] if receiver.is_a?(Tape::Scope) && receiver.has?(expr.value)
-				raise Tape::Undeclared_Identifier.new(expr)
+			if expr.is_a?(Disk::Identifier_Expr) && !expr.scope_operator && Disk::SCOPE_KEYWORDS.include?(expr.value)
+				return receiver[expr.value] if receiver.is_a?(Disk::Scope) && receiver.has?(expr.value)
+				raise Disk::Undeclared_Identifier.new(expr)
 			end
 
 			begin
@@ -1789,16 +1789,16 @@ module Drive
 		# The dot sub-handlers below all take the receiver #interp_dot_infix already interpreted rather than re-interpreting expr.left themselves — re-interpreting ran the receiver expression's side effects (calls, constructions) a second or third time.
 		# Bounds/type-checked element access for `.N`/`.N.M...` dot-index syntax on an Array/Tuple -- plain `values[index]` (Ruby's own Array#[]) silently returns nil past the end, and silently truncates a non-integer index (e.g. `.0.1` lexes as the single float 0.1, which Ruby's [] truncates to index 0) -- both looked like a legitimate result instead of a mistake.
 		def array_index_value collection, index, expr
-			if collection.is_a? Tape::String
+			if collection.is_a? Disk::String
 				chars = collection.value.chars
 				unless index.is_a?(::Integer) && index.between?(-chars.length, chars.length - 1)
-					raise Tape::Invalid_Array_Index.new(expr)
+					raise Disk::Invalid_Array_Index.new(expr)
 				end
 				return maybe_instance chars[index]
 			end
 
 			unless index.is_a?(::Integer) && index.between?(-collection.values.length, collection.values.length - 1)
-				raise Tape::Invalid_Array_Index.new(expr)
+				raise Disk::Invalid_Array_Index.new(expr)
 			end
 			collection.values[index]
 		end
@@ -1806,11 +1806,11 @@ module Drive
 		# `.N`/`.N.M...` positional access on a String, indexing by character.
 		def interp_dot_string str, expr
 			case
-			when expr.right.is(Tape::Number_Expr)
+			when expr.right.is(Disk::Number_Expr)
 				array_index_value str, expr.right.value, expr
-			when expr.right.is(Tape::Array_Index_Expr)
+			when expr.right.is(Disk::Array_Index_Expr)
 				expr.right.indices_in_order.reduce(str) do |current, index|
-					raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Tape::Array)
+					raise Disk::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Disk::Array)
 					array_index_value current, index, expr
 				end
 			else
@@ -1820,16 +1820,16 @@ module Drive
 
 		def interp_dot_array_or_tuple scope, expr
 			case
-			when expr.right.is(Tape::Func_Expr) && expr.right.name.value == 'each'
+			when expr.right.is(Disk::Func_Expr) && expr.right.name.value == 'each'
 				interp_each_loop scope, expr.right
 				scope
 
-			when expr.right.is(Tape::Number_Expr)
+			when expr.right.is(Disk::Number_Expr)
 				array_index_value scope, expr.right.value, expr
 
-			when expr.right.is(Tape::Array_Index_Expr)
+			when expr.right.is(Disk::Array_Index_Expr)
 				expr.right.indices_in_order.reduce(scope) do |current, index|
-					raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Tape::Array)
+					raise Disk::Invalid_Dot_Infix_Left_Operand.new(expr) unless current.is_a?(Disk::Array)
 					array_index_value current, index, expr
 				end
 
@@ -1839,12 +1839,12 @@ module Drive
 		end
 
 		def interp_dot_range range, expr
-			return interp_each_loop range, expr.right if expr.right.is(Tape::Func_Expr) && expr.right.name.value == 'each'
+			return interp_each_loop range, expr.right if expr.right.is(Disk::Func_Expr) && expr.right.name.value == 'each'
 			interp_dot_scope range, expr
 		end
 
 		def interp_dot_dictionary dict, expr
-			if expr.right.is_a? Tape::Identifier_Expr
+			if expr.right.is_a? Disk::Identifier_Expr
 				key_sym = expr.right.value.to_sym
 				if dict.hash.has_key?(key_sym)
 					return dict.hash[key_sym]
@@ -1855,23 +1855,23 @@ module Drive
 		end
 
 		def interp_dot_scope scope, expr
-			raise Tape::Invalid_Dot_Infix_Left_Operand.new(expr) if scope.nil?
-			raise Tape::Invalid_Dot_Infix_Right_Operand.new(expr.right) unless expr.right.instance_of? Tape::Identifier_Expr
+			raise Disk::Invalid_Dot_Infix_Left_Operand.new(expr) if scope.nil?
+			raise Disk::Invalid_Dot_Infix_Right_Operand.new(expr.right) unless expr.right.instance_of? Disk::Identifier_Expr
 
 			check_dot_access_permissions! scope, expr.right.value, expr
 
 			interp_member_access scope, expr.right, exclude_global_scope: true
-		rescue Tape::Undeclared_Identifier
+		rescue Disk::Undeclared_Identifier
 			# `nil` is a real scope with its own declared members (`to_s`, ...), so a lookup that actually
 			# reaches one still works. Only a genuinely missing member on a nil receiver becomes this --
 			# far clearer than "<member> has not been declared", which reads as a missing type.
-			raise Tape::Receiver_Is_Nil.new(expr) if scope.is_a?(Tape::Nil)
+			raise Disk::Receiver_Is_Nil.new(expr) if scope.is_a?(Disk::Nil)
 			raise
 		end
 
 		def interp_each_loop collection, func_expr
 			collection.each do |it|
-				each_scope                 = Tape::Scope.new 'each(;)'
+				each_scope                 = Disk::Scope.new 'each(;)'
 				each_scope.enclosing_scope = stack.last
 				push_scope each_scope
 				each_scope.declare 'it', it
@@ -1882,13 +1882,13 @@ module Drive
 		end
 
 		# The values for expr.operator, expr.left, and expr.right should all exist by this point
-		# @param expr [Tape::Nil_Init_Expr]
+		# @param expr [Disk::Nil_Init_Expr]
 		def interp_nil_init expr
 			# attr_accessor :operator, :left, :right
 			current_scope = stack.last
 
 			# Same shadowing fix as interp_infix_assignment: inside an Instance/Type body, a plain identifier's nil-init must declare on the current Instance/Type even if an enclosing scope (e.g. the Type, whose body already ran once at definition time) already has an identically-named identifier. Otherwise re-running `thing,` per-instance in interp_type_call finds the Type's stale copy and never declares it on the instance.
-			if (current_scope.is_a?(Tape::Instance) || current_scope.is_a?(Tape::Type)) && !current_scope.has?(expr.left.value)
+			if (current_scope.is_a?(Disk::Instance) || current_scope.is_a?(Disk::Type)) && !current_scope.has?(expr.left.value)
 				current_scope.declare expr.left.value, interpret(expr.right)
 				track_static_declaration current_scope, expr.left
 				return current_scope.get expr.left.value
@@ -1896,7 +1896,7 @@ module Drive
 
 			begin
 				return interpret expr.left
-			rescue # Tape::Undeclared_Identifier and ArgumentError # todo: Why `ArgumentError: empty string`. Once this is resolved, then the rescue here should explicitly catch Undeclared_Identifier, probably.
+			rescue # Disk::Undeclared_Identifier and ArgumentError # todo: Why `ArgumentError: empty string`. Once this is resolved, then the rescue here should explicitly catch Undeclared_Identifier, probably.
 				scope = scope_for_identifier(expr.left) || stack.last
 				scope.declare expr.left.value, interpret(expr.right)
 
@@ -1915,27 +1915,27 @@ module Drive
 		# A type's own @operator overload takes precedence over a same-named global one. Checks the operand's own declarations first, then its enclosing Type (for shorthand-constructed instances that never got the type's declarations copied onto themselves, see #interp_type_call), and only falls back to a global operator (excluding Type/Instance scopes, see the comment at the call site in #interp_infix) if neither applies.
 
 		def find_operator_overload operator, operand = nil
-			if operand.is_a?(Tape::Instance) && operand.has?(operator)
+			if operand.is_a?(Disk::Instance) && operand.has?(operator)
 				return operand.get operator
 			end
 
-			if operand.is_a?(Tape::Scope) && operand.enclosing_scope.is_a?(Tape::Type) && operand.enclosing_scope.has?(operator)
+			if operand.is_a?(Disk::Scope) && operand.enclosing_scope.is_a?(Disk::Type) && operand.enclosing_scope.has?(operator)
 				return operand.enclosing_scope.get operator
 			end
 
 			stack.reverse_each do |scope|
-				next if scope.is_a?(Tape::Type)
+				next if scope.is_a?(Disk::Type)
 				return scope.declarations[operator] if scope.declarations.key?(operator)
 			end
 			nil
 		end
 
 		# Second-level dispatcher for infix operators, mirroring #interpret's own shape: each branch hands off to one interp_*_infix handler. The first group dispatches before operand evaluation — the assignment family treats the left side as a target rather than a value, `@` (the unpack marker) isn't a value at all, and logical operators must stay lazy to short-circuit. Every remaining operator evaluates each operand exactly once, here, and passes the values down so no handler re-interprets an operand (side effects run once).
-		# @param expr [Tape::Infix_Expr]
+		# @param expr [Disk::Infix_Expr]
 		def interp_infix expr
 			operator = expr.operator.value
 
-			if (operator == '=' || operator == ':=') && expr.left.is_a?(Tape::Identifier_Expr) && expr.left.prefixed_with_at
+			if (operator == '=' || operator == ':=') && expr.left.is_a?(Disk::Identifier_Expr) && expr.left.prefixed_with_at
 				return interp_context_declaration expr
 			end
 
@@ -1963,7 +1963,7 @@ module Drive
 
 		# Calls an @operator overload as a regular two-argument function. `values` carries the operands when the caller already evaluated them; nil lets #interp_func_body evaluate the raw expressions once itself (only the lazy logical path needs that).
 		def call_operator_overload overload, expr, values
-			call           = Tape::Call_Expr.new
+			call           = Disk::Call_Expr.new
 			call.arguments = [expr.left, expr.right]
 			interp_func_body overload, call, arg_values: values
 		end
@@ -1971,7 +1971,7 @@ module Drive
 		# Interprets its own operands (the one infix handler that does) because `&&`/`||` must short-circuit. A scope-level @operator overload still wins first, called with the raw expressions so the operands evaluate once, eagerly, inside the call.
 		def interp_logical_infix expr
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, nil) if overload.is_a? Tape::Func
+			return call_operator_overload(overload, expr, nil) if overload.is_a? Disk::Func
 
 			case expr.operator.value
 			when '&&', 'and'
@@ -1989,7 +1989,7 @@ module Drive
 		def interp_arithmetic_infix expr, left, right
 			overload = find_operator_overload expr.operator.value, maybe_instance(left)
 
-			if overload.is_a? Tape::Func
+			if overload.is_a? Disk::Func
 				call_operator_overload overload, expr, [left, right]
 			else
 				maybe_instance(left).send expr.operator.value, maybe_instance(right)
@@ -2001,8 +2001,8 @@ module Drive
 		# `[string_value, the_type]` when exactly one operand is a String and the other a bare Type
 		# (a real Type, not an Instance or Struct), else `[nil, nil]`.
 		def string_value_and_bare_type a, b
-			str_of    = ->(v) { v.is_a?(Tape::String) ? v.value : (v.is_a?(::String) ? v : nil) }
-			bare_type = ->(v) { v.is_a?(Tape::Type) && !v.is_a?(Tape::Instance) }
+			str_of    = ->(v) { v.is_a?(Disk::String) ? v.value : (v.is_a?(::String) ? v : nil) }
+			bare_type = ->(v) { v.is_a?(Disk::Type) && !v.is_a?(Disk::Instance) }
 
 			if !str_of.(a).nil? && bare_type.(b) then
 				[str_of.(a), b]
@@ -2013,9 +2013,9 @@ module Drive
 			end
 		end
 
-		# The literal `Any` type (tapes/global.tape), a universal wildcard -- see #interp_comparison_infix.
+		# The literal `Any` type (disks/global.disk), a universal wildcard -- see #interp_comparison_infix.
 		def any_type? value
-			value.is_a?(Tape::Type) && value.name == 'Any'
+			value.is_a?(Disk::Type) && value.name == 'Any'
 		end
 
 		def interp_comparison_infix expr, left, right
@@ -2039,14 +2039,14 @@ module Drive
 
 			case expr.operator.value
 			when '===', '=!=', '=>=', '=<=', '=/='
-				# `.type_objects`, not `.types` -- `Tape::Struct < Instance < Type` inherits Type's own
+				# `.type_objects`, not `.types` -- `Disk::Struct < Instance < Type` inherits Type's own
 				# `.types` (the composed-type-name Set, e.g. `Set['Struct']` for every struct alike),
 				# which shadows/collides with what's actually wanted here: the struct's own per-member
 				# type objects (`.type_objects`, a plain `Struct#@type_objects` ivar).
-				left_tag  = left.is_a?(Tape::Type) ? left.tag_instance&.type_objects : nil
-				right_tag = right.is_a?(Tape::Type) ? right.tag_instance&.type_objects : nil
+				left_tag  = left.is_a?(Disk::Type) ? left.tag_instance&.type_objects : nil
+				right_tag = right.is_a?(Disk::Type) ? right.tag_instance&.type_objects : nil
 
-				# note; `left`/`right` are whatever #interpret returned (a raw Ruby Integer/String/etc for literals, not necessarily an Tape::Type/Instance), so `.types` can't be called on them directly. Using #composed_types_for here which resolves the correct composed-type set.
+				# note; `left`/`right` are whatever #interpret returned (a raw Ruby Integer/String/etc for literals, not necessarily an Disk::Type/Instance), so `.types` can't be called on them directly. Using #composed_types_for here which resolves the correct composed-type set.
 				left_types  = composed_types_for left
 				right_types = composed_types_for right
 
@@ -2085,20 +2085,20 @@ module Drive
 				# note; ==, !=, <, >, <=, >=, <=> aren't given fixed set-comparison semantics above, so — same as arithmetic — check for a user-declared @operator overload (on left itself, or falling back to left.enclosing_scope for shorthand-constructed instances, or a same-named global operator) before falling back to Ruby's own #==/#<=>/etc.
 				overload = find_operator_overload expr.operator.value, left
 
-				# note; A type declaring `@operator ==` but no `@operator !=` of its own (the common case tapes/struct.tape's Member/Struct are exactly this) used to fall straight through to Ruby's own #!= for `!=`, which is identity-based and ignores the custom == entirely, two structurally-equal Members compared unequal with `!=` even though `==` correctly said they were equal. `!=` now derives from a declared `==` overload (negated) when it has no overload of its own, matching how most languages auto-derive != from ==.
-				if !overload.is_a?(Tape::Func) && expr.operator.value == '!='
+				# note; A type declaring `@operator ==` but no `@operator !=` of its own (the common case disks/struct.disk's Member/Struct are exactly this) used to fall straight through to Ruby's own #!= for `!=`, which is identity-based and ignores the custom == entirely, two structurally-equal Members compared unequal with `!=` even though `==` correctly said they were equal. `!=` now derives from a declared `==` overload (negated) when it has no overload of its own, matching how most languages auto-derive != from ==.
+				if !overload.is_a?(Disk::Func) && expr.operator.value == '!='
 					overload      = find_operator_overload '==', left
 					negate_result = true
 				end
 
-				if overload.is_a? Tape::Func
+				if overload.is_a? Disk::Func
 					result = call_operator_overload overload, expr, [left, right]
 					negate_result ? !truthy?(result) : result
 				elsif left.respond_to?(expr.operator.value) && !(expr.operator.value == '<=>' && left.method(:<=>).owner == ::Kernel)
 					left.send expr.operator.value, right
 				else
-					# note; Numbers/Strings reach here fine (they decay to plain Ruby values with a native <=>/</>/etc.), but a plain Tape::Instance has none of these implemented -- except <=>, which Ruby's own Kernel/Object gives every object a trivial, identity-based default for. `respond_to?` alone can't tell that apart from a real one, so the method's actual owner is checked too. There's no sensible fallback to invent here, equality doesn't imply order.
-					raise Tape::Undeclared_Infix_Operator.new expr
+					# note; Numbers/Strings reach here fine (they decay to plain Ruby values with a native <=>/</>/etc.), but a plain Disk::Instance has none of these implemented -- except <=>, which Ruby's own Kernel/Object gives every object a trivial, identity-based default for. `respond_to?` alone can't tell that apart from a real one, so the method's actual owner is checked too. There's no sensible fallback to invent here, equality doesn't imply order.
+					raise Disk::Undeclared_Infix_Operator.new expr
 				end
 			end
 		end
@@ -2106,7 +2106,7 @@ module Drive
 		# (a += b)  ==>  (a = (a + b)). Compound operators only ever consult a scope-level @operator overload (never the operand's own), since their built-in meaning is assignment, not a property of the operand's type.
 		def interp_compound_infix expr, left, right
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, [left, right]) if overload.is_a? Tape::Func
+			return call_operator_overload(overload, expr, [left, right]) if overload.is_a? Disk::Func
 
 			base_op = expr.operator.value[..-2] # Trim the = from +=, -=, etc.
 			result  = maybe_instance(left).send base_op, maybe_instance(right)
@@ -2115,7 +2115,7 @@ module Drive
 			# #assign_dot_member path plain `.`-assignment uses; #scope_for_identifier only understands
 			# plain Identifier_Exprs, so a dot-target used to silently fall through to `stack.last` and
 			# declare a bogus `nil`-named identifier there instead of touching the actual member.
-			if expr.left.is_a?(Tape::Infix_Expr) && expr.left.operator&.value == '.'
+			if expr.left.is_a?(Disk::Infix_Expr) && expr.left.operator&.value == '.'
 				assign_dot_member expr, expr.left, result
 			else
 				assignment_scope = scope_for_identifier expr.left
@@ -2125,7 +2125,7 @@ module Drive
 
 		def interp_range_infix expr, start, finish
 			overload = find_operator_overload expr.operator.value
-			return call_operator_overload(overload, expr, [start, finish]) if overload.is_a? Tape::Func
+			return call_operator_overload(overload, expr, [start, finish]) if overload.is_a? Disk::Func
 
 			# `xs[2...]` (endless, nil `.right`) / `xs[...3]` (beginless, nil `.left`) -- see the parser.
 			# The Ruby `::Range` gets a nil end/start; `.to_a`/`for` over an endless one loops forever,
@@ -2140,20 +2140,20 @@ module Drive
 			when '>.<' then [start + 1, finish, true]
 			end
 
-			finish_intrinsic_instance Tape::Range.new(::Range.new(from, to, exclude_end)), 'Range'
+			finish_intrinsic_instance Disk::Range.new(::Range.new(from, to, exclude_end)), 'Range'
 		end
 
 		# A user-declared @operator with no built-in category of its own. The operand's own overload wins over a global one (#find_operator_overload). Reachable with no overload in scope when the operator is declared inside some other scope (the parser's pre-scan registers it file-wide) — that used to silently evaluate to nil; now it raises.
 		def interp_custom_infix expr, left, right
 			overload = find_operator_overload expr.operator.value, maybe_instance(left)
-			unless overload.is_a? Tape::Func
-				raise Tape::Undeclared_Infix_Operator.new(expr)
+			unless overload.is_a? Disk::Func
+				raise Disk::Undeclared_Infix_Operator.new(expr)
 			end
 
 			call_operator_overload overload, expr, [left, right]
 		end
 
-		# @param expr [Tape::Postfix_Expr]
+		# @param expr [Disk::Postfix_Expr]
 		def interp_postfix expr
 			# note: See constants.rb POSTFIX for exhaustive list of language-defined postfixes. Currently there are no built-in postfix operators.
 			# 1) look up the opreator (expr.operator.value) as it should be a normal func in the scope.
@@ -2164,16 +2164,16 @@ module Drive
 				raise "Could not find #{expr.operator.value} declared anywhere man!"
 			end
 
-			call           = Tape::Call_Expr.new
+			call           = Disk::Call_Expr.new
 			call.arguments = [expr.expression]
 			interp_func_body postfix_overloaded_func, call
 		end
 
-		# @param expr [Tape::Percent_Literal_Expr < Tape::Circumfix_Expr]
+		# @param expr [Disk::Percent_Literal_Expr < Disk::Circumfix_Expr]
 		def interp_percent_literal expr
 			literal_expr_class = case expr.kind
-			when 'string', 'str', 'Str', 'STR' then Tape::String_Expr
-			when 'symbol', 'sym', 'Sym', 'SYM' then Tape::Symbol_Expr
+			when 'string', 'str', 'Str', 'STR' then Disk::String_Expr
+			when 'symbol', 'sym', 'Sym', 'SYM' then Disk::Symbol_Expr
 			end
 
 			# %string/%symbol preserve the identifier's own casing; the rest force one.
@@ -2184,11 +2184,11 @@ module Drive
 			when 'STR', 'SYM' then :upcase
 			end
 
-			array_expr             = Tape::Circumfix_Expr.new
+			array_expr             = Disk::Circumfix_Expr.new
 			array_expr.grouping    = '[]'
 			array_expr.expressions = expr.expressions.map do |it|
-				# A backtick item is evaluated immediately, like string interpolation, then folded through the same to_s + casing treatment as every other item. No Tape::Statement gets built here (unlike #invoke_statement's callers), so use_caller_scope/memoize never come into play -- it's always immediate, in whatever scope this literal is written in.
-				if it.is_a? Tape::Statement_Expr
+				# A backtick item is evaluated immediately, like string interpolation, then folded through the same to_s + casing treatment as every other item. No Disk::Statement gets built here (unlike #invoke_statement's callers), so use_caller_scope/memoize never come into play -- it's always immediate, in whatever scope this literal is written in.
+				if it.is_a? Disk::Statement_Expr
 					value = interpret(it.expression).to_s.send casing
 					literal_expr_class.new value
 				else
@@ -2204,13 +2204,13 @@ module Drive
 		def interp_circumfix expr
 			case expr.grouping
 			when '[]'
-				array             = Tape::Array.new
+				array             = Disk::Array.new
 				array.expressions = expr.expressions
 
 				values = []
 				expr.expressions.each do |e|
-					# Same as #interp_percent_literal above: `` `expr` `` inside an array literal evaluates immediately, no Tape::Statement built.
-					e = e.expression if e.is_a? Tape::Statement_Expr
+					# Same as #interp_percent_literal above: `` `expr` `` inside an array literal evaluates immediately, no Disk::Statement built.
+					e = e.expression if e.is_a? Disk::Statement_Expr
 					values << interpret(e)
 				end
 				link_instance_to_type array, 'Array'
@@ -2226,27 +2226,27 @@ module Drive
 					interpret expr.expressions.first
 				else
 					values = expr.expressions.map { |e| interpret(e) }
-					tuple  = Tape::Tuple.new values
+					tuple  = Disk::Tuple.new values
 					link_instance_to_type tuple, 'Tuple'
 					tuple.declarations['values'] = tuple.values
 					tuple
 				end
 			when '{}'
-				dict = expr.expressions.reduce(Tape::Dictionary.new) do |dict, it|
-					if it.is_a? Tape::Identifier_Expr
+				dict = expr.expressions.reduce(Disk::Dictionary.new) do |dict, it|
+					if it.is_a? Disk::Identifier_Expr
 						dict.proxy_set it.value.to_sym, nil
-					elsif it.is_a? Tape::Infix_Expr
+					elsif it.is_a? Disk::Infix_Expr
 						case it.operator.value
 						when ':', '='
-							if it.left.is_a?(Tape::Identifier_Expr) || it.left.is_a?(Tape::Symbol_Expr) || it.left.is_a?(Tape::String_Expr)
-								# note; Deliberately NOT wrap_string_literal_value here, unlike Array/Tuple literals -- Dictionary#hash is handed straight to Ruby-level consumers as a raw Hash (Sequel queries in table.rb chief among them), so wrapping a value into Tape::String here broke every DB call passing string attributes. #to_s below just always double-quotes String values instead of matching the original literal's quote char.
+							if it.left.is_a?(Disk::Identifier_Expr) || it.left.is_a?(Disk::Symbol_Expr) || it.left.is_a?(Disk::String_Expr)
+								# note; Deliberately NOT wrap_string_literal_value here, unlike Array/Tuple literals -- Dictionary#hash is handed straight to Ruby-level consumers as a raw Hash (Sequel queries in table.rb chief among them), so wrapping a value into Disk::String here broke every DB call passing string attributes. #to_s below just always double-quotes String values instead of matching the original literal's quote char.
 								dict.proxy_set it.left.value.to_sym, interpret(it.right)
 							else
 								# The left operand should be allowed to be any hashable object. It's too early in the project to consider hashing but this'll be a good reminder.
-								raise Tape::Invalid_Dictionary_Key.new(it)
+								raise Disk::Invalid_Dictionary_Key.new(it)
 							end
 						else
-							raise Tape::Invalid_Dictionary_Infix_Operator.new(it)
+							raise Disk::Invalid_Dictionary_Infix_Operator.new(it)
 						end
 					end
 					# In case I forget, #reduce requires that the injected value be returned to be passed to the next iteration.
@@ -2255,53 +2255,53 @@ module Drive
 				link_instance_to_type dict, 'Dictionary'
 				dict
 			else
-				raise Tape::Unknown_Circumfix_Grouping.new(expr)
+				raise Disk::Unknown_Circumfix_Grouping.new(expr)
 			end
 		end
 
-		# @param expr [Tape::Call_Expr]
+		# @param expr [Disk::Call_Expr]
 		def interp_call expr
-			# A bare `` `expr`() `` written and called in the same place -- always immediate, in whatever scope it's written in. No Tape::Statement is ever built here, so #invoke_statement (used below, once one *has* been built and stored) doesn't apply.
-			if expr.receiver.is_a? Tape::Statement_Expr
+			# A bare `` `expr`() `` written and called in the same place -- always immediate, in whatever scope it's written in. No Disk::Statement is ever built here, so #invoke_statement (used below, once one *has* been built and stored) doesn't apply.
+			if expr.receiver.is_a? Disk::Statement_Expr
 				return interpret expr.receiver.expression
 			end
 
 			receiver = interpret expr.receiver
 
 			# A nil-safe dot chain (`x.?method`) that found nothing evaluates to nil deliberately -- a trailing call (`x.?method()`) should short-circuit to nil too, not try to invoke nil.
-			if receiver.nil? && expr.receiver.is_a?(Tape::Infix_Expr) && expr.receiver.operator&.value == '.?'
+			if receiver.nil? && expr.receiver.is_a?(Disk::Infix_Expr) && expr.receiver.operator&.value == '.?'
 				return nil
 			end
 
 			case receiver
-			when Tape::Route
+			when Disk::Route
 				interp_func_body receiver.handler, expr
 
-			when Tape::Func
+			when Disk::Func
 				# A synthesized Context function stand-in (`@puts`, `@push_scope`, ...) -- route to the
 				# intrinsic, never run a body. Stack functions run in *this* frame (the caller's).
 				return interp_context_function(receiver, expr) if receiver.context_function_name
 				interp_func_body receiver, expr
 
-			when Tape::Struct
+			when Disk::Struct
 				interp_struct_call receiver, expr
 
-			when Tape::Statement
-				# Reached once a Statement has been stored in a variable (or field, etc.) and is being called from somewhere else -- Tape::Statement < Instance, so this has to come before the generic Instance branch below or it'd be mistaken for "construct a new Statement".
+			when Disk::Statement
+				# Reached once a Statement has been stored in a variable (or field, etc.) and is being called from somewhere else -- Disk::Statement < Instance, so this has to come before the generic Instance branch below or it'd be mistaken for "construct a new Statement".
 				invoke_statement receiver
 
-			when Tape::Instance, Tape::Type
+			when Disk::Instance, Disk::Type
 				interp_type_call receiver, expr
 
-			when Tape::Func_Signature
-				raise Tape::Cannot_Call_Func_Signature.new expr
+			when Disk::Func_Signature
+				raise Disk::Cannot_Call_Func_Signature.new expr
 
 			else
-				raise Tape::Receiver_Is_Not_Callable.new expr.receiver
+				raise Disk::Receiver_Is_Not_Callable.new expr.receiver
 			end
 		end
 
-		# @param expr [Tape::Type_Expr]
+		# @param expr [Disk::Type_Expr]
 		def interp_type expr
 			return interp_anonymous_composition expr if expr.anonymous_composition
 
@@ -2312,22 +2312,22 @@ module Drive
 
 					# note; `expr.name` is normally a real type name ("String"), but if it's instead a local alias bound to an earlier tagged reference (`X := String\<Flying>`), re-tag against *that value's own* family name rather than treating "X" itself as a type name. So `X\<duck>` should behave exactly like `String\<duck>`, since `.name` on any Type object (dup'd or not) always reflects its true declared family.
 					aliased     = find_in_stack expr.name
-					lookup_name = aliased.is_a?(Tape::Type) ? aliased.name : expr.name
+					lookup_name = aliased.is_a?(Disk::Type) ? aliased.name : expr.name
 
 					existing = find_tagged_type_variant lookup_name, supplied
 
 					# Declaring spreads a lone unnamed Struct-valued member (#interp_struct); unify by retrying a failed unspread match with spreading applied, rather than statically committing to one or the other.
-					if !existing.is_a?(Tape::Type) && expr.tag.is_a?(Tape::Struct_Expr) && expr.tag.types.length == 1 && expr.tag.names[0].nil?
+					if !existing.is_a?(Disk::Type) && expr.tag.is_a?(Disk::Struct_Expr) && expr.tag.types.length == 1 && expr.tag.names[0].nil?
 						spread_supplied = interp_struct expr.tag, allow_spread: true
 						spread_existing = find_tagged_type_variant lookup_name, spread_supplied
-						if spread_existing.is_a? Tape::Type
+						if spread_existing.is_a? Disk::Type
 							supplied = spread_supplied
 							existing = spread_existing
 						end
 					end
-					unless existing.is_a? Tape::Type
+					unless existing.is_a? Disk::Type
 						# Nothing declared under this name -> bare named struct (see Bare Named Structs, CLAUDE.md). Also allows re-declaring the same struct with an identical shape as a no-op.
-						redeclaring_same_struct = aliased.is_a?(Tape::Struct) && aliased.name == expr.name && aliased.structure_declaration_equal?(supplied)
+						redeclaring_same_struct = aliased.is_a?(Disk::Struct) && aliased.name == expr.name && aliased.structure_declaration_equal?(supplied)
 						if (aliased.nil? || redeclaring_same_struct) && tagged_variants_for(lookup_name).empty?
 							supplied.name = expr.name # `@`-only (`@.name`)
 							prefix_type supplied, expr.name
@@ -2336,15 +2336,15 @@ module Drive
 						end
 
 						# Base name is a real Type but nothing matches this shape yet -- a bare reference auto-declares it (empty body), same as writing `Array\String {}` explicitly first.
-						unless aliased.is_a? Tape::Type
-							raise Tape::Undeclared_Tagged_Type.new(expr)
+						unless aliased.is_a? Disk::Type
+							raise Disk::Undeclared_Tagged_Type.new(expr)
 						end
 						existing                = declare_tagged_type_variant lookup_name, supplied, []
 					end
 				else
 					existing = find_in_stack expr.name
-					unless existing.is_a? Tape::Type
-						raise Tape::Undeclared_Identifier.new(expr)
+					unless existing.is_a? Disk::Type
+						raise Disk::Undeclared_Identifier.new(expr)
 					end
 				end
 
@@ -2355,10 +2355,10 @@ module Drive
 				if expr.tag
 					# Call-site member values are usually positional (`Woof<'hello', 4815>`), but a member can be named at the reference site too (`Woof<key := 'hello'>`) to disambiguate an otherwise-ambiguous match. Either way, re-associate them with the names — and pick up any defaults — from the matched variant's own struct declaration (`Woof<String, key: Dictionary> {}`) so `.tag.key` still works on the resulting instance.
 					declaration            = existing.tag_declaration
-					declaration_names      = declaration.is_a?(Tape::Struct) ? declaration.names : []
-					declaration_types      = declaration.is_a?(Tape::Struct) ? declaration.type_objects : [] # declared type objects, used below only to detect an unfilled default via identity
-					declaration_type_names = declaration.is_a?(Tape::Struct) ? declaration.type_names : []
-					declaration_values     = declaration.is_a?(Tape::Struct) ? declaration.values : []
+					declaration_names      = declaration.is_a?(Disk::Struct) ? declaration.names : []
+					declaration_types      = declaration.is_a?(Disk::Struct) ? declaration.type_objects : [] # declared type objects, used below only to detect an unfilled default via identity
+					declaration_type_names = declaration.is_a?(Disk::Struct) ? declaration.type_names : []
+					declaration_values     = declaration.is_a?(Disk::Struct) ? declaration.values : []
 
 					# A default only fills in for a member that just re-asserts the declaration's own declared type for that member (`Abc<Dictionary>()`, re-stating `dict`'s own type rather than giving it a value) — never when a real value was actually supplied there (`Abc<{x=1}>()` must keep {x=1}, not fall back to the default). That check has to run against `supplied.type_objects` (identity against the declared type), since that's what "just restated the type" even means -- but the *result*, when it's a real value, has to be `supplied.values`, not `type_objects`. A bare `name := value` reference member (see #interp_struct) resolves its own `type_objects` entry down to the value's *inferred type*, not the value itself, so using `type_objects` here for both the check and the result silently substituted the wrong thing for exactly that case.
 					resolved_values = supplied.values.each_with_index.map do |real_value, i|
@@ -2396,16 +2396,16 @@ module Drive
 
 		# A composition chain with no `{}` body (`Abc|Def`, `A & B`, ...) is a value, not a declaration, built by applying the chain to a fresh, unnamed Type exactly as if `X | Abc | Def { }` had been written for some unnamed X.
 		def interp_anonymous_composition expr
-			anonymous             = Tape::Type.new nil
-			anonymous.types       = ::Set.new # Type#initialize seeds `@types = ::Set[name]` -- ::Set[nil] here, which would leave a stray nil in .types (breaking #find_ruby_class_for_type's `"Tape::#{type_name}"` lookup) since the union step below only ever adds, never resets.
+			anonymous             = Disk::Type.new nil
+			anonymous.types       = ::Set.new # Type#initialize seeds `@types = ::Set[name]` -- ::Set[nil] here, which would leave a stray nil in .types (breaking #find_ruby_class_for_type's `"Disk::#{type_name}"` lookup) since the union step below only ever adds, never resets.
 			anonymous.expressions = [] # A real declaration always ends up with this set (even to []) via #interp_bare_type_declaration's own body-merge -- there's no body here, but #run_type_body_on_instance still expects an Array to iterate when constructing an instance.
 
 			push_then_pop anonymous do
 				# A bare prefix chain (`x := |Compo`) has no base name to seed with -- only the two-name form (`Base | Compo`) needs Base unioned in first.
 				if expr.name
-					seed            = Tape::Composition_Expr.new
-					seed.operator   = Tape::Lexeme.new(:operator, '|')
-					seed.identifier = Tape::Identifier_Expr.new.tap { |it| it.lexeme = Tape::Lexeme.new(:Identifier, expr.name) }
+					seed            = Disk::Composition_Expr.new
+					seed.operator   = Disk::Lexeme.new(:operator, '|')
+					seed.identifier = Disk::Identifier_Expr.new.tap { |it| it.lexeme = Disk::Lexeme.new(:Identifier, expr.name) }
 					interp_composition seed
 				end
 
@@ -2415,12 +2415,12 @@ module Drive
 			anonymous
 		end
 
-		# Shared tail of both declaration paths below: parent the type to the declaring scope, link it to its Tape:: Ruby class when one exists, record its own name in @types, and run `body_expressions` in the type's scope.
+		# Shared tail of both declaration paths below: parent the type to the declaring scope, link it to its Disk:: Ruby class when one exists, record its own name in @types, and run `body_expressions` in the type's scope.
 		def finish_type_declaration type, body_expressions
 			type.enclosing_scope = stack.last
 
-			tape_name = "Tape::#{type.name}"
-			defined   = type.name[0] != '_' && Object.const_defined?(tape_name) # note; #const_defined? does not allow underscore as the first character, hence the underscore check.
+			disk_name = "Disk::#{type.name}"
+			defined   = type.name[0] != '_' && Object.const_defined?(disk_name) # note; #const_defined? does not allow underscore as the first character, hence the underscore check.
 			link_instance_to_type type, type.name if defined
 
 			type.types ||= ::Set.new
@@ -2431,7 +2431,7 @@ module Drive
 				push_then_pop type do
 					body_expressions.each do |sub_expr|
 						# A bare composition (`| Compo`) only means anything as a direct top-level item of a type's own body -- dispatch it explicitly rather than through #interpret's generic case (which raises).
-						sub_expr.is_a?(Tape::Composition_Expr) ? interp_composition(sub_expr) : interpret(sub_expr)
+						sub_expr.is_a?(Disk::Composition_Expr) ? interp_composition(sub_expr) : interpret(sub_expr)
 					end
 				end
 			ensure
@@ -2441,14 +2441,14 @@ module Drive
 			type
 		end
 
-		# A plain, untagged declaration (`String { ... }`) -- reopens/extends the same shared Type object across multiple declarations of the same bare name, e.g. how global.tape's files each contribute to the same base String/Array/etc.
+		# A plain, untagged declaration (`String { ... }`) -- reopens/extends the same shared Type object across multiple declarations of the same bare name, e.g. how global.disk's files each contribute to the same base String/Array/etc.
 		def interp_bare_type_declaration expr
 			existing = stack.last.has?(expr.name) && stack.last[expr.name]
-			# Tape::Struct < Instance < Type, so a plain `existing.is_a?(Tape::Type)` check also matches a Bare
+			# Disk::Struct < Instance < Type, so a plain `existing.is_a?(Disk::Type)` check also matches a Bare
 			# Named Struct value sharing this name (`User <...>` then later `User | Table {}`) -- that's a value,
 			# not a reopenable declared Type, so it must be excluded here or the struct itself gets mistakenly
 			# reused/mutated as the new composed Type's own scope.
-			type = (existing.is_a?(Tape::Type) && !existing.is_a?(Tape::Instance)) ? existing : Tape::Type.new(expr.name)
+			type = (existing.is_a?(Disk::Type) && !existing.is_a?(Disk::Instance)) ? existing : Disk::Type.new(expr.name)
 
 			type.expressions = (type.expressions || []) + expr.expressions
 			finish_type_declaration type, expr.expressions
@@ -2457,23 +2457,23 @@ module Drive
 			type
 		end
 
-		# Resolves one `\` RHS node to a real Tape::Struct. An inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering. A nested `.tag` on the node (`Ab\Cd\Ef`) is resolved recursively and hung off this struct's own `.tag`, so `x.tag.tag` walks the chain; `\<...>` is always terminal.
+		# Resolves one `\` RHS node to a real Disk::Struct. An inline literal (`Abc\<Number>`) interprets to one directly; a named reference (`Abc\Task_Schema`) is used as-is if it's already a Struct, or wrapped into the single-unnamed-member equivalent if it's a Type (`Abc\String` behaves like `Abc\<String>`); anything else raises. A named reference also records its own identifier text as `bare_reference_name` (see Struct#bare_reference_name) -- the *only* signal that later tells #tag_display_name to print `Array\String` back out bare instead of falling back to the struct's own `<...>` rendering. A nested `.tag` on the node (`Ab\Cd\Ef`) is resolved recursively and hung off this struct's own `.tag`, so `x.tag.tag` walks the chain; `\<...>` is always terminal.
 		def resolve_tag_node tag_node, allow_spread: true
-			struct = if tag_node.is_a? Tape::Struct_Expr
+			struct = if tag_node.is_a? Disk::Struct_Expr
 				interp_struct tag_node, allow_spread: allow_spread
 			else
 				value = interpret tag_node
 				case value
-				when Tape::Struct
+				when Disk::Struct
 					value.bare_reference_name ||= tag_node.value
 					value
-				when Tape::Type
+				when Disk::Type
 					# The single member's own value stays nil, same as any other schema-only member (see #interp_struct) -- `value` here is always a bare Type, not real data.
 					wrapped                     = build_struct [nil], [type_name_to_string(value)], [value], [nil]
 					wrapped.bare_reference_name = tag_node.value
 					wrapped
 				else
-					raise Tape::Tag_Reference_Must_Be_Type_Or_Struct.new(tag_node)
+					raise Disk::Tag_Reference_Must_Be_Type_Or_Struct.new(tag_node)
 				end
 			end
 
@@ -2491,10 +2491,10 @@ module Drive
 
 		# Normalizes the RHS of a `.tag =` to its tag Struct: a Struct is itself; a Type/Instance contributes its own `.tag_instance`, or is wrapped as a single-member struct when it has none (mirrors #resolve_tag_node's bare-Type case).
 		def tag_struct_for_reassignment value, node
-			return value if value.is_a? Tape::Struct
+			return value if value.is_a? Disk::Struct
 			return value.tag_instance if value.respond_to?(:tag_instance) && value.tag_instance
-			return build_struct [nil], [type_name_to_string(value)], [value], [nil] if value.is_a? Tape::Type
-			raise Tape::Tag_Reference_Must_Be_Type_Or_Struct.new(node)
+			return build_struct [nil], [type_name_to_string(value)], [value], [nil] if value.is_a? Disk::Type
+			raise Disk::Tag_Reference_Must_Be_Type_Or_Struct.new(node)
 		end
 
 		# A tagged declaration (`String\<dict: Dictionary> { ... }`) is its own type, separate from the bare `String` and every other tag under the same name -- this stops one variant's `new`/methods from clobbering another's (a real bug this fixed).
@@ -2513,9 +2513,9 @@ module Drive
 			if existing
 				variant = existing
 			else
-				variant             = Tape::Type.new(name)
+				variant             = Disk::Type.new(name)
 				blueprint           = stack.last.has?(name) && stack.last[name]
-				variant.expressions = blueprint.is_a?(Tape::Type) ? (blueprint.expressions || []).dup : []
+				variant.expressions = blueprint.is_a?(Disk::Type) ? (blueprint.expressions || []).dup : []
 			end
 
 			variant.expressions     = (variant.expressions || []) + body_expressions
@@ -2539,14 +2539,14 @@ module Drive
 				declared_type = struct.type_names[i]
 				next if declared_type == 'Any'
 
-				unless value.is_a?(Tape::Scope) && value.has?(name)
-					raise Tape::Type_Contract_Violation.new(expr, "<#{struct.names.compact.join(', ')}>", describe_value_shape(value))
+				unless value.is_a?(Disk::Scope) && value.has?(name)
+					raise Disk::Type_Contract_Violation.new(expr, "<#{struct.names.compact.join(', ')}>", describe_value_shape(value))
 				end
 
 				member_value = value.get name
 				candidates   = member_value.nil? ? [] : member_candidate_type_names(member_value)
 				unless candidates.include? declared_type
-					raise Tape::Type_Contract_Violation.new(expr, declared_type, inferred_type_name(member_value))
+					raise Disk::Type_Contract_Violation.new(expr, declared_type, inferred_type_name(member_value))
 				end
 			end
 		end
@@ -2557,10 +2557,10 @@ module Drive
 		# deep in the body, once an expected member turns up missing.
 		def check_splat_param_type_contract param, value, expr
 			return unless param.respond_to?(:add_to_readable) && (param.add_to_readable || param.add_to_writable)
-			return unless param.type.is_a?(Tape::Identifier_Expr) && param.type.value != 'Any'
+			return unless param.type.is_a?(Disk::Identifier_Expr) && param.type.value != 'Any'
 			return if type_contract_satisfied?(maybe_instance(value), param.type.value)
 
-			raise Tape::Type_Contract_Violation.new(expr, param.type.value, describe_value_shape(value))
+			raise Disk::Type_Contract_Violation.new(expr, param.type.value, describe_value_shape(value))
 		end
 
 		# All type names a supplied member value could match a declared struct's member under -- its own primary name first, then everything it composes, so e.g. a `Div` satisfies a member declared `Dom` without being named Dom itself. See #find_tagged_type_variant.
@@ -2576,7 +2576,7 @@ module Drive
 			when ::TrueClass, ::FalseClass
 				['Bool']
 			else
-				if value.is_a?(Tape::Type) && value.types && !value.types.empty?
+				if value.is_a?(Disk::Type) && value.types && !value.types.empty?
 					value.types.to_a
 				else
 					[value.name]
@@ -2632,7 +2632,7 @@ module Drive
 		def tagged_variants_for base_name, current_scope_only: false
 			scopes = current_scope_only ? [stack.last] : stack.reverse_each
 			scopes.each do |scope|
-				# `stack` can briefly hold non-Scope receivers during dot-access (e.g. Tape::Range).
+				# `stack` can briefly hold non-Scope receivers during dot-access (e.g. Disk::Range).
 				next unless scope.respond_to? :tagged_type_variants
 				list = scope.tagged_type_variants.fetch(base_name, [])
 				return list unless list.empty?
@@ -2645,14 +2645,14 @@ module Drive
 			global.tagged_type_variants.values.flatten
 		end
 
-		# For Tape::Database#proxy_create_table: finds the Table-composed type declared with this exact schema, if any, so the created table can be tagged with the model's real identity. Nil if none matches.
+		# For Disk::Database#proxy_create_table: finds the Table-composed type declared with this exact schema, if any, so the created table can be tagged with the model's real identity. Nil if none matches.
 		def find_table_type_for_schema schema
 			all_tagged_type_variants.find do |variant|
 				variant.types.include?('Table') && variant.tag_declaration&.structure_declaration_equal?(schema)
 			end
 		end
 
-		# Searches the full scope stack (innermost to outermost) for `key`, the same way a bare identifier resolves via #scope_for_identifier -- checking only `stack.last` would miss a type declared in an outer/global scope while evaluating from inside a nested context (e.g. a type's own declaration body during composition). This returns an Drive type. `excluding:` skips scopes of that class -- used by #find_operator_overload to keep looking past a currently-executing Type/Instance body, since merely being on the stack doesn't mean the *current* operands belong to it (Instance < Type, so excluding: Tape::Type skips both).
+		# Searches the full scope stack (innermost to outermost) for `key`, the same way a bare identifier resolves via #scope_for_identifier -- checking only `stack.last` would miss a type declared in an outer/global scope while evaluating from inside a nested context (e.g. a type's own declaration body during composition). This returns an Drive type. `excluding:` skips scopes of that class -- used by #find_operator_overload to keep looking past a currently-executing Type/Instance body, since merely being on the stack doesn't mean the *current* operands belong to it (Instance < Type, so excluding: Disk::Type skips both).
 		def find_in_stack key, excluding: nil
 			stack.reverse_each do |scope|
 				next if excluding && scope.is_a?(excluding)
@@ -2665,10 +2665,10 @@ module Drive
 		def tag_display_name scope
 			tag       = scope.tag_instance
 			qualifier = tag.bare_reference_name || stringify_for_display(tag)
-			"#{scope.name}#{Tape::TAG_OPERATOR}#{qualifier}"
+			"#{scope.name}#{Disk::TAG_OPERATOR}#{qualifier}"
 		end
 
-		# Makes `.tag` readable via Drive dot-access on a Type, Instance, or type reference, and marks it static so it's also readable straight off a bare Type (not just an instance). Only adds the declaration when this particular one actually has a tag, so plain untagged types don't pick up a stray `tag` member. Also refreshes `.display_name` (see Type#initialize) to fold the tag into the type's own displayable name, so a consumer like tapes/member.tape's `to_s` never needs to know `.tag` exists at all.
+		# Makes `.tag` readable via Drive dot-access on a Type, Instance, or type reference, and marks it static so it's also readable straight off a bare Type (not just an instance). Only adds the declaration when this particular one actually has a tag, so plain untagged types don't pick up a stray `tag` member. Also refreshes `.display_name` (see Type#initialize) to fold the tag into the type's own displayable name, so a consumer like disks/member.disk's `to_s` never needs to know `.tag` exists at all.
 		def declare_tag scope
 			return unless scope.tag_instance
 
@@ -2678,16 +2678,16 @@ module Drive
 		end
 
 		#
-		# Tape::Type_Expr is converted to Tape::Type in #interp_type.
-		# Tape::Instance inherits Tape::Type's @name and @types.
+		# Disk::Type_Expr is converted to Disk::Type in #interp_type.
+		# Disk::Instance inherits Disk::Type's @name and @types.
 		#
-		#     (See types.rb for Tape::Type and Tape::Instance declarations)
-		#     (See expressions.rb for Tape::Type_Expr declaration)
+		#     (See types.rb for Disk::Type and Disk::Instance declarations)
+		#     (See expressions.rb for Disk::Type_Expr declaration)
 		#
 		# - Push instance onto stack
 		# - Interpret type.expressions so the declarations are made on the instance
 		# - Keep instance on the stack
-		# - For each Tape::Func declared on instance, set `func.enclosing_scope = instance`
+		# - For each Disk::Func declared on instance, set `func.enclosing_scope = instance`
 		# - Interpret type[:Self], the initializer
 		# - Delete :Self from instance, inheritd from type, not needed on the instance
 		#
@@ -2704,13 +2704,13 @@ module Drive
 							# `@x := ...` on the Context runs once in the type body, not per instance.
 							next if context_declaration_expr? expr
 
-							if expr.is_a?(Tape::Func_Expr) && expr.name.is_a?(Tape::Identifier_Expr) &&
+							if expr.is_a?(Disk::Func_Expr) && expr.name.is_a?(Disk::Identifier_Expr) &&
 							   expr.name.scope_operator&.value == 'Self'
 								next
 							end
 
 							# Same bypass as #finish_type_declaration's body walk, re-run per instance here.
-							expr.is_a?(Tape::Composition_Expr) ? interp_composition(expr) : interpret(expr)
+							expr.is_a?(Disk::Composition_Expr) ? interp_composition(expr) : interpret(expr)
 						end
 					end
 				end
@@ -2725,7 +2725,7 @@ module Drive
 			end
 
 			instance.declarations.each do |key, decl|
-				next unless decl.is_a? Tape::Func
+				next unless decl.is_a? Disk::Func
 
 				cloned                     = decl.dup
 				cloned.enclosing_scope     = instance
@@ -2733,14 +2733,14 @@ module Drive
 			end
 		end
 
-		# Builds the raw instance for #interp_type_call: backed by its Tape:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `Self(;)` is invoked afterward by #interp_type_call itself.
+		# Builds the raw instance for #interp_type_call: backed by its Disk:: Ruby class when one exists, linked to its type, struct bound, and the type's body run on it. `Self(;)` is invoked afterward by #interp_type_call itself.
 		def build_instance_of_type type, expr
 			ruby_class = find_ruby_class_for_type type
-			instance   = ruby_class ? ruby_class.new : Tape::Instance.new(type.name)
+			instance   = ruby_class ? ruby_class.new : Disk::Instance.new(type.name)
 
 			# `.name` / `.types` are both `@`-only now (`@.name` / `@.types`) -- the Ruby-level attrs are
 			# the store. Setting `.name` here matters for a composed type sharing a built-in's Ruby class
-			# (`Tasks | Table {}` -> Tape::Table baked in "Table"); `@.name` must report "Tasks".
+			# (`Tasks | Table {}` -> Disk::Table baked in "Table"); `@.name` must report "Tasks".
 			instance.name            = type.name
 			instance.types           = type.types
 			instance.enclosing_scope = type
@@ -2774,7 +2774,7 @@ module Drive
 				interp_func_body func_new, call_expr
 			elsif call_expr.arguments.count > 0
 				# No initializer was declared so we have nowhere to pass the arguments
-				raise Tape::Arguments_Given_But_Not_Expected.new(expr)
+				raise Disk::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
 			instance.delete :Self
@@ -2785,15 +2785,15 @@ module Drive
 		end
 
 		def dom_type? type
-			type.is_a?(Tape::Type) && type.types.include?('Dom')
+			type.is_a?(Disk::Type) && type.types.include?('Dom')
 		end
 
 		def dom_constructor_prop_name? name
-			Tape::DOM_CONSTRUCTOR_PROP_NAMES.include?(name) ||
-				Tape::DOM_CONSTRUCTOR_PROP_PREFIXES.any? { |prefix| name.start_with? prefix }
+			Disk::DOM_CONSTRUCTOR_PROP_NAMES.include?(name) ||
+				Disk::DOM_CONSTRUCTOR_PROP_PREFIXES.any? { |prefix| name.start_with? prefix }
 		end
 
-		# @return [Hash{::String => Tape::Expression}] whitelisted `name := value` arguments keyed by
+		# @return [Hash{::String => Disk::Expression}] whitelisted `name := value` arguments keyed by
 		#   name, mapped to their original argument node. A name that IS one of `new`'s declared params
 		#   is left alone (bound normally), so an explicit param always wins over the prop shortcut.
 		def split_dom_prop_arguments call_expr, func_new
@@ -2823,7 +2823,7 @@ module Drive
 		end
 
 		def interp_func expr
-			func                 = Tape::Func.new expr.lexeme
+			func                 = Disk::Func.new expr.lexeme
 			func.name            = expr.lexeme
 			func.enclosing_scope = stack.last
 			func.expressions     = expr.expressions
@@ -2832,7 +2832,7 @@ module Drive
 			param_types          = expr.parameters.map do |p|
 				p.type&.value
 			end
-			func.func_signature  = Tape::Func_Signature.new(param_types, expr.type&.value)
+			func.func_signature  = Disk::Func_Signature.new(param_types, expr.type&.value)
 
 			if func.name&.value
 				stack.last.declare func.name.value, func
@@ -2846,7 +2846,7 @@ module Drive
 		def interp_func_body func, expr, arg_values: nil
 			# A bare Capitalized/UPPERCASE param (`f ( ABC; ABC )`) parses as a signature-literal-style bare type (`param.type` set, `param.name` left nil, see #parse_func) rather than a named param -- real function params always start lowercase. Every other param-binding path below assumes `.name` is always present, so this is checked once, up front, with a real error instead of a raw NoMethodError the first time something reads `param.name.value`.
 			nameless_param = func.parameters.find { |param| param.name.nil? }
-			raise Tape::Invalid_Parameter_Name.new(expr, nameless_param.type.value) if nameless_param
+			raise Disk::Invalid_Parameter_Name.new(expr, nameless_param.type.value) if nameless_param
 
 			# note; Evaluate arguments in caller's scope (before pushing function scopes). A labeled argument (`to: someone`) parses as a plain `:` Infix_Expr, and a named argument (`to := someone`) as a plain `:=` Infix_Expr (same production named struct members use) -- #classify_argument unwraps either rather than letting #interpret try to resolve `to` as an identifier and raise Undeclared_Identifier.
 			# A caller that already evaluated the operands (operator-overload dispatch in #interp_infix) passes them via arg_values so their side effects don't run a second time; labels/named args only exist in real call syntax, so neither applies there.
@@ -2861,12 +2861,12 @@ module Drive
 
 					# Named arguments must come last -- once you switch to naming arguments, every argument after that has to be named too. A positional argument (bare or labeled) can never follow one.
 					if seen_named && kind != :named
-						raise Tape::Positional_Argument_After_Named.new(expr)
+						raise Disk::Positional_Argument_After_Named.new(expr)
 					end
 
 					if kind == :named
 						seen_named = true
-						raise Tape::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
+						raise Disk::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
 						named_args[name_or_label] = interpret value_expr
 					else
 						arg_labels << (kind == :labeled ? name_or_label : nil)
@@ -2878,7 +2878,7 @@ module Drive
 			end
 
 			# note: `func` is the single, shared Func object registered when the function was declared. Pushing it directly as the call frame (as this used to do) meant every invocation declared its params onto that same shared object, so recursive/repeated calls stomped on each other's param values. Each call gets its own fresh scope instead.
-			call_scope                 = Tape::Func.new func.name
+			call_scope                 = Disk::Func.new func.name
 			call_scope.expressions     = func.expressions
 			call_scope.parameters      = func.parameters
 			call_scope.enclosing_scope = func.enclosing_scope
@@ -2887,7 +2887,7 @@ module Drive
 
 			# Push type scope if calling an instance method (instance methods need access to type-level declarations)
 			# Also push the type's enclosing_scope so sibling types can be found
-			if func.enclosing_scope.is_a?(Tape::Instance) && func.enclosing_scope.enclosing_scope
+			if func.enclosing_scope.is_a?(Disk::Instance) && func.enclosing_scope.enclosing_scope
 				type = func.enclosing_scope.enclosing_scope
 				push_scope type.enclosing_scope if type.enclosing_scope # Push the Type's enclosing scope
 				push_scope type # Push the Type
@@ -2902,11 +2902,11 @@ module Drive
 			unless named_args.empty? || has_variadic
 				declared_names = func.parameters.map { |param| param.name.value }
 				unknown_name   = named_args.keys.find { |name| !declared_names.include? name }
-				raise Tape::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
+				raise Disk::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
 			end
 
 			if func.parameters.empty? && arg_values.any?
-				raise Tape::Arguments_Given_But_Not_Expected.new(expr)
+				raise Disk::Arguments_Given_But_Not_Expected.new(expr)
 			end
 
 			consumed_variadic = false
@@ -2917,7 +2917,7 @@ module Drive
 					tail = arg_values[i..] || []
 					if named_args.key? name_key # `rest := <value>` at the call site
 						nv = named_args.delete name_key
-						raise Tape::Type_Contract_Violation.new(expr, 'Arguments', inferred_type_name(nv)) unless nv.is_a? Tape::Array
+						raise Disk::Type_Contract_Violation.new(expr, 'Arguments', inferred_type_name(nv)) unless nv.is_a? Disk::Array
 						tail = nv.values # `rest := [99]` -> tail [99]  (`rest := 99` errored above)
 					end
 					stack.last.declare name_key, wrap_arguments_array(tail)
@@ -2929,7 +2929,7 @@ module Drive
 				has_named      = named_args.key? name_key
 
 				if has_positional && has_named
-					raise Tape::Argument_Given_By_Name_And_Position.new(expr, name_key)
+					raise Disk::Argument_Given_By_Name_And_Position.new(expr, name_key)
 				end
 
 				value = if has_named
@@ -2939,21 +2939,21 @@ module Drive
 				elsif param.default
 					interpret param.default
 				else
-					raise Tape::Missing_Argument.new(expr)
+					raise Disk::Missing_Argument.new(expr)
 				end
 
 				# Labels are positional, not a lookup key -- a labeled argument at position `i` must match that position's declared label (Swift/ObjC-style), never used to reorder arguments. A bare, unlabeled argument is always accepted regardless of whether the param declares a label -- labels are opt-in at the call site, not mandatory. Named arguments bypass label-checking entirely -- they're matched by declared name, not position, so there's no positional label to compare against.
 				supplied_label = arg_labels[i]
 				if !has_named && supplied_label && supplied_label != param.label&.value
-					raise Tape::Argument_Label_Mismatch.new(expr, param.label&.value, supplied_label)
+					raise Disk::Argument_Label_Mismatch.new(expr, param.label&.value, supplied_label)
 				end
 
-				check_struct_type_contract param, value, expr if param.type.is_a?(Tape::Struct_Expr)
+				check_struct_type_contract param, value, expr if param.type.is_a?(Disk::Struct_Expr)
 				check_splat_param_type_contract param, value, expr
 
 				stack.last.declare param.name.value, value
 
-				if value.is_a? Tape::Type
+				if value.is_a? Disk::Type
 					if param.respond_to?(:add_to_readable) && param.add_to_readable
 						call_scope.add_readable_scope value
 					elsif param.respond_to?(:add_to_readable) && param.add_to_writable
@@ -2971,25 +2971,25 @@ module Drive
 
 			body = call_scope.expressions
 			if call_scope.name == 'assert'
-				raise Tape::Assert_Triggered.new(expr) unless interpret(body.first) == true # Just to be explicit.
+				raise Disk::Assert_Triggered.new(expr) unless interpret(body.first) == true # Just to be explicit.
 			end
 
 			result = nil
 			body.compact.each do |e|
 				result = interpret e
-				break if result.is_a? Tape::Return
+				break if result.is_a? Disk::Return
 			end
 
 			Drive.assert pop_scope == call_scope
 			Drive.assert pop_scope == func.enclosing_scope
 
-			if func.enclosing_scope.is_a?(Tape::Instance) && func.enclosing_scope.enclosing_scope
+			if func.enclosing_scope.is_a?(Disk::Instance) && func.enclosing_scope.enclosing_scope
 				type = func.enclosing_scope.enclosing_scope
 				Drive.assert pop_scope == type
 				pop_scope if type.enclosing_scope # Pop the Type's enclosing scope
 			end
 
-			return_value = result.is_a?(Tape::Return) ? result.value : result
+			return_value = result.is_a?(Disk::Return) ? result.value : result
 
 			if func.func_signature.return_type
 				# Compositional, not exact-name -- a `-> Table` returning a `Task`-composed value is a safe
@@ -2997,7 +2997,7 @@ module Drive
 				# wildcard) and an exact name match before this compositional check.
 				actual_type = type_name_to_string return_value
 				unless type_contract_satisfied?(return_value, func.func_signature.return_type)
-					raise Tape::Type_Contract_Violation.new(expr, func.func_signature.return_type, actual_type)
+					raise Disk::Type_Contract_Violation.new(expr, func.func_signature.return_type, actual_type)
 				end
 			end
 
@@ -3012,9 +3012,9 @@ module Drive
 		#   - anything else (positional)
 		# Returns [kind, name_or_label, value_expr] -- name_or_label is nil for :positional. Never interprets `arg`/the name-or-label side itself; that's the caller's job once it knows which expression actually holds the real value.
 		def classify_argument arg
-			if arg.is_a?(Tape::Infix_Expr) && arg.operator&.value == ':=' && arg.left.is_a?(Tape::Identifier_Expr)
+			if arg.is_a?(Disk::Infix_Expr) && arg.operator&.value == ':=' && arg.left.is_a?(Disk::Identifier_Expr)
 				[:named, arg.left.value, arg.right]
-			elsif arg.is_a?(Tape::Infix_Expr) && arg.operator&.value == ':' && arg.left.is_a?(Tape::Identifier_Expr)
+			elsif arg.is_a?(Disk::Infix_Expr) && arg.operator&.value == ':' && arg.left.is_a?(Disk::Identifier_Expr)
 				[:labeled, arg.left.value, arg.right]
 			else
 				[:positional, nil, arg]
@@ -3031,8 +3031,8 @@ module Drive
 		# as it always has been -- structs don't raise Missing_Argument the way functions do; Struct.new's
 		# own values[i].nil? ? types[i] fallback (struct.rb) is what shows it as type-only.
 		#
-		# @param struct [Tape::Struct]
-		# @param expr [Tape::Call_Expr]
+		# @param struct [Disk::Struct]
+		# @param expr [Disk::Call_Expr]
 		def interp_struct_call struct, expr
 			named_args = {}
 			positional = []
@@ -3042,14 +3042,14 @@ module Drive
 				kind, name_or_label, value_expr = classify_argument arg
 
 				if seen_named && kind != :named
-					raise Tape::Positional_Argument_After_Named.new(expr)
+					raise Disk::Positional_Argument_After_Named.new(expr)
 				end
 
 				value = wrap_string_literal_value(value_expr, interpret(value_expr))
 
 				if kind == :named
 					seen_named = true
-					raise Tape::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
+					raise Disk::Duplicate_Named_Argument.new(expr, name_or_label) if named_args.key? name_or_label
 					named_args[name_or_label] = value
 				else
 					positional << value
@@ -3058,7 +3058,7 @@ module Drive
 
 			unless named_args.empty?
 				unknown_name = named_args.keys.find { |name| !struct.names.include? name }
-				raise Tape::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
+				raise Disk::Unknown_Named_Argument.new(expr, unknown_name) if unknown_name
 			end
 
 			values = struct.names.each_index.map do |i|
@@ -3067,7 +3067,7 @@ module Drive
 				has_named      = name_key && named_args.key?(name_key)
 
 				if has_positional && has_named
-					raise Tape::Argument_Given_By_Name_And_Position.new(expr, name_key)
+					raise Disk::Argument_Given_By_Name_And_Position.new(expr, name_key)
 				end
 
 				if has_named
@@ -3092,12 +3092,12 @@ module Drive
 			instance
 		end
 
-		# @param expr [Tape::Route_Expr]
-		# @return Tape::Route
+		# @param expr [Disk::Route_Expr]
+		# @return Disk::Route
 		def interp_route expr
 			func = interpret expr.expression
 
-			route                 = Tape::Route.new
+			route                 = Disk::Route.new
 			route.name            = func.name
 			route.enclosing_scope = stack.last
 			route.handler         = func
@@ -3118,7 +3118,7 @@ module Drive
 
 			# Store route in the enclosing Type's @routes if it has one (e.g., Server)
 			enclosing_type = stack.reverse.find do |scope|
-				scope.is_a? Tape::Type # note: You could have an instance on the stack, or an empty scope, whatever.
+				scope.is_a? Disk::Type # note: You could have an instance on the stack, or an empty scope, whatever.
 			end
 			if enclosing_type
 				enclosing_type.routes            ||= {}
@@ -3131,11 +3131,11 @@ module Drive
 			route
 		end
 
-		# @param route [Tape::Route] The route (or onclick handler wrapper) to execute
-		# @param req [Tape::Request] Request object to inject
-		# @param res [Tape::Response] Response object to inject
+		# @param route [Disk::Route] The route (or onclick handler wrapper) to execute
+		# @param req [Disk::Request] Request object to inject
+		# @param res [Disk::Response] Response object to inject
 		# @param url_params [Hash] Extracted URL parameters (e.g., {"id" => "123"})
-		# @param server_instance [Tape::Instance] The server instance (for accessing instance variables)
+		# @param server_instance [Disk::Instance] The server instance (for accessing instance variables)
 		# @return The result of handler execution
 		def interp_route_body route, req, res, url_params = {}, server_instance: nil
 			handler = route.handler
@@ -3158,7 +3158,7 @@ module Drive
 			end
 			outer_chain.reverse_each { |s| push_scope s }
 
-			call_scope = Tape::Scope.new "#{handler.name || 'anonymous'}_route"
+			call_scope = Disk::Scope.new "#{handler.name || 'anonymous'}_route"
 			push_scope handler.enclosing_scope
 			push_scope server_instance if server_instance
 			push_scope call_scope
@@ -3174,7 +3174,7 @@ module Drive
 				if value.nil?
 					if route.param_names.include? param.name.value
 						# todo: I haven't triggered this yet to ensure this works.
-						raise Tape::Route_Param_Expected_But_Not_Found.new(route)
+						raise Disk::Route_Param_Expected_But_Not_Found.new(route)
 					end
 
 					# Use default value or raise
@@ -3182,7 +3182,7 @@ module Drive
 						value = interpret param.default
 					else
 						# todo: Is this reachable?
-						raise Tape::Missing_Argument.new(expr)
+						raise Disk::Missing_Argument.new(expr)
 					end
 				end
 
@@ -3195,22 +3195,22 @@ module Drive
 			body.compact.each do |expr|
 				# bug todo: Sometimes body contains `nil` when that should never be the case
 				result = interpret expr
-				break if result.is_a? Tape::Return
+				break if result.is_a? Disk::Return
 			end
 
 			if result.is_a? ::String
 				res.declarations['body'] = result
-			elsif result.is_a? Tape::Array
+			elsif result.is_a? Disk::Array
 				html = ''
 				result.values.each do |it|
 					if it.is_a? ::String
 						html += it
-					elsif it.is_a?(Tape::Instance) && it.types.include?('Dom')
+					elsif it.is_a?(Disk::Instance) && it.types.include?('Dom')
 						html += render_dom_to_html it
 					end
 				end
 				res.declarations['body'] = html
-			elsif result.is_a? Tape::Instance
+			elsif result.is_a? Disk::Instance
 				# todo: Maybe find a better class name than Dom, and add a constant for it.
 				if result.types.include? 'Dom'
 					html                     = render_dom_to_html result
@@ -3238,8 +3238,8 @@ module Drive
 		end
 
 		def interp_statement expr
-			instance = Tape::Statement.new expr.expression
-			# Capture the scope this literal was built in -- see Tape::Statement's class comment.
+			instance = Disk::Statement.new expr.expression
+			# Capture the scope this literal was built in -- see Disk::Statement's class comment.
 			instance.captured_scope = stack.last
 			link_instance_to_type instance, 'Statement'
 
@@ -3253,7 +3253,7 @@ module Drive
 			instance
 		end
 
-		# Enforces use_caller_scope/memoize for an already-built Tape::Statement (#interp_call's `Tape::Statement` branch). Immediate `` `expr`() `` and backtick items in percent/array literals never build a real Statement, so they skip this entirely.
+		# Enforces use_caller_scope/memoize for an already-built Disk::Statement (#interp_call's `Disk::Statement` branch). Immediate `` `expr`() `` and backtick items in percent/array literals never build a real Statement, so they skip this entirely.
 		def invoke_statement statement
 			return statement['_memoized_value'] if statement['memoize'] && statement['_memoized']
 
@@ -3274,23 +3274,23 @@ module Drive
 			result
 		end
 
-		# @param expr [Tape::Fence_Expr]
+		# @param expr [Disk::Fence_Expr]
 		def interp_fence expr
 			# `expr.value` is the fence's body wrapped in a String_Expr, not yet interpreted -- passing
-			# it straight to Tape::Fence.Self (as this used to) stored the raw AST node as the fence's
+			# it straight to Disk::Fence.Self (as this used to) stored the raw AST node as the fence's
 			# own value, so `@puts`ing a fence printed an object dump instead of its text. Interpret it
 			# first, same as any other String_Expr, to get the real Ruby string.
 			#
-			# `Fence | String {}` (tapes/fence.tape, loaded by tapes/global.tape) is the real declared
-			# Drive-level type for this -- link to it, not 'String' directly, mirroring Tape::Fence <
-			# Tape::String on the Ruby side. Without linking to *some* declared type here, #stringify_
+			# `Fence | String {}` (disks/fence.disk, loaded by disks/global.disk) is the real declared
+			# Drive-level type for this -- link to it, not 'String' directly, mirroring Disk::Fence <
+			# Disk::String on the Ruby side. Without linking to *some* declared type here, #stringify_
 			# for_display's `to_s`/`to_string` lookup finds nothing and falls back to returning the
 			# raw Ruby instance, which is what was actually causing the object dump -- not just the
 			# un-interpreted value fixed above.
-			finish_intrinsic_instance Tape::Fence.new(interpret(expr.value)), 'Fence' # note: Tape::Fence extends Tape::String
+			finish_intrinsic_instance Disk::Fence.new(interpret(expr.value)), 'Fence' # note: Disk::Fence extends Disk::String
 		end
 
-		# @param expr [Tape::Html_Fence_Expr]
+		# @param expr [Disk::Html_Fence_Expr]
 		def interp_html_fence expr
 			interp_string expr.body
 		end
@@ -3299,16 +3299,16 @@ module Drive
 		# so every instance of every composing type would share the exact same object. Func/bare Type
 		# values are untouched -- those are meant to stay shared.
 		def dup_composed_value value
-			return value unless value.is_a? Tape::Instance
+			return value unless value.is_a? Disk::Instance
 
 			duped              = value.dup
 			duped.declarations = value.declarations.dup
 
 			case duped
-			when Tape::Array
+			when Disk::Array
 				duped.values                 = duped.values.dup
 				duped.declarations['values'] = duped.values
-			when Tape::Dictionary
+			when Disk::Dictionary
 				duped.hash                 = duped.hash.dup
 				duped.declarations['hash'] = duped.hash
 			end
@@ -3320,14 +3320,14 @@ module Drive
 			# These are interpreted sequentially, so there are no precedence rules. I think that'll be better in the long term because there's no magic behind their evaluation. You can ensure the correct outcome by using these operators to form the types you need.
 
 			right      = maybe_instance interpret expr.identifier
-			unless right.is_a? Tape::Scope
-				raise Tape::Invalid_Composition_With_A_Non_Scope_type.new(right)
+			unless right.is_a? Disk::Scope
+				raise Disk::Invalid_Composition_With_A_Non_Scope_type.new(right)
 			end
 			curr_scope = stack.last
 
 			case expr.operator.value
 			when '|'
-				# Union with Tape::Type
+				# Union with Disk::Type
 
 				right.declarations.each do |key, value|
 					curr_scope[key] = dup_composed_value(value) unless curr_scope.has?(key)
@@ -3339,7 +3339,7 @@ module Drive
 				curr_scope.types ||= ::Set.new
 				curr_scope.types.merge right.types
 			when '~'
-				# Removal of Tape::Type
+				# Removal of Disk::Type
 
 				operand_keys_to_remove = right.declarations.keys
 
@@ -3392,7 +3392,7 @@ module Drive
 					curr_scope[key] = dup_composed_value(right[key])
 				end
 			else
-				raise Tape::Invalid_Composition_Operator.new(expr)
+				raise Disk::Invalid_Composition_Operator.new(expr)
 			end
 		end
 
@@ -3404,7 +3404,7 @@ module Drive
 
 			expr.expressions.each do |composition_expr|
 				operand = interpret composition_expr.identifier
-				raise Tape::Invalid_Composition_With_A_Non_Struct_type.new(expr) unless operand.is_a? Tape::Struct
+				raise Disk::Invalid_Composition_With_A_Non_Struct_type.new(expr) unless operand.is_a? Disk::Struct
 
 				operand_members = operand.names.each_index.map { |i| [operand.names[i], operand.type_names[i], operand.type_objects[i], operand.values[i]] }
 
@@ -3434,7 +3434,7 @@ module Drive
 						members << member
 					end
 				else
-					raise Tape::Invalid_Composition_Operator.new(composition_expr)
+					raise Disk::Invalid_Composition_Operator.new(composition_expr)
 				end
 			end
 
@@ -3456,31 +3456,31 @@ module Drive
 			register_bare_named_struct expr.name, struct, expr
 		end
 
-		# @param for_loop_expr [Tape::For_Loop_Expr]
+		# @param for_loop_expr [Disk::For_Loop_Expr]
 		def interp_for_loop for_loop_expr
 			stride = interpret(for_loop_expr.stride) if for_loop_expr.stride
 
 			Drive.assert stride.nil? || stride.is_a?(::Integer), "Stride must be an integer" if stride
 
-			loop_type = for_loop_expr.type&.value || 'each' # one of Tape::FOR_VERBS
+			loop_type = for_loop_expr.type&.value || 'each' # one of Disk::FOR_VERBS
 			result    = nil
 
 			collection = interpret for_loop_expr.collection
 			values     = case collection
-			when Tape::Dictionary
+			when Disk::Dictionary
 				collection.hash
-			when Tape::Array
+			when Disk::Array
 				collection.values
-			when Tape::Set
+			when Disk::Set
 				collection.set.to_a
 
-			when Tape::Range
+			when Disk::Range
 				collection.range
-			when Tape::String
+			when Disk::String
 				collection.value.chars
 
-			when Tape::Struct
-				# `@.members` (an `Tape::Array` of `Tape::Member`, the `@members` ivar) is only populated when the opt-in `tapes/struct.tape` layer is loaded (see #build_struct) -- a bare Struct with no matching declared `Struct` type has nothing to iterate.
+			when Disk::Struct
+				# `@.members` (an `Disk::Array` of `Disk::Member`, the `@members` ivar) is only populated when the opt-in `disks/struct.disk` layer is loaded (see #build_struct) -- a bare Struct with no matching declared `Struct` type has nothing to iterate.
 				collection.members&.values || []
 
 			else
@@ -3499,14 +3499,14 @@ module Drive
 					push_scope scope
 					scope.declare 'it', element
 					scope.declare 'at', index
-					if collection.is_a? Tape::Dictionary
+					if collection.is_a? Disk::Dictionary
 						scope.declare 'value', element
 						scope.declare 'key', index
 					end
 					catch :skip do
 						for_loop_expr.body.each do |e|
 							body_result = interpret e
-							throw(:stop, body_result) if body_result.is_a? Tape::Return
+							throw(:stop, body_result) if body_result.is_a? Disk::Return
 						end
 					end
 				ensure
@@ -3518,9 +3518,9 @@ module Drive
 			# Initialize collection variables outside catch block so they persist after stop
 			collected = []
 			count_val = 0
-			elements  = if stride && !collection.is_a?(Tape::Dictionary)
-				# `each_slice` yields raw Ruby Arrays -- wrap each chunk as a real Tape::Array so `it` behaves like any other Drive value (`==`, `.push`, etc.), not just dot-index access (`it.0`), which already worked because #interp_dot_infix calls #maybe_instance on its receiver regardless.
-				values.each_slice(stride).map { |chunk| Tape::Array.new(chunk) }.each_with_index
+			elements  = if stride && !collection.is_a?(Disk::Dictionary)
+				# `each_slice` yields raw Ruby Arrays -- wrap each chunk as a real Disk::Array so `it` behaves like any other Drive value (`==`, `.push`, etc.), not just dot-index access (`it.0`), which already worked because #interp_dot_infix calls #maybe_instance on its receiver regardless.
+				values.each_slice(stride).map { |chunk| Disk::Array.new(chunk) }.each_with_index
 			elsif values.respond_to? :each_with_index
 				values.each_with_index
 			else
@@ -3532,7 +3532,7 @@ module Drive
 			# we've returned the collection above and are going to treat it differently
 			if elements.equal? collection
 				# todo; assert that this function takes an Int
-				raise "Cannot iterate something that doesn't respond to next(Int->Any;)\n#{for_loop_expr.inspect}" unless collection.is_a?(Tape::Instance) && collection.has?('next')
+				raise "Cannot iterate something that doesn't respond to next(Int->Any;)\n#{for_loop_expr.inspect}" unless collection.is_a?(Disk::Instance) && collection.has?('next')
 
 
 				next_function = collection.get('next') # The actual signature of this functin is next(Int->Any;)
@@ -3541,18 +3541,18 @@ module Drive
 					push_scope scope
 
 					# todo; construct a Call_Expr receiver/arguments from the original Func_Expr
-					# call = Tape::Call_Expr.new
+					# call = Disk::Call_Expr.new
 					# call.receiver = interpret next_function
 					# call.arguments = [iteration]
 					# result_of_next = interpret next_function # I need the Func_Expr
 					for_loop_body_result = catch :stop do
 						iteration            = 0
 						while true
-							call   = Tape::Call_Expr.new
+							call   = Disk::Call_Expr.new
 							result = interp_func_body next_function, call, arg_values: [iteration]
 							# todo; see how arg_values are wrapped differently from [iteration]
 
-							break if result.is_a?(Tape::Instance) && result.name == 'Done'
+							break if result.is_a?(Disk::Instance) && result.name == 'Done'
 
 							scope.declare 'it', result
 							scope.declare 'at', iteration
@@ -3561,7 +3561,7 @@ module Drive
 							catch :skip do
 								for_loop_expr.body.each do |e|
 									for_loop_body_result = interpret e
-									throw(:stop, for_loop_body_result) if for_loop_body_result.is_a? Tape::Return
+									throw(:stop, for_loop_body_result) if for_loop_body_result.is_a? Disk::Return
 								end
 							end
 						end
@@ -3573,7 +3573,7 @@ module Drive
 			else
 				stop_value = catch :stop do
 					elements.each do |element, index|
-						if collection.is_a? Tape::Dictionary
+						if collection.is_a? Disk::Dictionary
 							new_it  = element[1]
 							new_at  = element[0]
 							element = new_it
@@ -3599,13 +3599,13 @@ module Drive
 				# Assign results after catch block so partial results are preserved on stop
 				case loop_type
 				when 'map', 'select', 'reject'
-					result = Tape::Array.new(collected)
+					result = Disk::Array.new(collected)
 					link_instance_to_type result, 'Array'
 				when 'count'
 					result = count_val
 				end
 
-				result     = stop_value if stop_value.is_a? Tape::Return
+				result     = stop_value if stop_value.is_a? Disk::Return
 			end
 
 			result
@@ -3647,7 +3647,7 @@ module Drive
 					end
 				end
 
-				if expr.when_false.is_a? Tape::Conditional_Expr
+				if expr.when_false.is_a? Disk::Conditional_Expr
 					result = interp_conditional expr.when_false
 				elsif expr.when_false.is_a? ::Array
 					expr.when_false.each do |expr|
@@ -3664,7 +3664,7 @@ module Drive
 				falsy_body  = expr.type.value == 'unless' ? expr.when_true : expr.when_false
 				body        = truthy?(condition) ? truthy_body : falsy_body
 
-				if body.is_a? Tape::Conditional_Expr
+				if body.is_a? Disk::Conditional_Expr
 					interp_conditional body
 				else
 					body.each.inject(nil) do |result, expr|
@@ -3681,43 +3681,43 @@ module Drive
 			case name
 			when 'to_s'
 				subject = receiver.respond_to?(:subject) ? receiver.subject : receiver
-				label   = subject && (subject.name.is_a?(Tape::Lexeme) ? subject.name.value : subject.name)
+				label   = subject && (subject.name.is_a?(Disk::Lexeme) ? subject.name.value : subject.name)
 				label   ||= subject && subject.class.name.split('::').last
 				"@#{label}"
 			when 'puts'
 				args.each { |v| puts stringify_for_display(v, show_quotes: true) } # todo: settable output stream
-				args.length == 1 ? args.first : (args.empty? ? nil : wrap_tape_array(args)) # passthrough
+				args.length == 1 ? args.first : (args.empty? ? nil : wrap_disk_array(args)) # passthrough
 			when 'pputs' # pretty puts
 				args.each { |v| puts stringify_for_display(v, show_quotes: true) } # todo: settable output stream
-				args.length == 1 ? args.first : (args.empty? ? nil : wrap_tape_array(args)) # passthrough
+				args.length == 1 ? args.first : (args.empty? ? nil : wrap_disk_array(args)) # passthrough
 			when 'sleep'
 				args.first ? sleep(args.first) : nil
 			when 'assert'
-				raise Tape::Assert_Triggered.new(at, args[1]) unless truthy? args.first
+				raise Disk::Assert_Triggered.new(at, args[1]) unless truthy? args.first
 				args.first
 			when 'refute'
-				raise Tape::Refute_Triggered.new(at, args[1]) if truthy? args.first
+				raise Disk::Refute_Triggered.new(at, args[1]) if truthy? args.first
 				args.first
 			when 'connect'
 				require 'sequel'
 				database = args.first
 				link_instance_to_type database, 'Database'
 				unless database.get 'connection'
-					url = database.get('url') or raise Tape::Url_Not_Set_For_Database_Instance
+					url = database.get('url') or raise Disk::Url_Not_Set_For_Database_Instance
 					database.declare 'connection', Sequel.sqlite(adapter: 'sqlite', database: url)
 				end
 				database
 			when 'start_server'
 				server = args.first
-				raise Tape::Invalid_Server_Argument.new(at) unless server.is_a? Tape::Instance
-				server.port   = Integer(server.get(:port) || Tape::Server::DEFAULT_PORT)
+				raise Disk::Invalid_Server_Argument.new(at) unless server.is_a? Disk::Instance
+				server.port   = Integer(server.get(:port) || Disk::Server::DEFAULT_PORT)
 				server.routes = collect_routes_from_instance server
 				servers << server
 				start_server server # the Ruby method -- server thread, webrick, etc
 				server
 			when 'stop_server'
 				server = args.first
-				raise Tape::Invalid_Server_Argument.new(at) unless server.is_a? Tape::Instance
+				raise Disk::Invalid_Server_Argument.new(at) unless server.is_a? Disk::Instance
 				stop_server server
 				server
 			end
@@ -3726,14 +3726,14 @@ module Drive
 		# `@ruby` inside a function body -- dispatches to the enclosing scope's `proxy_<funcname>`.
 		def interp_ruby_proxy expr
 			func_scope = stack.last
-			raise Tape::Invalid_Ruby_Proxy_Usage.new(func_scope) unless func_scope.is_a? Tape::Func
+			raise Disk::Invalid_Ruby_Proxy_Usage.new(func_scope) unless func_scope.is_a? Disk::Func
 
 			func_name        = func_scope.name
 			proxy_method     = "proxy_#{func_name.value}"
 			instance_or_type = func_scope.enclosing_scope
 
 			# For a static proxy on a Type (`Record.find`), build a throwaway instance of the Ruby class so the proxy can read the Type's declarations.
-			target = if instance_or_type.instance_of?(Tape::Type) && instance_or_type.name
+			target = if instance_or_type.instance_of?(Disk::Type) && instance_or_type.name
 				ruby_class = find_ruby_class_for_type instance_or_type
 				if ruby_class
 					temp_instance              = ruby_class.new instance_or_type.name
@@ -3747,13 +3747,13 @@ module Drive
 			end
 
 			if proxy_method && !target.respond_to?(proxy_method)
-				raise Tape::Missing_Ruby_Proxy_Declaration.new target, expr
+				raise Disk::Missing_Ruby_Proxy_Declaration.new target, expr
 			end
 
 			result = target.send proxy_method, *func_scope.arguments
 
-			# A Ruby-built instance (`Tape::String.new` in a proxy) seeds `@types` from `self.class.name` -- re-wire its type identity so `===`/return-type checks pass.
-			adopt_type result, result.class.name.split('::').last if result.is_a?(Tape::Instance) && result.enclosing_scope.nil?
+			# A Ruby-built instance (`Disk::String.new` in a proxy) seeds `@types` from `self.class.name` -- re-wire its type identity so `===`/return-type checks pass.
+			adopt_type result, result.class.name.split('::').last if result.is_a?(Disk::Instance) && result.enclosing_scope.nil?
 
 			result
 		end
@@ -3767,7 +3767,7 @@ module Drive
 			word      = func.context_function_name
 			arg_exprs = call_expr.arguments || []
 
-			if Tape::Context::STACK_FUNCTIONS.include? word
+			if Disk::Context::STACK_FUNCTIONS.include? word
 				interp_context_stack_function word, arg_exprs, call_expr
 			else
 				interp_intrinsic word, arg_exprs.map { |e| interpret e }, call_expr, func.enclosing_scope
@@ -3780,7 +3780,7 @@ module Drive
 			case word
 			when 'declare'
 				data = arg_exprs.map { |e| interpret e }
-				if data.first.is_a? Tape::Struct
+				if data.first.is_a? Disk::Struct
 					data.first.members.values.each { |m| stack.last.declare(m.name, m.value, m.type) if m.name }
 					return data.first
 				end
@@ -3788,7 +3788,7 @@ module Drive
 				when 1 then stack.last.declare data[0], nil
 				when 2 then stack.last.declare data[0], data[1]
 				when 3 then stack.last.declare data[0], data[1], data[2]
-				else raise Tape::Invalid_Context_Function_Usage.new(at)
+				else raise Disk::Invalid_Context_Function_Usage.new(at)
 				end
 
 			when 'load'
@@ -3798,30 +3798,30 @@ module Drive
 			when 'push_scope'
 				# Must be a bare identifier naming something already bound -- a literal/constructor call builds a fresh object each time, so #pop_scope's identity assert could never match it later.
 				target_expr = arg_exprs.first
-				raise Tape::Invalid_Scope_Function_Argument.new(target_expr) unless target_expr.is_a?(Tape::Identifier_Expr)
+				raise Disk::Invalid_Scope_Function_Argument.new(target_expr) unless target_expr.is_a?(Disk::Identifier_Expr)
 				target = maybe_instance(interpret target_expr)
-				raise Tape::Invalid_Scope_Function_Argument.new(target_expr) unless target.is_a?(Tape::Type)
+				raise Disk::Invalid_Scope_Function_Argument.new(target_expr) unless target.is_a?(Disk::Type)
 				push_scope target
 
 			when 'pop_scope'
 				target_expr = arg_exprs.first
-				raise Tape::Invalid_Context_Function_Usage.new(at) unless target_expr
-				raise Tape::Invalid_Scope_Function_Argument.new(target_expr) unless target_expr.is_a?(Tape::Identifier_Expr)
+				raise Disk::Invalid_Context_Function_Usage.new(at) unless target_expr
+				raise Disk::Invalid_Scope_Function_Argument.new(target_expr) unless target_expr.is_a?(Disk::Identifier_Expr)
 				scope_to_pop = maybe_instance interpret target_expr
-				raise Tape::Invalid_Scope_Function_Argument.new(target_expr) unless scope_to_pop.is_a?(Tape::Type)
+				raise Disk::Invalid_Scope_Function_Argument.new(target_expr) unless scope_to_pop.is_a?(Disk::Type)
 				# By identity -- an instance and a reference to its type don't interchange.
 				Drive.assert pop_scope == scope_to_pop
 				scope_to_pop
 
 			when 'splat', 'splatr'
 				target = maybe_instance interpret(arg_exprs.first)
-				raise Tape::Invalid_Context_Function_Usage.new(at) unless target
-				raise Tape::Invalid_Scope_Function_Argument.new(arg_exprs.first) unless target.is_a?(Tape::Scope)
+				raise Disk::Invalid_Context_Function_Usage.new(at) unless target
+				raise Disk::Invalid_Scope_Function_Argument.new(arg_exprs.first) unless target.is_a?(Disk::Scope)
 				word == 'splatr' ? stack.last.add_readable_scope(target) : stack.last.add_writable_scope(target)
 				target
 
 			when 'unsplat'
-				raise Tape::Invalid_Context_Function_Usage.new(at) if arg_exprs.empty?
+				raise Disk::Invalid_Context_Function_Usage.new(at) if arg_exprs.empty?
 				target = maybe_instance interpret arg_exprs.first
 				stack.last.remove_readable_scope target
 				stack.last.remove_writable_scope target
@@ -3831,31 +3831,31 @@ module Drive
 
 		def interp_subscript expr
 			if expr.expression.expressions.count > 1
-				raise Tape::Too_Many_Subscript_Expressions.new(expr.expression)
+				raise Disk::Too_Many_Subscript_Expressions.new(expr.expression)
 			end
 
 			receiver  = maybe_instance interpret expr.receiver
 			subscript = expr.expression.expressions.first
 
 			case receiver
-			when Tape::Dictionary, Tape::Array
+			when Disk::Dictionary, Disk::Array
 				key = interpret subscript
-				# `arr[1...3]` -- a Tape::Range slice. Unwrap to the backing ::Range; the result is a raw
+				# `arr[1...3]` -- a Disk::Range slice. Unwrap to the backing ::Range; the result is a raw
 				# Ruby sub-array (or nil for an out-of-bounds start), so re-link it.
-				if key.is_a?(Tape::Range)
+				if key.is_a?(Disk::Range)
 					sliced = receiver.proxy_get key.range
-					return sliced.is_a?(::Array) ? wrap_tape_array(sliced) : sliced
+					return sliced.is_a?(::Array) ? wrap_disk_array(sliced) : sliced
 				end
 				receiver.proxy_get key
-			when Tape::Nil
+			when Disk::Nil
 				# todo: What should happen when subscripting nil? A warning of some kind maybe?
 				nil
-			when Tape::String
+			when Disk::String
 				index = interpret subscript
-				index = index.range if index.is_a?(Tape::Range) # `"abc"[0...2]`
+				index = index.range if index.is_a?(Disk::Range) # `"abc"[0...2]`
 				receiver.value[index]
 			else
-				raise Tape::Invalid_Subscript_Receiver.new expr.receiver
+				raise Disk::Invalid_Subscript_Receiver.new expr.receiver
 			end
 		end
 
@@ -3866,10 +3866,10 @@ module Drive
 			instance
 		end
 
-		# Builds (but doesn't declare) a real Tape::Enum for an Enum_Expr -- shared by #interp_enum and nested enum members (#build_enum_member).
+		# Builds (but doesn't declare) a real Disk::Enum for an Enum_Expr -- shared by #interp_enum and nested enum members (#build_enum_member).
 		def build_enum expr
 			# Named at construction, not via `.name =` after -- a later attr write never touches @declarations.
-			instance = Tape::Enum.new expr.name.value
+			instance = Disk::Enum.new expr.name.value
 			link_instance_to_type instance, 'Enum'
 
 			# Skips normal Type-construction, so Enum's own Drive-level body (keys/values/types/count, @operator ==) is run by hand.
@@ -3897,29 +3897,29 @@ module Drive
 			instance
 		end
 
-		# Links a raw Tape::Array to the real Array type so its own Drive-level methods (to_s(;), etc.) are reachable. Used by #build_enum and #build_instance_of_type.
-		def wrap_tape_array list
-			adopt_type Tape::Array.new(list), 'Array'
+		# Links a raw Disk::Array to the real Array type so its own Drive-level methods (to_s(;), etc.) are reachable. Used by #build_enum and #build_instance_of_type.
+		def wrap_disk_array list
+			adopt_type Disk::Array.new(list), 'Array'
 		end
 
-		# What a variadic param binds -- a Tape::Array linked to the `Arguments` type (see tapes/array.tape).
+		# What a variadic param binds -- a Disk::Array linked to the `Arguments` type (see disks/array.disk).
 		def wrap_arguments_array list
-			adopt_type Tape::Array.new(list), 'Arguments'
+			adopt_type Disk::Array.new(list), 'Arguments'
 		end
 
 		# Returns [name, value, type] for one enum member, per #parse_enum_expr's five member forms (see CLAUDE.md). Bare/typed-only members get a Symbol matching their own name; `:=`/`: Type =` members use their real value; nested enums recurse into #build_enum.
 		def build_enum_member member_expr
 			case member_expr
-			when Tape::Enum_Expr
+			when Disk::Enum_Expr
 				[member_expr.name.value, build_enum(member_expr), nil]
-			when Tape::Nil_Init_Expr
+			when Disk::Nil_Init_Expr
 				name = member_expr.left.value
 				[name, name.to_sym, nil]
-			when Tape::Identifier_Expr
+			when Disk::Identifier_Expr
 				name        = member_expr.value
 				member_type = member_expr.type ? find_in_stack(member_expr.type.value) : nil
 				[name, name.to_sym, member_type]
-			when Tape::Infix_Expr
+			when Disk::Infix_Expr
 				name        = member_expr.left.value
 				member_type = member_expr.left.type ? find_in_stack(member_expr.left.type.value) : nil
 				[name, interpret(member_expr.right), member_type]
@@ -3928,10 +3928,10 @@ module Drive
 
 		# Resolves a `: Type` annotation's value. A bare struct annotation (`id: <a: Number>`) interprets straight to a Struct. An Identifier_Expr carrying a trailing `\` tag (`id: Array\String`, `id: Thing\One\Two`) resolves through a synthetic Type_Expr reference so the tag chain is bound; a plain one just interprets. `type_expr` is an Identifier_Expr, not a Type_Expr (see #parse_identifier_expr), hence the synthetic reference -- same trick #interp_func_body etc. use to reuse existing dispatch.
 		def interp_type_annotation type_expr
-			return interp_struct type_expr if type_expr.is_a? Tape::Struct_Expr
+			return interp_struct type_expr if type_expr.is_a? Disk::Struct_Expr
 			return interpret type_expr unless type_expr.tag
 
-			reference      = Tape::Type_Expr.new
+			reference      = Disk::Type_Expr.new
 			reference.name = type_expr.value
 			reference.tag  = type_expr.tag
 			interp_type reference
@@ -3952,7 +3952,7 @@ module Drive
 			expr.types.each_with_index do |member, i|
 				if expr.names[i]
 					# note; Named member (e.g. `some_string: String`), the member's own identifier (`some_string`) is just a label, not something to look up; resolve its declared type instead. Named members are never spread: the name is always its namespace (`.tag.columns`), even when the value is itself a Struct.
-					if member.is_a?(Tape::Func_Signature_Expr)
+					if member.is_a?(Disk::Func_Signature_Expr)
 						# `to_s: (-> String;)` -- the member's type is the signature itself, no value.
 						types << build_func_signature(member)
 						values << nil
@@ -3975,14 +3975,14 @@ module Drive
 				else
 					value = interpret member
 
-					if single_member && value.is_a?(Tape::Struct)
+					if single_member && value.is_a?(Disk::Struct)
 						types.concat value.type_objects
 						values.concat value.values
 						names.concat value.names
 					else
 						types << value
 						# A bare Type used as the member itself (`<Number>`, schema-only, no real data yet) isn't a value -- push nil, same as a named member's own `: Type` annotation with no default does, rather than the Type object itself (which used to leak into display code expecting a real value or nil).
-						values << (value.is_a?(Tape::Type) && !value.is_a?(Tape::Instance) ? nil : wrap_string_literal_value(member, value))
+						values << (value.is_a?(Disk::Type) && !value.is_a?(Disk::Instance) ? nil : wrap_string_literal_value(member, value))
 						names << nil
 					end
 				end
@@ -3993,7 +3993,7 @@ module Drive
 			struct     = build_struct names, type_names, types, values
 
 			# A leading TYPE_IDENTIFIER before `<...>` (`Task <id: Number, done: Bool>`) makes `expr.name` a raw Lexeme -- a Bare Named Struct (see CLAUDE.md), registered globally here. `\<...>`'s inline-literal form sets `.tag.name` to a plain String instead, so it never re-triggers this.
-			if expr.name.is_a? Tape::Lexeme
+			if expr.name.is_a? Disk::Lexeme
 				repoint_struct_self_reference(struct, self_ref_stub) if self_ref_stub
 				return register_bare_named_struct(expr.name.value, struct, expr, self_ref_stub)
 			end
@@ -4008,16 +4008,16 @@ module Drive
 		# isn't a fresh / forward-declared bare named struct. #register_bare_named_struct swaps the
 		# finished struct in.
 		def predeclare_bare_named_struct_stub expr
-			return nil unless expr.name.is_a? Tape::Lexeme
+			return nil unless expr.name.is_a? Disk::Lexeme
 			name     = expr.name.value
 			existing = find_in_stack name
 
 			# `Name <>` written earlier as an empty forward declaration -- members resolve against it,
 			# and it gets filled in below (a non-empty prior shape is a real conflict, left to raise).
-			return existing if existing.is_a?(Tape::Struct) && existing.names.empty?
+			return existing if existing.is_a?(Disk::Struct) && existing.names.empty?
 			return nil unless existing.nil? && tagged_variants_for(name).empty?
 
-			stub       = Tape::Struct.new
+			stub       = Disk::Struct.new
 			stub.name  = name # `@`-only (`@.name`)
 			stub.types = ::Set[name]
 			link_instance_to_type stub, 'Struct'
@@ -4047,7 +4047,7 @@ module Drive
 				return struct
 			end
 
-			if existing.is_a?(Tape::Struct) && existing.name == name && existing.structure_declaration_equal?(struct)
+			if existing.is_a?(Disk::Struct) && existing.name == name && existing.structure_declaration_equal?(struct)
 				return existing
 			end
 
@@ -4059,21 +4059,21 @@ module Drive
 				return struct
 			end
 
-			raise Tape::Undeclared_Tagged_Type.new(expr)
+			raise Disk::Undeclared_Tagged_Type.new(expr)
 		end
 
-		# A value built directly from a string literal gets wrapped into a real Tape::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s(;) (tapes/member.tape) and Array/Dictionary/Tuple's to_s(;) (tapes/array.tape, tapes/dictionary.tape, tapes/global.tape) read `.quotation_style` straight off the value to decide how to quote it for display.
+		# A value built directly from a string literal gets wrapped into a real Disk::String carrying the literal's own `quotation_style`, instead of staying the bare Ruby string #interp_string normally returns. Struct/Member's to_s(;) (disks/member.disk) and Array/Dictionary/Tuple's to_s(;) (disks/array.disk, disks/dictionary.disk, disks/global.disk) read `.quotation_style` straight off the value to decide how to quote it for display.
 		def wrap_string_literal_value source_expr, value
-			return value unless source_expr.is_a?(Tape::String_Expr) && value.is_a?(::String)
-			finish_intrinsic_instance Tape::String.new(value, source_expr.quotation_style), 'String'
+			return value unless source_expr.is_a?(Disk::String_Expr) && value.is_a?(::String)
+			finish_intrinsic_instance Disk::String.new(value, source_expr.quotation_style), 'String'
 		end
 
-		# The low-level Tape::Struct object is always built first and exactly the same way regardless of `struct_type` -- it's what #type_objects/etc. read from, and every existing member-matching call site depends on it being real.
+		# The low-level Disk::Struct object is always built first and exactly the same way regardless of `struct_type` -- it's what #type_objects/etc. read from, and every existing member-matching call site depends on it being real.
 		def build_struct names, type_names, types, values
 			struct_type = find_in_stack 'Struct'
-			struct      = Tape::Struct.new names, type_names, types, values
+			struct      = Disk::Struct.new names, type_names, types, values
 
-			unless struct_type.is_a?(Tape::Type)
+			unless struct_type.is_a?(Disk::Type)
 				link_instance_to_type struct, 'Struct'
 				return struct
 			end
@@ -4084,19 +4084,19 @@ module Drive
 			struct.enclosing_scope = struct_type
 			run_type_body_on_instance struct_type, struct
 
-			# `@.members` -- Tape::Member instances, one per member, when the `Member`/`Struct` tape layer
-			# is loaded (`tapes/struct.tape`). The plain quartet (`@names`/`@type_names`/`@type_objects`/
+			# `@.members` -- Disk::Member instances, one per member, when the `Member`/`Struct` disk layer
+			# is loaded (`disks/struct.disk`). The plain quartet (`@names`/`@type_names`/`@type_objects`/
 			# `@values`) is already on the struct from Struct#initialize.
 			member_type = find_in_stack 'Member'
-			if member_type.is_a?(Tape::Type)
+			if member_type.is_a?(Disk::Type)
 				members = names.each_index.map do |i|
 					member_display_type = names[i] ? types[i] : find_in_stack(type_names[i])
-					member              = Tape::Member.new names[i], member_display_type, values[i]
+					member              = Disk::Member.new names[i], member_display_type, values[i]
 					link_instance_to_type member, 'Member'
 					member
 				end
 
-				members_array = Tape::Array.new members
+				members_array = Disk::Array.new members
 				link_instance_to_type members_array, 'Array'
 				struct.members = members_array
 			end
@@ -4104,7 +4104,7 @@ module Drive
 			struct
 		end
 
-		# @param expr [Tape::Operator_Overload_Expr]
+		# @param expr [Disk::Operator_Overload_Expr]
 		def interp_operator_overload expr
 			# expr attrs:  func_expr(Func_Expr)  fixity(Lexeme)  precedence(Int)  value(String)
 			# This is setting up operators to be treated as regular functions, whose identifier is its operator symbols without spaces.
@@ -4115,81 +4115,81 @@ module Drive
 		# note: This is the entry point for all expressions. This is called in a loop until all expressions are evaluated, or the program crashes.
 		def interpret expr
 			case expr
-			when Tape::Number_Expr, Tape::Symbol_Expr
+			when Disk::Number_Expr, Disk::Symbol_Expr
 				expr.value
 
-			when Tape::Identifier_Expr
+			when Disk::Identifier_Expr
 				interp_identifier expr
 
-			when Tape::String_Expr
+			when Disk::String_Expr
 				interp_string expr
 
-			when Tape::Type_Expr
+			when Disk::Type_Expr
 				interp_type expr
 
-			when Tape::Route_Expr
+			when Disk::Route_Expr
 				interp_route expr
 
-			when Tape::Func_Expr
+			when Disk::Func_Expr
 				interp_func expr
 
-			when Tape::Func_Signature_Expr
+			when Disk::Func_Signature_Expr
 				interp_func_signature expr
 
-			when Tape::Composition_Expr
+			when Disk::Composition_Expr
 				# Reaching here means a bare `| Compo` showed up nested somewhere other than a type body's own top level -- #finish_type_declaration/#run_type_body_on_instance dispatch that case explicitly, bypassing this.
-				raise Tape::Composition_Outside_Type_Declaration.new(expr)
+				raise Disk::Composition_Outside_Type_Declaration.new(expr)
 
-			when Tape::Prefix_Expr
+			when Disk::Prefix_Expr
 				interp_prefix expr
 
-			when Tape::Nil_Init_Expr
+			when Disk::Nil_Init_Expr
 				# This is a special infix expression `<ident>,` that desugars to `ident = ident or nil`. left is assigned nil if it doesn't exist, or is returned if it does
 				interp_nil_init expr
 
-			when Tape::Infix_Expr
+			when Disk::Infix_Expr
 				interp_infix expr
 
-			when Tape::Postfix_Expr
+			when Disk::Postfix_Expr
 				interp_postfix expr
 
-			when Tape::Percent_Literal_Expr
+			when Disk::Percent_Literal_Expr
 				interp_percent_literal expr
 
-			when Tape::Circumfix_Expr
+			when Disk::Circumfix_Expr
 				interp_circumfix expr
 
-			when Tape::Call_Expr
+			when Disk::Call_Expr
 				interp_call expr
 
-			when Tape::For_Loop_Expr
+			when Disk::For_Loop_Expr
 				interp_for_loop expr
 
-			when Tape::Conditional_Expr
+			when Disk::Conditional_Expr
 				interp_conditional expr
 
-			when Tape::Array_Index_Expr
+			when Disk::Array_Index_Expr
 				maybe_instance expr.indices_in_order
 
-			when Tape::Subscript_Expr
+			when Disk::Subscript_Expr
 				interp_subscript expr
 
-			when Tape::Statement_Expr
+			when Disk::Statement_Expr
 				interp_statement expr
 
-			when Tape::Fence_Expr
+			when Disk::Fence_Expr
 				interp_fence expr
 
-			when Tape::Html_Fence_Expr
+			when Disk::Html_Fence_Expr
 				interp_html_fence expr
 
-			when Tape::Comment_Expr
+			when Disk::Comment_Expr
 				expr.value
 
-			when Tape::Operator_Overload_Expr
+			when Disk::Operator_Overload_Expr
 				interp_operator_overload expr
 
-			when Tape::Operator_Expr
+			when Disk::Operator_Expr
 				case expr.value
 				when 'skip'
 					throw :skip
@@ -4197,17 +4197,17 @@ module Drive
 					throw :stop
 				end
 
-			when Tape::Struct_Expr
+			when Disk::Struct_Expr
 				interp_struct expr
 
-			when Tape::Enum_Expr
+			when Disk::Enum_Expr
 				interp_enum expr
 
 			when nil
 				maybe_instance nil
 
 			else
-				raise Tape::Interpret_Expr_Not_Implemented.new(expr)
+				raise Disk::Interpret_Expr_Not_Implemented.new(expr)
 			end
 		end
 	end

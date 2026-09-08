@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	# name: String
 	# type: Any
 	# value: Any

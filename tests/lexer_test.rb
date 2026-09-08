@@ -7,14 +7,14 @@ class Lexer_Test < Base_Test
 		out = Drive.lex '# single line comment'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line comment', out.first.value
-		assert_kind_of Tape::Lexeme, out.first
+		assert_kind_of Disk::Lexeme, out.first
 	end
 
 	def test_block_comment
 		out = Drive.lex '###single line block comment###'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line block comment', out.first.value
-		assert_kind_of Tape::Lexeme, out.first
+		assert_kind_of Disk::Lexeme, out.first
 
 		out = Drive.lex '###multi
 		line
@@ -22,7 +22,7 @@ class Lexer_Test < Base_Test
 		comment###'
 		assert_equal :comment, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Tape::Lexeme, out.first
+		assert_kind_of Disk::Lexeme, out.first
 
 		# a lone `#` or `##` inside a block comment's body shouldn't close it early -- only a real ### does
 		out = Drive.lex "###\n# not a real comment\n## still not\n###"
@@ -45,7 +45,7 @@ class Lexer_Test < Base_Test
 		out = Drive.lex '```single line fence block```'
 		assert_equal :fence, out.first.type
 		assert_equal 'single line fence block', out.first.value
-		assert_kind_of Tape::Lexeme, out.first
+		assert_kind_of Disk::Lexeme, out.first
 
 		out = Drive.lex '```multi
 		line
@@ -53,7 +53,7 @@ class Lexer_Test < Base_Test
 		block```'
 		assert_equal :fence, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Tape::Lexeme, out.first
+		assert_kind_of Disk::Lexeme, out.first
 
 		# a longer run of backticks on the outer marker safely nests a same-length (or shorter) ``` inside, mirroring Markdown's own fence-nesting rule
 		out = Drive.lex "`````\nouter\n```\ninner-looking, but shorter than the outer marker\n```\nouter again\n`````"
@@ -67,7 +67,7 @@ class Lexer_Test < Base_Test
 		tests.all? do |code, type|
 			out = Drive.lex code
 			assert_equal type, out.first.type
-			assert_kind_of Tape::Lexeme, out.first
+			assert_kind_of Disk::Lexeme, out.first
 		end
 	end
 
@@ -124,11 +124,11 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_unterminated_string_literal
-		assert_raises Tape::Unterminated_String_Literal do
+		assert_raises Disk::Unterminated_String_Literal do
 			Drive.lex '"test\\'
 		end
 
-		assert_raises Tape::Unterminated_String_Literal do
+		assert_raises Disk::Unterminated_String_Literal do
 			Drive.lex "'test\\"
 		end
 	end
@@ -336,7 +336,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_compound_operators
-		Tape::COMPOUND_OPERATORS.each do |operator|
+		Disk::COMPOUND_OPERATORS.each do |operator|
 			out = Drive.lex operator
 			assert_equal operator, out.first.value
 		end
@@ -412,7 +412,7 @@ class Lexer_Test < Base_Test
 	def test_unpack_prefix
 		out = Drive.lex '@instance_to_unpack'
 		assert_equal :operator, out.first.type
-		assert_equal Tape::CONTEXT_OPERATOR, out.first.value
+		assert_equal Disk::CONTEXT_OPERATOR, out.first.value
 		assert_equal :identifier, out.last.type
 		assert_equal 'instance_to_unpack', out.last.value
 	end

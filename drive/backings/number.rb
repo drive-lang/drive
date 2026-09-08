@@ -1,6 +1,6 @@
 require 'bigdecimal'
 
-module Tape
+module Disk
 	# Base of the numeric family, mirroring Ruby's own `Numeric`. A bare literal never lands here --
 	# `#maybe_instance` builds an `Integer` / `Float` / `Decimal` (below) directly off the Ruby value's
 	# class. `Number` itself is what those compose, the type an annotation like `x: Number` names, and

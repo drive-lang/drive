@@ -5,21 +5,21 @@ require_relative 'base_test'
 class Structs_Test < Base_Test
 	def test_parses_standalone_struct_literal
 		out = Drive.parse '<String, Number>'
-		assert_kind_of Tape::Struct_Expr, out.first
+		assert_kind_of Disk::Struct_Expr, out.first
 		assert_equal %w(String Number), out.first.types.map(&:value)
 	end
 
 	def test_parses_standalone_struct_literal_with_single_type
 		out = Drive.parse '<String>'
-		assert_kind_of Tape::Struct_Expr, out.first
+		assert_kind_of Disk::Struct_Expr, out.first
 		assert_equal %w(String), out.first.types.map(&:value)
 	end
 
 	def test_parses_type_declaration_with_struct
 		out = Drive.parse 'Array\\<String> {}'
-		assert_kind_of Tape::Type_Expr, out.first
+		assert_kind_of Disk::Type_Expr, out.first
 		assert_equal 'Array', out.first.name
-		assert_kind_of Tape::Struct_Expr, out.first.tag
+		assert_kind_of Disk::Struct_Expr, out.first.tag
 		assert_equal %w(String), out.first.tag.types.map(&:value)
 	end
 
@@ -35,7 +35,7 @@ class Structs_Test < Base_Test
 
 	def test_struct_members_can_be_arbitrary_expressions
 		out = Drive.parse 'Abc\\<1+2+3/123>'
-		assert_kind_of Tape::Infix_Expr, out.first.tag.types.first
+		assert_kind_of Disk::Infix_Expr, out.first.tag.types.first
 
 		result = Drive.interp "Abc {}
 		Abc\\<Number> {}
@@ -53,7 +53,7 @@ class Structs_Test < Base_Test
 
 		# Declaration then reference resolves, same as the bracketed form.
 		bare_type = Drive.interp "Abc\\7 {}\nAbc\\7"
-		assert_kind_of Tape::Type, bare_type
+		assert_kind_of Disk::Type, bare_type
 
 		# As a struct member annotation, the surrounding named struct still registers -- the misparse this
 		# guards against used to leave `\` and `123` as two extra nil-named members, which silently
@@ -70,12 +70,12 @@ class Structs_Test < Base_Test
 
 	def test_interprets_standalone_struct_literal_to_struct_instance
 		out = Drive.interp '<String, Number>'
-		assert_kind_of Tape::Struct, out
+		assert_kind_of Disk::Struct, out
 		assert_equal 'String', out.type_objects[0].name
 		assert_equal 'Number', out.type_objects[1].name
 	end
 
-	def test_struct_instance_types_accessible_from_tape
+	def test_struct_instance_types_accessible_from_disk
 		out = Drive.interp "g := <String, Number>
 		g.@types"
 		assert_equal 'String', out.values[0].name
@@ -92,7 +92,7 @@ class Structs_Test < Base_Test
 	def test_type_with_struct_still_composes_normally
 		refute_raises do
 			out = Drive.interp 'Array\\<String> {}'
-			assert_kind_of Tape::Type, out
+			assert_kind_of Disk::Type, out
 			assert_equal 'Array', out.name
 		end
 	end
@@ -123,13 +123,13 @@ class Structs_Test < Base_Test
 
 	def test_annotation_form_captures_struct
 		out = Drive.parse 'x: Abc\\<Number>'
-		assert_kind_of Tape::Struct_Expr, out.first.tag
+		assert_kind_of Disk::Struct_Expr, out.first.tag
 		assert_equal %w(Number), out.first.tag.types.map(&:value)
 	end
 
 	def test_bare_struct_annotation_with_no_type_name
 		out = Drive.parse 'thing: <String, Number>'
-		assert_kind_of Tape::Struct_Expr, out.first.type
+		assert_kind_of Disk::Struct_Expr, out.first.type
 		assert_equal %w(String Number), out.first.type.types.map(&:value)
 	end
 
@@ -244,10 +244,10 @@ class Structs_Test < Base_Test
 	end
 
 	def test_structure_declaration_equal_compares_names_and_types
-		dict_a = Tape::Struct.new(['dict'], ['Dictionary'], [nil])
-		dict_b = Tape::Struct.new(['dict'], ['Dictionary'], [nil])
-		other  = Tape::Struct.new(['other'], ['Dictionary'], [nil]) # same type, different name
-		number = Tape::Struct.new(['dict'], ['Number'], [nil]) # same name, different type
+		dict_a = Disk::Struct.new(['dict'], ['Dictionary'], [nil])
+		dict_b = Disk::Struct.new(['dict'], ['Dictionary'], [nil])
+		other  = Disk::Struct.new(['other'], ['Dictionary'], [nil]) # same type, different name
+		number = Disk::Struct.new(['dict'], ['Number'], [nil]) # same name, different type
 
 		assert dict_a.structure_declaration_equal?(dict_b)
 		refute dict_a.structure_declaration_equal?(other)
@@ -257,7 +257,7 @@ class Structs_Test < Base_Test
 	# Reference matching (`String<{x=1}>()`) never supplies member names, so it only ever compares
 	# against `type_names` -- names exist purely to keep declarations distinct from each other.
 	def test_tag_satisfied_by_candidates_ignores_names
-		declared = Tape::Struct.new(['dict'], ['Dictionary'], [nil])
+		declared = Disk::Struct.new(['dict'], ['Dictionary'], [nil])
 
 		assert declared.satisfied_by_candidates?([['Dictionary']])
 		refute declared.satisfied_by_candidates?([['Number']])
@@ -338,7 +338,7 @@ class Structs_Test < Base_Test
 
 	# An empty `Name <>` is a forward declaration -- a later `Name <...>` fills it in rather than
 	# raising the different-shape error (which still applies to two genuinely non-empty shapes). This
-	# is the spelling that lets `enclosing_scope: Scope` resolve inside `tapes/scopes.tape` without
+	# is the spelling that lets `enclosing_scope: Scope` resolve inside `disks/scopes.disk` without
 	# the one-shot self-reference above.
 	def test_empty_bare_named_struct_is_a_forward_declaration
 		out = Drive.interp <<~CODE
@@ -367,7 +367,7 @@ class Structs_Test < Base_Test
 	# Filling in a forward declaration and *then* trying a third, different shape still raises --
 	# only the empty placeholder is special, not every prior shape.
 	def test_forward_declared_struct_still_rejects_a_later_shape_change
-		assert_raises Tape::Undeclared_Tagged_Type do
+		assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    N <>
 			    N <a: Number>
@@ -396,7 +396,7 @@ class Structs_Test < Base_Test
 
 	# A genuinely different shape under the same name still raises, unchanged.
 	def test_redeclaring_bare_named_struct_with_a_different_shape_still_raises
-		assert_raises Tape::Undeclared_Tagged_Type do
+		assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    Task <id: Number>
 			    Task <id: String>
@@ -430,7 +430,7 @@ class Structs_Test < Base_Test
 
 	# Unnamed members have no such identity besides position -- reordering those still counts as a different tag and raises, same as any other shape mismatch.
 	def test_redeclaring_unnamed_tagged_type_with_reordered_members_still_raises
-		assert_raises Tape::Undeclared_Tagged_Type do
+		assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    Abc\\<Number, String> {}
 			    Abc\\<String, Number>
@@ -439,7 +439,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_reference_to_mismatched_declared_tag_raises
-		assert_raises Tape::Undeclared_Tagged_Type do
+		assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    Abc\\<Number> {}
 			    Abc\\<String>
@@ -449,7 +449,7 @@ class Structs_Test < Base_Test
 
 	# Undeclared_Type_Structure's own message-rendering used to crash (NoMethodError inside Struct_Expr#to_s) when the mismatched struct had a named member with no `: Type` annotation (`done := false` -- `.type` is nil, unlike `.type.value` this code blindly read). assert_raises here would surface that NoMethodError instead of the real error if this regressed.
 	def test_mismatched_structure_error_message_renders_untyped_member_without_crashing
-		error = assert_raises Tape::Undeclared_Tagged_Type do
+		error = assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    Task <id: String>
 			    Task <
@@ -593,7 +593,7 @@ class Structs_Test < Base_Test
 
 	# A genuinely ambiguous name (2+ declared variants) still can't resolve on its own -- there'd be no way to know which variant a bare `X()` should build.
 	def test_tagged_type_bare_name_stays_unreachable_when_ambiguous
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    X\\<a: Number> {}
 			    X\\<b: String> {}
@@ -641,7 +641,7 @@ class Structs_Test < Base_Test
 
 	def test_tagged_reference_has_members_populated
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    Abc\\<dict: Dictionary> {
 		    	Self (;)
 		    }
@@ -655,26 +655,26 @@ class Structs_Test < Base_Test
 
 	def test_members_array_stays_positionally_aligned_with_unnamed_members
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    s := <name: String, Number>('Alice', 42)
 		    s.@members
 		CODE
 		assert_equal 2, out.values.length
 		assert_equal 'name', out.values[0].name
-		# .value is wrapped (Tape::String, carrying quotation_style) -- .value.value unwraps to the raw content.
+		# .value is wrapped (Disk::String, carrying quotation_style) -- .value.value unwraps to the raw content.
 		assert_equal 'Alice', out.values[0].value.value
 		assert_nil out.values[1].name
 		assert_equal 42, out.values[1].value
 	end
 
 	def test_bare_struct_literal_with_computed_value_parses
-		assert_kind_of Tape::Struct, Drive.interp('<123>')
+		assert_kind_of Disk::Struct, Drive.interp('<123>')
 		assert_equal [3], Drive.interp('<1+2+3/123>').values
 		assert_equal [3], Drive.interp('x := <1+2+3/123>
 			x').values
 	end
 
-	# `for` over a Struct iterates its `.members` (Tape::Member instances, populated via `tapes/struct.tape`, loaded by default) -- regression: used to call a nonexistent method and raise NoMethodError unconditionally.
+	# `for` over a Struct iterates its `.members` (Disk::Member instances, populated via `disks/struct.disk`, loaded by default) -- regression: used to call a nonexistent method and raise NoMethodError unconditionally.
 	def test_for_loop_over_struct_iterates_members
 		out = Drive.interp <<~CODE
 		    s := <name: String, age: Number>('Alice', 30)
@@ -685,7 +685,7 @@ class Structs_Test < Base_Test
 		CODE
 		assert_equal ['name', 'age'], out.values
 
-		# With the standard library not loaded at all, a bare Struct has no `.members` to read (`tapes/struct.tape` never ran) -- iterates zero elements rather than raising.
+		# With the standard library not loaded at all, a bare Struct has no `.members` to read (`disks/struct.disk` never ran) -- iterates zero elements rather than raising.
 		refute_raises do
 			out = Drive.interp(<<~CODE, load_standard_library: false)
 			    s := <1, 2, 3>
@@ -701,7 +701,7 @@ class Structs_Test < Base_Test
 
 	# A struct member's only two named forms are `name: Type` and `name := value` -- there's no general `name: value` the way Dictionaries have. A lowercase value right after `:` used to be silently accepted: #parse_identifier_expr's own `: Type` lookahead declined to consume the `:` (since a lowercase identifier can never be a type), leaving it for the next loop iteration to reparse as an unrelated `:symbol` prefix literal -- `<columns: cols>` silently became the two elements `columns, :cols` instead of raising anywhere.
 	def test_lowercase_value_after_colon_in_struct_raises
-		assert_raises Tape::Invalid_Struct_Member_Annotation do
+		assert_raises Disk::Invalid_Struct_Member_Annotation do
 			Drive.interp 'columns := 99
 				<columns: cols>'
 		end
@@ -715,7 +715,7 @@ class Structs_Test < Base_Test
 
 		out = Drive.interp 'cols := <name: String>
 			<columns := cols>'
-		assert_kind_of Tape::Struct, out.values.first
+		assert_kind_of Disk::Struct, out.values.first
 	end
 
 	# A struct member's type can be a func signature (`to_s: (-> String;)`) -- looks like a function
@@ -723,8 +723,8 @@ class Structs_Test < Base_Test
 	def test_struct_member_can_be_typed_with_a_func_signature
 		out = Drive.parse 'Api <name: String, run: (Number -> Number;), reset: (;)>'
 		assert_equal %w(name run reset), out.first.names
-		assert_kind_of Tape::Func_Signature_Expr, out.first.types[1]
-		assert_kind_of Tape::Func_Signature_Expr, out.first.types[2] # no return type, still a signature via the `:` form
+		assert_kind_of Disk::Func_Signature_Expr, out.first.types[1]
+		assert_kind_of Disk::Func_Signature_Expr, out.first.types[2] # no return type, still a signature via the `:` form
 
 		# The member is a real, named slot -- nil until assigned, name reflected.
 		out = Drive.interp <<~CODE
@@ -739,14 +739,14 @@ class Structs_Test < Base_Test
 	def test_struct_typed_param_parses
 		out   = Drive.parse 'f ( right: <name: String, type: Any, value: Any>; right )'
 		param = out.first.parameters.first
-		assert_kind_of Tape::Struct_Expr, param.type
+		assert_kind_of Disk::Struct_Expr, param.type
 		assert_equal %w(name type value), param.type.names
 		assert_equal %w(String Any Any), param.type.types.map { |member| member.type.value }
 	end
 
 	def test_struct_typed_param_accepts_structurally_compatible_argument
 		refute_raises do
-			out = Drive.interp "@load 'tapes/member.tape'
+			out = Drive.interp "@load 'disks/member.disk'
 				f ( right: <name: String, type: Any, value: Any>; right.name )
 				m := Member('x', String, 4)
 				f(m)"
@@ -755,7 +755,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_struct_typed_param_raises_for_missing_member
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'f ( right: <name: String, type: Any, value: Any>; right )
 				f(nil)'
 		end
@@ -763,7 +763,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_struct_typed_param_raises_for_wrong_member_type
-		error = assert_raises Tape::Type_Contract_Violation do
+		error = assert_raises Disk::Type_Contract_Violation do
 			Drive.interp 'Thing { name := 4 }
 				f ( right: <name: String>; right )
 				f(Thing())'
@@ -783,7 +783,7 @@ class Structs_Test < Base_Test
 
 	def test_struct_typed_param_works_on_operator_overloads
 		refute_raises do
-			out = Drive.interp "@load 'tapes/member.tape'
+			out = Drive.interp "@load 'disks/member.disk'
 				Thing {
 					@operator ~ @infix ( left, right: <name: String>; right.name )
 				}
@@ -792,7 +792,7 @@ class Structs_Test < Base_Test
 			assert_equal 'x', out
 		end
 
-		assert_raises Tape::Type_Contract_Violation do
+		assert_raises Disk::Type_Contract_Violation do
 			Drive.interp "Thing {
 				@operator ~ @infix ( left, right: <name: String>; right.name )
 			}
@@ -815,7 +815,7 @@ class Structs_Test < Base_Test
 		out   = Drive.parse 'f ( x: Abc\\<Number>; x )'
 		param = out.first.parameters.first
 		assert_equal 'Abc', param.type.value
-		assert_kind_of Tape::Struct_Expr, param.type.tag
+		assert_kind_of Disk::Struct_Expr, param.type.tag
 		assert_equal 'Abc', param.type.tag.name
 	end
 
@@ -860,7 +860,7 @@ class Structs_Test < Base_Test
 
 	# `\Name` accepts a Struct or a Type (wrapped like `\<Type>` would build) -- a plain value isn't a valid target for either.
 	def test_named_reference_must_resolve_to_a_type_or_struct
-		assert_raises Tape::Tag_Reference_Must_Be_Type_Or_Struct do
+		assert_raises Disk::Tag_Reference_Must_Be_Type_Or_Struct do
 			Drive.interp <<~CODE
 			    X := 5
 			    Array\\X {}
@@ -938,7 +938,7 @@ class Structs_Test < Base_Test
 	# --- Bare Named Structs (`Ident <...>`, no `\`) interacting with real declared Types ---
 
 	def test_bare_named_struct_conflicting_with_an_existing_type_raises
-		assert_raises Tape::Undeclared_Tagged_Type do
+		assert_raises Disk::Undeclared_Tagged_Type do
 			Drive.interp <<~CODE
 			    Task\\<a: Number> {}
 			    Task <b: String>
@@ -949,7 +949,7 @@ class Structs_Test < Base_Test
 	# --- Tag-aware `=X=` comparison operators ---
 
 	# Regression: `interp_comparison_infix` read `tag_instance&.types` for a struct's per-member
-	# types, but Tape::Struct < Instance < Type also inherits Type's own `.types` (the composed-type-name
+	# types, but Disk::Struct < Instance < Type also inherits Type's own `.types` (the composed-type-name
 	# Set, e.g. `Set['Struct']` -- the SAME for every struct regardless of its actual members), so a
 	# plain Ruby method call shadowed the real per-member list. Every differently-tagged type compared
 	# `===`-equal to every other one, no matter what it was actually tagged with.
@@ -1010,7 +1010,7 @@ class Structs_Test < Base_Test
 	# actually being inside a `<...>` (never firing for a real `8 >> 2`) and on a lone `>` being able to
 	# stop parsing right there anyway.
 	def test_nested_struct_closing_angles_parse_regression
-		out = refute_raises Tape::Out_Of_Tokens do
+		out = refute_raises Disk::Out_Of_Tokens do
 			Drive.interp <<~CODE
 			    s := <id: Array\\<String>>
 			    s.@members.first().type.tag.@type_names.first()
@@ -1105,7 +1105,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_tag_reassignment_rejects_a_value_that_does_not_compose_the_current_tag
-		assert_raises Tape::Tag_Signature_Violation do
+		assert_raises Disk::Tag_Signature_Violation do
 			Drive.interp <<~CODE
 			    Base {} Other {}
 			    Thing\\Base {}
@@ -1117,7 +1117,7 @@ class Structs_Test < Base_Test
 
 	# `.tag` is only writable on a value whose type was declared with a tag.
 	def test_tag_reassignment_on_untagged_type_raises_undeclared
-		assert_raises Tape::Cannot_Assign_Undeclared_Identifier do
+		assert_raises Disk::Cannot_Assign_Undeclared_Identifier do
 			Drive.interp <<~CODE
 			    Thingy {}
 			    t := Thingy()
@@ -1131,10 +1131,10 @@ class Structs_Test < Base_Test
 	def test_parses_struct_composition_trailing_body
 		out = Drive.parse 'Both | Abc | Def <>'
 		expr = out.first
-		assert_kind_of Tape::Type_Expr, expr
+		assert_kind_of Disk::Type_Expr, expr
 		assert_equal 'Both', expr.name
 		refute expr.anonymous_composition
-		assert_kind_of Tape::Struct_Expr, expr.struct_body
+		assert_kind_of Disk::Struct_Expr, expr.struct_body
 		assert_equal [], expr.struct_body.names
 		assert_equal 2, expr.expressions.length
 	end
@@ -1150,7 +1150,7 @@ class Structs_Test < Base_Test
 	def test_composition_followed_by_real_comparison_still_parses_as_comparison
 		out = Drive.parse 'x := A | B < 5'
 		infix = out.first.right
-		assert_kind_of Tape::Infix_Expr, infix
+		assert_kind_of Disk::Infix_Expr, infix
 		assert_equal '<', infix.operator.value
 	end
 
@@ -1264,7 +1264,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_struct_composition_operand_that_is_not_a_struct_raises
-		assert_raises Tape::Invalid_Composition_With_A_Non_Struct_type do
+		assert_raises Disk::Invalid_Composition_With_A_Non_Struct_type do
 			Drive.interp <<~CODE
 			    Abc <abc: Int>
 			    Real_Type {}
@@ -1287,7 +1287,7 @@ class Structs_Test < Base_Test
 		end
 	end
 
-	# Positional `.N` dot-index -- same mechanism Array/Tuple already use (#array_index_value only ever needs `.values`, which every Tape::Struct already has), so it works unchanged for a struct too.
+	# Positional `.N` dot-index -- same mechanism Array/Tuple already use (#array_index_value only ever needs `.values`, which every Disk::Struct already has), so it works unchanged for a struct too.
 
 	def test_struct_positional_index_on_an_instance
 		out = Drive.interp "s := <'a', 'b'>
@@ -1312,7 +1312,7 @@ class Structs_Test < Base_Test
 	end
 
 	def test_struct_positional_index_out_of_bounds_raises
-		assert_raises Tape::Invalid_Array_Index do
+		assert_raises Disk::Invalid_Array_Index do
 			Drive.interp '<1, 2>.5'
 		end
 	end

@@ -22,8 +22,8 @@ class Advent_Of_Code_Test < Base_Test
 
 	SOLVED.each do |day|
 		define_method "test_2015_#{day}" do
-			assert Drive.interp_file("demos/aoc/2015/#{day}.tape"),
-			       "demos/aoc/2015/#{day}.tape did not return a truthy answer check"
+			assert Drive.interp_file("demos/aoc/2015/#{day}.disk"),
+			       "demos/aoc/2015/#{day}.disk did not return a truthy answer check"
 		end
 	end
 

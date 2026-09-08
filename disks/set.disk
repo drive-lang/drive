@@ -1,0 +1,166 @@
+# Anything the Ruby backing's `to_ruby_set` accepts as a seed / operand -- a composed type that
+# carries the declarations of all three, so a value composing any of them satisfies `: Set_Like`.
+Set_Like := Set | Array | Range
+
+Set {
+	# An unordered collection of unique items, backed by a Ruby Set (src/external/ruby/set.rb).
+	# No literal syntax -- build one with `Set()` or `Set([1, 2, 3])` (an Array, another Set, or a
+	# Range all work as the seed).
+
+	Self ( items: Set_Like := [];
+		self.merge(items)
+	)
+
+	# --- mutating primitives (each returns self) ---
+	add ( item: Any -> Set; @ruby )
+	insert := add
+	delete ( item -> Set; @ruby )
+	remove := delete
+	merge ( other: Set_Like -> Set; @ruby )   # fold every item of an Array/Set/Range in
+	clear (-> Set; @ruby )
+
+	# --- queries ---
+	# note; Implemented in Drive (not @ruby), same reasoning as disks/array.disk's `include?` -- a
+	# @ruby proxy falls through to Ruby's Set#include? (hash/eql? identity), which never sees an
+	# Drive-level `@operator ==` on a custom element type. Insertion dedup still uses Ruby identity
+	# for non-primitive elements, though -- honoring a custom `==` there would mean giving up the
+	# Ruby Set backing entirely.
+	include? ( item -> Bool;
+		for values()
+			if it == item
+				return true
+			end
+		end
+		false
+	)
+	has? := include?
+	member? := include?
+	length (-> Number; @ruby )
+	count := length
+	size := length
+	empty? (-> Bool; @ruby )
+	values (-> Array; @ruby )   # a fresh Array snapshot -- safe to mutate
+	to_a := values
+	subset? ( other: Set_Like -> Bool; @ruby )
+	superset? ( other: Set_Like -> Bool; @ruby )
+	disjoint? ( other: Set_Like -> Bool; @ruby )
+	intersect? ( other: Set_Like -> Bool; @ruby )
+
+	# --- set algebra (return a new, independent Set) ---
+	union ( other: Set_Like -> Set;
+		Set([values(), Set(other).values()].flatten())
+	)
+
+	intersection ( other: Set_Like -> Set;
+		right  := Set(other)
+		result := Set()
+		for values()
+			if right.include?(it)
+				result.add(it)
+			end
+		end
+		result
+	)
+
+	difference ( other: Set_Like -> Set;
+		right  := Set(other)
+		result := Set()
+		for values()
+			unless right.include?(it)
+				result.add(it)
+			end
+		end
+		result
+	)
+
+	symmetric_difference ( other: Set_Like -> Set;
+		right := Set(other)
+		union(right).difference(intersection(right))
+	)
+
+	dup (-> Set;
+		Set(values())
+	)
+	clone := dup
+
+	# --- iteration ---
+	each ( func -> Set;
+		for values()
+			func(it)
+		end
+		self
+	)
+
+	map ( func -> Array;
+		result := []
+		for values()
+			result.push(func(it))
+		end
+		result
+	)
+
+	filter ( func -> Set;
+		result := Set()
+		for values()
+			if func(it)
+				result.add(it)
+			end
+		end
+		result
+	)
+	select := filter
+
+	find ( func;
+		for values()
+			if func(it)
+				return it
+			end
+		end
+		nil
+	)
+
+	any? ( func -> Bool;
+		for values()
+			if func(it)
+				return true
+			end
+		end
+		false
+	)
+
+	all? ( func -> Bool;
+		for values()
+			if !func(it)
+				return false
+			end
+		end
+		true
+	)
+
+	to_s (;
+		pieces := values().map((it; if it === String
+			it.to_string()
+		else
+			"`it`"
+		end ))
+		"Set{`pieces.join(', ')`}"
+	)
+
+	# note; Element comparison goes through the interpreter (same reasoning as disks/array.disk's
+	# `==`) so a custom element type's own `@operator ==` overload is honored. `|`/`&`/`-`/`^` are
+	# handled by the Ruby backing -- #interp_logical_infix / #interp_arithmetic_infix reach those
+	# directly and #maybe_instance re-links the result on the next dot access.
+	@operator == @infix ( left, right;
+		if !right or left.length() != right.length()
+			return false
+		end
+
+		for left.values()
+			unless right.include?(it)
+				return false
+			end
+		end
+
+		true
+	)
+}

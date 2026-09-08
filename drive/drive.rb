@@ -1,9 +1,9 @@
 require_relative 'shared/constants'
 
-# Drive is the engine (lexer, parser, interpreter, and the other pipeline systems); Tape is the language's runtime vocabulary it operates on: the AST, the scope hierarchy, the built-in value types, the errors, the constants. The engine works directly in that vocabulary, so every Drive pipeline class resolves Tape's names unqualified. The reverse doesn't hold: a Tape file names a pipeline class explicitly (Drive::Interpreter).
+# Drive is the engine (lexer, parser, interpreter, and the other pipeline systems); Disk is the language's runtime vocabulary it operates on: the AST, the scope hierarchy, the built-in value types, the errors, the constants. The engine works directly in that vocabulary, so every Drive pipeline class resolves Disk's names unqualified. The reverse doesn't hold: a Disk file names a pipeline class explicitly (Drive::Interpreter).
 module Drive
 	VERSION = '0.0.0'
-	include Tape
+	include Disk
 end
 
 require_relative 'shared/helpers'
@@ -14,8 +14,8 @@ require_relative 'shared/cached_by_path'
 require_relative 'shared/error_formatter'
 require_relative 'shared/documenter'
 
-# backings/ is the Tape vocabulary: the AST, the scopes, the errors, and the Ruby class behind
-# each built-in .tape type. Base types first -- the value types subclass Instance from scopes.
+# backings/ is the Disk vocabulary: the AST, the scopes, the errors, and the Ruby class behind
+# each built-in .disk type. Base types first -- the value types subclass Instance from scopes.
 require_relative 'backings/errors'
 require_relative 'backings/lexeme'
 require_relative 'backings/expressions'
@@ -53,7 +53,7 @@ require_relative 'cli'
 
 module Drive
 	ROOT_PATH             = File.expand_path('../', __dir__)
-	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'tapes', 'global.tape')
+	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'disks', 'global.disk')
 
 	extend Helpers
 

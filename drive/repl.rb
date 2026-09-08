@@ -3,7 +3,7 @@ require 'readline'
 
 module Drive
 	class REPL
-		include Tape
+		include Disk
 		HELP = <<~TEXT
 		    exit with \\q, \\x, or exit
 		    press enter to interpret an expression

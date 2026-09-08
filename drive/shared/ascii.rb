@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	module Ascii
 		STYLES = {
 			         reset:     "\e[0m",

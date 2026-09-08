@@ -4,11 +4,11 @@ require_relative 'base_test'
 
 class Type_Checker_Test < Base_Test
 	def assert_type_error & block
-		assert_raises Tape::Type_Checking_Failed, &block
+		assert_raises Disk::Type_Checking_Failed, &block
 	end
 
 	def refute_type_error & block
-		refute_raises Tape::Type_Checking_Failed, &block
+		refute_raises Disk::Type_Checking_Failed, &block
 	end
 
 	# --- Happy paths ---

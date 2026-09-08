@@ -16,18 +16,18 @@ class Regression_Test < Base_Test
 	end
 
 	def test_infixes_regression
-		Tape::COMPOUND_OPERATORS.each do |operator|
+		Disk::COMPOUND_OPERATORS.each do |operator|
 			code = "left #{operator} right"
 			out  = Drive.parse(code)
-			assert_kind_of Tape::Infix_Expr, out.first
+			assert_kind_of Disk::Infix_Expr, out.first
 		end
 	end
 
 	def test_self_scope_write_outside_instance_raises_regression
-		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
+		assert_raises Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
 			Drive.interp 'self.x := 123'
 		end
-		assert_raises Tape::Cannot_Use_Type_Scope_Operator_Outside_Type do
+		assert_raises Disk::Cannot_Use_Type_Scope_Operator_Outside_Type do
 			Drive.interp 'Self.x := 123'
 		end
 	end
@@ -48,7 +48,7 @@ class Regression_Test < Base_Test
 		# `self.x,` (nil-init) desugars the identifier and tags it with the keyword; the tag must survive
 		# being the left side of the synthesized `=`.
 		out = Drive.parse 'self.x? ,'
-		assert_kind_of Tape::Nil_Init_Expr, out.first
+		assert_kind_of Disk::Nil_Init_Expr, out.first
 		assert_equal 'self', out.first.left.scope_operator.value
 		assert_equal 'x?', out.first.left.value
 	end
@@ -75,7 +75,7 @@ class Regression_Test < Base_Test
 
 	# `Type.Self()` is deliberately not construction sugar -- it's an ordinary call to whatever `Self` resolves to (the type's own raw constructor Func), not `Type()`. No Instance is ever built, so `self.count = num` inside it has nowhere real to write.
 	def test_dot_self_call_is_not_construction_sugar_regression
-		assert_raises Tape::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
+		assert_raises Disk::Cannot_Use_Instance_Scope_Operator_Outside_Instance do
 			Drive.interp 'Widget {
 				count := 8
 
@@ -121,7 +121,7 @@ class Regression_Test < Base_Test
 		s2 := b2.to_s()
 		(b1, s1, b2, s2)
 		'
-		assert_instance_of Tape::Instance, out.values[0]
+		assert_instance_of Disk::Instance, out.values[0]
 		assert_equal "Big-box", out.values[1]
 		assert_equal "Small-box", out.values[3]
 	end
@@ -152,7 +152,7 @@ class Regression_Test < Base_Test
 		(y, a)"
 		assert_equal [4, 4], out.values
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			out = Drive.interp "
 			Thing {
 				id,
@@ -171,7 +171,7 @@ class Regression_Test < Base_Test
 			assert_equal [123, "", 456, "Thingus"], out.values
 		end
 
-		assert_raises Tape::Missing_Argument do
+		assert_raises Disk::Missing_Argument do
 			out = Drive.interp "
 			Thing {
 				id,
@@ -188,7 +188,7 @@ class Regression_Test < Base_Test
 			assert_equal [456, "Thingus"], out.values
 		end
 
-		assert_raises Tape::Missing_Argument do
+		assert_raises Disk::Missing_Argument do
 			Drive.interp "
 	        funk ( it;
 				it == true
@@ -197,7 +197,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( it;
 				it == true
@@ -206,7 +206,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( it := \"true\";
 				it == true
@@ -215,7 +215,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( it := \"false\";
 				it == true
@@ -224,7 +224,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( it := true;
 				it == true
@@ -233,7 +233,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( funkit := false;
 				funkit == true
@@ -242,7 +242,7 @@ class Regression_Test < Base_Test
 			"
 		end
 
-		refute_raises Tape::Undeclared_Identifier do
+		refute_raises Disk::Undeclared_Identifier do
 			Drive.interp "
 			funk ( it := nil;
 				it == true
@@ -343,72 +343,72 @@ class Regression_Test < Base_Test
 	end
 
 	def test_broken_static_declarations
-		refute_raises Tape::Missing_Ruby_Proxy_Declaration do
-			Drive.interp <<~TAPE
+		refute_raises Disk::Missing_Ruby_Proxy_Declaration do
+			Drive.interp <<~DISK
 			    Thing {
 			    	Self.abc,
 			    	Self.def (;)
 			    }
 
 			    Thing.abc
-			TAPE
+			DISK
 		end
 
-		assert_raises Tape::Database_Not_Set_For_Table_Instance do
-			Drive.interp <<~TAPE
-			    @load 'tapes/table.tape'
+		assert_raises Disk::Database_Not_Set_For_Table_Instance do
+			Drive.interp <<~DISK
+			    @load 'disks/table.disk'
 
 			    Table().find(1)
-			TAPE
+			DISK
 		end
 	end
 
 	def test_commented_closing_brace_causing_infinite_loop
-		Drive.interp <<~TAPE
+		Drive.interp <<~DISK
 		    Thing {
 		    #}
 		    }
-		TAPE
+		DISK
 	end
 
 	def test_accessing_dictionary_keys_with_dot
 		# todo: I plan to make the x inside {x} to set x to whatever x happens to evaluate to. When that happens, {x}.x should return 123!
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    x := 123
 		    {x}.x
-		TAPE
+		DISK
 		assert_nil out
 	end
 
 	# https://github.com/drive-lang/drive/issues/80
 	def test_parsing_bug_from_issue_80
-		assert_instance_of Tape::String_Expr, Drive.parse("'{'").first
-		assert_instance_of Tape::String_Expr, Drive.parse("'('").first
-		assert_instance_of Tape::String_Expr, Drive.parse("'['").first
+		assert_instance_of Disk::String_Expr, Drive.parse("'{'").first
+		assert_instance_of Disk::String_Expr, Drive.parse("'('").first
+		assert_instance_of Disk::String_Expr, Drive.parse("'['").first
 	end
 
 	def test_ranges_with_expression
-		assert_instance_of Tape::Range, Drive.interp("x:=1, 0...x")
-		assert_instance_of Tape::Range, Drive.interp("x:=1, y:=2, 0...(x + y)")
+		assert_instance_of Disk::Range, Drive.interp("x:=1, 0...x")
+		assert_instance_of Disk::Range, Drive.interp("x:=1, y:=2, 0...(x + y)")
 	end
 
-	# Regression: types loaded via `variable = @load 'file.tape'` were missing enclosing_scope in interp_type
+	# Regression: types loaded via `variable = @load 'file.disk'` were missing enclosing_scope in interp_type
 	def test_use_with_variable_can_reference_sibling_types
-		out = Drive.interp <<~TAPE
-		    lib := @load 'tests/fixtures/use_with_variable_sibling_types.tape'
+		out = Drive.interp <<~DISK
+		    lib := @load 'tests/fixtures/use_with_variable_sibling_types.disk'
 		    m := lib.Main_Type()
 		    m.get_sibling_value()
-		TAPE
+		DISK
 		assert_equal 42, out
 	end
 
 	# Regression: sibling types should also be accessible from within functions (not just type body)
 	def test_use_with_variable_can_reference_sibling_types_in_function
-		out = Drive.interp <<~TAPE
-		    lib := @load 'tests/fixtures/use_with_variable_sibling_types.tape'
+		out = Drive.interp <<~DISK
+		    lib := @load 'tests/fixtures/use_with_variable_sibling_types.disk'
 		    m := lib.Main_Type()
 		    m.create_sibling_in_func()
-		TAPE
+		DISK
 		assert_equal 42, out
 	end
 
@@ -417,11 +417,11 @@ class Regression_Test < Base_Test
 	# result was silently `nil` instead of what the file actually produced -- both from
 	# Interpreter#load_file_into_scope not tracking loads per-scope at all.
 	def test_double_load_into_same_scope_only_runs_once
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    counter := 0
-		    @load 'tests/fixtures/increment_counter.tape'
-		    @load 'tests/fixtures/increment_counter.tape'
-		TAPE
+		    @load 'tests/fixtures/increment_counter.disk'
+		    @load 'tests/fixtures/increment_counter.disk'
+		DISK
 		# 1, not 2 -- the second @load must not re-run the file (which would increment `counter` again).
 		# 1, not nil -- the second @load's own result must still be what the file produced, not nil, even
 		# though it didn't actually re-run it.
@@ -432,33 +432,33 @@ class Regression_Test < Base_Test
 	def test_subscript_precedence_with_dot_access
 		# Parser test: verify AST structure
 		ast = Drive.parse('a.b[0]').first
-		assert_instance_of Tape::Subscript_Expr, ast
-		assert_instance_of Tape::Infix_Expr, ast.receiver
+		assert_instance_of Disk::Subscript_Expr, ast
+		assert_instance_of Disk::Infix_Expr, ast.receiver
 		assert_equal '.', ast.receiver.operator.value
 
 		# Interpreter test: chained dot + subscript read
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    Box {
 		        items := [10, 20, 30]
 		    }
 		    b := Box()
 		    b.items[1]
-		TAPE
+		DISK
 		assert_equal 20, out
 
 		# Interpreter test: chained dot + subscript assignment
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    Box {
 		        data := {x: 1, y: 2}
 		    }
 		    b := Box()
 		    b.data[:z] = 3
 		    b.data[:z]
-		TAPE
+		DISK
 		assert_equal 3, out
 
 		# Deeper chain: a.b.c[d]
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    Inner {
 		        values := [100, 200]
 		    }
@@ -467,13 +467,13 @@ class Regression_Test < Base_Test
 		    }
 		    o := Outer()
 		    o.inner.values[0]
-		TAPE
+		DISK
 		assert_equal 100, out
 	end
 
 	# Regression: interp_func_body used to push the single, shared Func object (registered once at declaration time) as the call frame for every invocation. Two calls to the same function overlapping in time (e.g. tree recursion, where a function calls itself twice and combines the results) stomped on each other's param bindings, since they were all declaring onto the same shared scope. Each call now gets a fresh scope, so recursive calls stay isolated.
 	def test_tree_recursion_does_not_share_call_frame
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    fib ( n;
 		        if n <= 1
 		            n
@@ -482,13 +482,13 @@ class Regression_Test < Base_Test
 		        end
 		    )
 		    [fib(0), fib(1), fib(2), fib(3), fib(4), fib(5), fib(10)]
-		TAPE
+		DISK
 		assert_equal [0, 1, 1, 2, 3, 5, 55], out.values
 	end
 
 	# Same bug, but through an instance method, which pushes an extra type/instance scope around the (previously) shared Func frame.
 	def test_tree_recursion_does_not_share_call_frame_on_instance_method
-		out = Drive.interp <<~TAPE
+		out = Drive.interp <<~DISK
 		    Counter {
 		        n,
 
@@ -505,7 +505,7 @@ class Regression_Test < Base_Test
 		        )
 		    }
 		    Counter(10).fib()
-		TAPE
+		DISK
 		assert_equal 55, out
 	end
 
@@ -516,7 +516,7 @@ class Regression_Test < Base_Test
 				a + b # sum me
 			)
 			add(4, 8)"
-		refute_kind_of Tape::String_Expr, out
+		refute_kind_of Disk::String_Expr, out
 	end
 
 	# `=` used to swallow an adjacent `[` with no space between them, lexing as a single bad operator token `=[` instead of `=` followed by a delimiter.
@@ -581,12 +581,12 @@ class Regression_Test < Base_Test
 
 		# Real member access must still work, and plain `.` must still raise.
 		assert_equal 3, Drive.interp('[1,2,3].?length()')
-		assert_raises(Tape::Undeclared_Identifier) { Drive.interp '[].missing' }
-		assert_raises(Tape::Cannot_Call_Instance_Member_On_Type) { Drive.interp 'Array.uniq' }
+		assert_raises(Disk::Undeclared_Identifier) { Drive.interp '[].missing' }
+		assert_raises(Disk::Cannot_Call_Instance_Member_On_Type) { Drive.interp 'Array.uniq' }
 	end
 
 	def test_range_dot_access_raises_for_undeclared_members_regression
-		assert_raises(Tape::Undeclared_Identifier) { Drive.interp '(1...5).missing' }
+		assert_raises(Disk::Undeclared_Identifier) { Drive.interp '(1...5).missing' }
 
 		# `.each` must still work through the normal (non-fallback) path.
 		out = Drive.interp '
@@ -631,13 +631,13 @@ class Regression_Test < Base_Test
 
 	def test_calling_a_bare_struct_literal_constructs_an_instance_regression
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    s := <name: String, age: Number>('Alice', 30)
 		    s.@members.0.value.value
 		CODE
 		assert_equal 'Alice', out
 
-		# Also works with no matching `Struct` type loaded (bare Tape::Struct fallback).
+		# Also works with no matching `Struct` type loaded (bare Disk::Struct fallback).
 		refute_raises do
 			Drive.interp '<id: Number>(5)'
 		end
@@ -661,7 +661,7 @@ class Regression_Test < Base_Test
 		    b := Bare(5)
 		    "value: `b`"
 		CODE
-		assert_includes out, 'Tape::Instance'
+		assert_includes out, 'Disk::Instance'
 
 		# Primitives unaffected.
 		assert_equal 'n: 8', Drive.interp('x := 5+3
@@ -734,8 +734,8 @@ class Regression_Test < Base_Test
 		assert_equal [1, 2, 'from A', 'from A', 1, 1, 2], out.values
 
 		# Intersection/difference correctly DON'T keep what they're supposed to drop.
-		assert_raises(Tape::Undeclared_Identifier) { Drive.interp "#{src}\nintersection.x" }
-		assert_raises(Tape::Undeclared_Identifier) { Drive.interp "#{src}\ndifference.shared()" }
+		assert_raises(Disk::Undeclared_Identifier) { Drive.interp "#{src}\nintersection.x" }
+		assert_raises(Disk::Undeclared_Identifier) { Drive.interp "#{src}\ndifference.shared()" }
 
 		# Comparable with the existing Type comparison operators, same as any named composed type.
 		out = Drive.interp <<~CODE
@@ -751,9 +751,9 @@ class Regression_Test < Base_Test
 	def test_bare_global_keyword_is_the_global_scope
 		# `Global` alone evaluates to the global scope object, usable as a value; the newline after it
 		# is not swallowed (a bare scope keyword used to corrupt parsing here).
-		assert_kind_of Tape::Scope, Drive.interp("x := Global\ny := 1\nx")
+		assert_kind_of Disk::Scope, Drive.interp("x := Global\ny := 1\nx")
 		assert_equal 5, Drive.interp("Global\n5")
-		assert_kind_of Tape::Scope, Drive.interp('Global')
+		assert_kind_of Disk::Scope, Drive.interp('Global')
 
 		# `Global.x := v` declares on the global scope, reachable bare from anywhere after.
 		assert_equal 7, Drive.interp("Global.total := 7\ntotal")
@@ -772,12 +772,12 @@ class Regression_Test < Base_Test
 		assert_equal 42, Drive.interp("#{src}\nsend_greeting(42)")
 
 		# A label that doesn't match the declared one raises, whether the param has a different label...
-		assert_raises(Tape::Argument_Label_Mismatch) do
+		assert_raises(Disk::Argument_Label_Mismatch) do
 			Drive.interp("#{src}\nsend_greeting(wrong: 42)")
 		end
 
 		# ...or no label at all.
-		assert_raises(Tape::Argument_Label_Mismatch) do
+		assert_raises(Disk::Argument_Label_Mismatch) do
 			Drive.interp('add ( a, b; a + b )
 				add(a: 1, 2)')
 		end
@@ -807,15 +807,15 @@ class Regression_Test < Base_Test
 
 	def test_circumfix_elements_do_not_swallow_nil_init_regression
 		# The actual bug: an undeclared non-last element used to silently become nil.
-		assert_raises(Tape::Undeclared_Identifier) do
+		assert_raises(Disk::Undeclared_Identifier) do
 			Drive.interp 'foo ( a, b; a + b )
 				foo(undeclared_var, 5)'
 		end
-		assert_raises(Tape::Undeclared_Identifier) do
+		assert_raises(Disk::Undeclared_Identifier) do
 			Drive.interp 'x := 1
 				[undeclared_var, x]'
 		end
-		assert_raises(Tape::Undeclared_Identifier) do
+		assert_raises(Disk::Undeclared_Identifier) do
 			Drive.interp 'x := 1
 				(undeclared_var, x)'
 		end
@@ -862,7 +862,7 @@ class Regression_Test < Base_Test
 
 	def test_comparing_two_type_objects_does_not_dispatch_instance_operator_overload_regression
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    a := Member('id', nil, String)
 		    b := Member('id', nil, String)
 		    a == b
@@ -870,7 +870,7 @@ class Regression_Test < Base_Test
 		assert_equal true, out
 
 		out = Drive.interp <<~CODE
-		    @load 'tapes/struct.tape'
+		    @load 'disks/struct.disk'
 		    sa := <name: String, age: Number>('Alice', 30)
 		    sb := <name: String, age: Number>('Alice', 30)
 		    sc := <name: String, age: Number>('Alice', 99)
@@ -880,7 +880,7 @@ class Regression_Test < Base_Test
 	end
 
 	def test_compound_assignment_on_dot_member_target_regression
-		# `instance.member += value` used to silently no-op: #interp_compound_infix resolved its assignment target via #scope_for_identifier, which only understands plain Identifier_Exprs -- a dot-target fell through to `stack.last` and declared a bogus `nil`-named identifier there instead of touching the actual member. Found via demos/aoc/2015/3b.tape computing the wrong answer (Vec2 members mutated with `+=` inside nested if/elif never actually moved).
+		# `instance.member += value` used to silently no-op: #interp_compound_infix resolved its assignment target via #scope_for_identifier, which only understands plain Identifier_Exprs -- a dot-target fell through to `stack.last` and declared a bogus `nil`-named identifier there instead of touching the actual member. Found via demos/aoc/2015/3b.disk computing the wrong answer (Vec2 members mutated with `+=` inside nested if/elif never actually moved).
 		out = Drive.interp <<~CODE
 		    Vec2 {
 		        x,
@@ -901,11 +901,11 @@ class Regression_Test < Base_Test
 
 	def test_tuple_dot_index_out_of_bounds_regression
 		# `.N`/`.N.M...` dot-index access silently returned nil past the collection's length, and silently truncated a non-integer index -- e.g. `.0.1` lexes as the single float 0.1, which Ruby's own Array#[] truncates to index 0, so `((), true).0.1`/`.0.2`/`.0.3`... all silently returned the same first element (a Tuple) instead of erroring past the actual length.
-		assert_raises Tape::Invalid_Array_Index do
+		assert_raises Disk::Invalid_Array_Index do
 			Drive.interp '((), true).0.1'
 		end
 
-		assert_raises Tape::Invalid_Array_Index do
+		assert_raises Disk::Invalid_Array_Index do
 			Drive.interp '(1, 2, 3).5'
 		end
 
@@ -915,7 +915,7 @@ class Regression_Test < Base_Test
 
 	def test_spaceship_on_custom_instance_with_no_overload_raises_regression
 		# `<=>` on a custom Instance with no @operator overload used to fall through to Ruby's own Kernel#<=> (every Object gets a trivial, identity-based default), silently returning nil instead of raising -- respond_to?(:<=>) can't tell the trivial default apart from a real one.
-		assert_raises Tape::Undeclared_Infix_Operator do
+		assert_raises Disk::Undeclared_Infix_Operator do
 			Drive.interp <<~CODE
 			    Point { x, Self ( x; self.x = x ) }
 			    Point(1) <=> Point(2)
@@ -957,7 +957,7 @@ class Regression_Test < Base_Test
 	end
 
 	def test_array_string_dictionary_proxies_wrap_their_results_regression
-		# `Array#first`/`#last`/`#slice`/`#reverse`/`#sort`/`#uniq`, `String#split`/`#chars`, `Dictionary#keys`/`#values`/`#merge`, and `for x by n` stride chunks all returned a raw Ruby Array/Hash instead of Tape::Array/Tape::Dictionary -- dot-index access (`it.0`) worked by accident via #maybe_instance, but `==` against a literal silently failed. No test exercised any of these at the value level until now.
+		# `Array#first`/`#last`/`#slice`/`#reverse`/`#sort`/`#uniq`, `String#split`/`#chars`, `Dictionary#keys`/`#values`/`#merge`, and `for x by n` stride chunks all returned a raw Ruby Array/Hash instead of Disk::Array/Disk::Dictionary -- dot-index access (`it.0`) worked by accident via #maybe_instance, but `==` against a literal silently failed. No test exercised any of these at the value level until now.
 		out = Drive.interp <<~CODE
 		    pairs := []
 		    for ['red', 'blue', 'green', 'yellow'] by 2
@@ -976,13 +976,13 @@ class Regression_Test < Base_Test
 
 	def test_member_to_s_on_unnamed_type_only_member_does_not_crash_regression
 		# `<String, Number>` (a schema-only struct with bare, unnamed type members) has `value == type` for its String member -- the bare String Type object itself, not an actual instance. `Member#to_s` unconditionally called `.to_string()` on it whenever `type.?name == 'String'`, assuming `value` was a real String instance -- raised `Cannot_Call_Instance_Member_On_Type` instead, since `to_string` is an instance-only method. `.?to_string()` (nil-safe) fixes it.
-		refute_raises Tape::Cannot_Call_Instance_Member_On_Type do
+		refute_raises Disk::Cannot_Call_Instance_Member_On_Type do
 			Drive.interp("<String, Number>.@members.0.to_s()")
 		end
 	end
 
 	def test_capitalized_identifier_comparison_does_not_get_parsed_as_a_tagged_type_reference_regression
-		# `X < Y` (X/Y capitalized variables, not types) looks identical up to `TYPE_IDENTIFIER '<'` to `Ident <...>` -- #begin_expression always committed to #parse_struct on sight of that shape, which then ran out of tokens hunting for a `>` that was never coming (Tape::Out_Of_Tokens) instead of falling through to an ordinary `<` comparison. #try_parse_struct now actually attempts the real parse and rewinds on any syntax error instead of guessing via lookahead.
+		# `X < Y` (X/Y capitalized variables, not types) looks identical up to `TYPE_IDENTIFIER '<'` to `Ident <...>` -- #begin_expression always committed to #parse_struct on sight of that shape, which then ran out of tokens hunting for a `>` that was never coming (Disk::Out_Of_Tokens) instead of falling through to an ordinary `<` comparison. #try_parse_struct now actually attempts the real parse and rewinds on any syntax error instead of guessing via lookahead.
 		assert_equal true, Drive.interp(<<~CODE)
 		    X := 1
 		    Y := 2
@@ -1013,7 +1013,7 @@ class Regression_Test < Base_Test
 
 	def test_capitalized_function_param_raises_a_real_error_instead_of_crashing_regression
 		# A bare Capitalized/UPPERCASE param (`f ( ABC; ABC )`) parses like a signature-literal's bare type (`param.type` set, `param.name` left nil, see #parse_func -- a real function param always starts lowercase, so a bare Capitalized token there can only mean a signature literal, e.g. `{Number -> String;}`) rather than a named param. #interp_func_body assumed every param has `.name` set, raising a raw NoMethodError (`undefined method 'value' for nil`) the first time it read `param.name.value`, instead of a real Drive error.
-		assert_raises Tape::Invalid_Parameter_Name do
+		assert_raises Disk::Invalid_Parameter_Name do
 			Drive.interp <<~CODE
 			    f ( ABC; ABC )
 			    x := 1
@@ -1022,13 +1022,13 @@ class Regression_Test < Base_Test
 		end
 
 		# A genuine signature literal (never called, just described/assigned) is unaffected.
-		refute_raises Tape::Invalid_Parameter_Name do
+		refute_raises Disk::Invalid_Parameter_Name do
 			Drive.interp '(Number -> String;)'
 		end
 	end
 
 	def test_context_stringifies_as_a_struct_for_display_regression
-		# `@` is the Context bare-named struct (a Tape::Instance) whose `to_s` member is synthesized to a
+		# `@` is the Context bare-named struct (a Disk::Instance) whose `to_s` member is synthesized to a
 		# bodyless stand-in. #stringify_for_display used to run that empty body directly, so `@puts @` and
 		# `` `@` `` interpolation printed blank. Now display renders it the same shape every other struct
 		# prints as -- `Name <member: Type = value, ...>` over every member; an explicit `@.to_s()` call
@@ -1041,7 +1041,7 @@ class Regression_Test < Base_Test
 
 		assert_equal '@Global', Drive.interp('@.to_s()')
 
-		# Only the members declared in tapes/context.tape show -- not the short-alias function stand-ins
+		# Only the members declared in disks/context.disk show -- not the short-alias function stand-ins
 		# (`add_readable`, `readable`, ...) that #fill_context also puts on the instance.
 		refute_includes dump, 'readable: Any'
 		refute_includes dump, 'add_readable:'
@@ -1105,6 +1105,6 @@ class Regression_Test < Base_Test
 		assert_nil Drive.interp("x: String = 'hi'\nx = nil\nx")
 
 		# A genuine mismatch still raises.
-		assert_raises(Tape::Type_Contract_Violation) { Drive.interp("x: String = 'hi'\nx = 123") }
+		assert_raises(Disk::Type_Contract_Violation) { Drive.interp("x: String = 'hi'\nx = 123") }
 	end
 end

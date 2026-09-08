@@ -1,6 +1,6 @@
 require_relative '../shared/error_formatter'
 
-module Tape
+module Disk
 	class Error < StandardError
 		attr_accessor :expression
 
@@ -25,7 +25,7 @@ module Tape
 	end
 
 	class Undeclared_Identifier < Error
-		# `expression` is whatever AST node was being resolved when lookup failed, usually an Tape::Identifier_Expr (a plain identifier reference), but also an Tape::Type_Expr when a bare type reference (`Abc()`) never got declared. Both expose `.value` via the shared Expression base (set from their own lexeme), so one implementation covers either raise site without caring which one it actually got.
+		# `expression` is whatever AST node was being resolved when lookup failed, usually an Disk::Identifier_Expr (a plain identifier reference), but also an Disk::Type_Expr when a bare type reference (`Abc()`) never got declared. Both expose `.value` via the shared Expression base (set from their own lexeme), so one implementation covers either raise site without caring which one it actually got.
 		def detail_message
 			name = expression.respond_to?(:value) ? expression.value : nil
 			return nil unless name
@@ -35,15 +35,15 @@ module Tape
 
 	class Undeclared_Tagged_Type < Error
 		# No declared variant matches this structure -- also raised for a Bare Named Struct redeclared with a different shape. `expression` is a Type_Expr or a bare Struct_Expr (`.name` a raw Lexeme then).
-		# @expression: Tape::Type_Expr | Tape::Struct_Expr
+		# @expression: Disk::Type_Expr | Disk::Struct_Expr
 
 		def detail_message
-			if expression.is_a? Tape::Struct_Expr
-				name      = expression.name.is_a?(Tape::Lexeme) ? expression.name.value : expression.name
+			if expression.is_a? Disk::Struct_Expr
+				name      = expression.name.is_a?(Disk::Lexeme) ? expression.name.value : expression.name
 				structure = expression.to_s
 			elsif expression.respond_to?(:struct_body) && expression.struct_body && !expression.tag
 				# `Name <...>` / `Name | Other <...>` where `Name` is already a declared type -- a
-				# bare named struct can't reuse the name (rename it, the way tapes/expressions.tape's
+				# bare named struct can't reuse the name (rename it, the way disks/expressions.disk's
 				# `Structure` sidesteps the built-in `Struct`).
 				name = expression.name
 				return "#{Ascii.bold name} is already a declared type — a struct declared as `#{Ascii.bold "#{name} <...>"}` needs a name that isn't taken"
@@ -58,11 +58,11 @@ module Tape
 	end
 
 	# A named reference (`Abc\Task_Schema`) resolved to something other than a Struct or Type -- neither form has a valid target.
-	# @expression: Tape::Type_Expr
+	# @expression: Disk::Type_Expr
 	class Tag_Reference_Must_Be_Type_Or_Struct < Error
 		def detail_message
-			label = expression.respond_to?(:name) ? "#{expression.name}#{Tape::TAG_OPERATOR}#{expression.tag&.value}" : expression.value
-			"`#{Ascii.bold label}` -- the right-hand side of `#{Tape::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
+			label = expression.respond_to?(:name) ? "#{expression.name}#{Disk::TAG_OPERATOR}#{expression.tag&.value}" : expression.value
+			"`#{Ascii.bold label}` -- the right-hand side of `#{Disk::TAG_OPERATOR}` must resolve to a Struct or a Type, not a plain value."
 		end
 	end
 
@@ -113,7 +113,7 @@ module Tape
 	end
 
 	class Receiver_Is_Nil < Error
-		# `expression` is the `.`/`.?` Tape::Infix_Expr whose left side evaluated to nil, for both reads
+		# `expression` is the `.`/`.?` Disk::Infix_Expr whose left side evaluated to nil, for both reads
 		# (`task.type`) and writes (`task.type = x`). `.right.value` is the member being reached for;
 		# `.left.value`, when the left is a plain identifier, names the nil receiver.
 		def detail_message
@@ -474,7 +474,7 @@ module Tape
 			exprs    = expression.expressions
 			given    = exprs.map(&:class).join(', ')
 			expected = exprs.map do |it|
-				'Tape::Identifier_Expr or Tape::Number_Expr or Tape::Operator_Expr'
+				'Disk::Identifier_Expr or Disk::Number_Expr or Disk::Operator_Expr'
 			end.join(', ')
 			"%#{kind}(#{given}) expects %#{kind}(#{expected})"
 		end

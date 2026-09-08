@@ -1,13 +1,13 @@
 module Drive
 	class CLI
-		include Tape
+		include Disk
 		INSTRUCTIONS = <<~INST
 		    Usage:
-		        bundle exec bin/drive <file>          Execute a .tape file and keep running until interrupt
+		        bundle exec bin/drive <file>          Execute a .disk file and keep running until interrupt
 		        bundle exec bin/drive [command]       Run command
 
 		    COMMANDS:
-		        run <file>            Execute a .tape file and keep running until interrupt
+		        run <file>            Execute a .disk file and keep running until interrupt
 		        check <file>          Run basic type check on file
 
 		        repl                  Enter repl mode, type code press enter
@@ -29,9 +29,9 @@ module Drive
 		        -h | --help           Show help instructions
 
 		    EXAMPLES:
-		        drive demos/hello_world.tape -p
+		        drive demos/hello_world.disk -p
 		        drive lex "x = 5 + 3" -p
-		        drive parsef demos/hello_world.tape -p
+		        drive parsef demos/hello_world.disk -p
 		        drive interp "4815" -p
 		INST
 
@@ -93,7 +93,7 @@ module Drive
 			missing = e.message.include?(' - ') ? e.message.split(' - ').last : (@arg || @command)
 			$stderr.puts "Could not find file `#{missing}`"
 			exit 1
-		rescue Tape::Error => e
+		rescue Disk::Error => e
 			$stderr.puts e.message
 			exit 1
 		end

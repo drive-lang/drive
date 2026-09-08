@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Struct < Instance
 		attr_accessor :names, :type_names, :type_objects, :members, :bare_reference_name
 		attr_reader   :values
@@ -25,7 +25,7 @@ module Tape
 			result = super
 			if @names && (i = @names.index(key.to_s))
 				@values[i] = value
-				if (member = @members&.values&.at(i)).is_a?(Tape::Member)
+				if (member = @members&.values&.at(i)).is_a?(Disk::Member)
 					member.value      = value
 					member['value']   = value
 				end
@@ -68,7 +68,7 @@ module Tape
 		# Named members only, keyed by Symbol -- an unnamed member has no key to hash under, same
 		# `next unless name` skip #proxy_create_table already uses. Values are unwrapped just enough
 		# for a plain Ruby caller (Sequel's own #where/#insert, primarily -- see Table#proxy_find_by)
-		# to use directly: an Tape::String yields its raw ::String, and a raw ::Symbol (an enum
+		# to use directly: an Disk::String yields its raw ::String, and a raw ::Symbol (an enum
 		# member's value, e.g. :TODO) is stringified -- Sequel already treats a bare Symbol as a
 		# column/identifier reference, not a literal, so left alone it would build the wrong query.
 		# Everything else passes through as-is.
@@ -78,9 +78,9 @@ module Tape
 
 				value             = values[i]
 				hash[name.to_sym] = case value
-				when Tape::String then value.value
-				when Tape::Bool then value.truthiness
-				when Tape::Date, Tape::Time, Tape::Date_Time then value.value
+				when Disk::String then value.value
+				when Disk::Bool then value.truthiness
+				when Disk::Date, Disk::Time, Disk::Date_Time then value.value
 				when ::Symbol then value.to_s
 				else value
 				end

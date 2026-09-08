@@ -1,6 +1,6 @@
 module Drive
 	class Lexer
-		include Tape
+		include Disk
 		attr_accessor :i, :col, :line, :source_file, :input
 
 		def initialize input = 'greeting = "hello world"'
@@ -18,15 +18,15 @@ module Drive
 		end
 
 		def whitespace? char = curr
-			Tape::WHITESPACES.include? char
+			Disk::WHITESPACES.include? char
 		end
 
 		def newline? char = curr
-			Tape::NEWLINES.include? char
+			Disk::NEWLINES.include? char
 		end
 
 		def delimiter? char = curr
-			Tape::DELIMITERS.include? char
+			Disk::DELIMITERS.include? char
 		end
 
 		def identifier? char = curr
@@ -34,15 +34,15 @@ module Drive
 		end
 
 		def numeric? char = curr
-			char&.match? Tape::NUMERIC_REGEX
+			char&.match? Disk::NUMERIC_REGEX
 		end
 
 		def alpha? char = curr
-			char&.match? Tape::ALPHA_REGEX
+			char&.match? Disk::ALPHA_REGEX
 		end
 
 		def alphanumeric? char = curr
-			char&.match? Tape::ALPHANUMERIC_REGEX
+			char&.match? Disk::ALPHANUMERIC_REGEX
 		end
 
 		def symbol? char = curr
@@ -52,10 +52,10 @@ module Drive
 		def route_pattern?
 			return false unless identifier?
 
-			verb_match = Tape::HTTP_VERBS.any? { |verb| peek(0, verb.length) == verb }
+			verb_match = Disk::HTTP_VERBS.any? { |verb| peek(0, verb.length) == verb }
 			return false unless verb_match
 
-			verb_length = Tape::HTTP_VERBS.find { |verb| peek(0, verb.length) == verb }.length
+			verb_length = Disk::HTTP_VERBS.find { |verb| peek(0, verb.length) == verb }.length
 			peek(verb_length, 3) == '://'
 		end
 
@@ -78,7 +78,7 @@ module Drive
 
 		def eat expected = nil
 			if expected && expected != curr
-				raise Tape::Lexed_Unexpected_Char.new(expected: expected, got: curr)
+				raise Disk::Lexed_Unexpected_Char.new(expected: expected, got: curr)
 			end
 
 			eaten = curr
@@ -102,7 +102,7 @@ module Drive
 			end
 
 			if expected_chars && expected_chars != it
-				raise Tape::Lexed_Unexpected_Char.new(expected: expected_chars, got: it)
+				raise Disk::Lexed_Unexpected_Char.new(expected: expected_chars, got: it)
 			end
 
 			it
@@ -137,7 +137,7 @@ module Drive
 
 		def lex_oneline_comment
 			it = ::String.new
-			eat Tape::COMMENT_CHAR
+			eat Disk::COMMENT_CHAR
 			eat while whitespace?
 
 			while chars? && !newline?
@@ -190,7 +190,7 @@ module Drive
 			it    = ::String.new
 			quote = eat
 
-			# todo: Refactor this, maybe? I was trying to use interpolation pipes in multiline text (see ./demos/basic_page.tape) and realized that I wasn't escaping those, which led to the interpreter trying to actually interpolate the string.
+			# todo: Refactor this, maybe? I was trying to use interpolation pipes in multiline text (see ./demos/basic_page.disk) and realized that I wasn't escaping those, which led to the interpreter trying to actually interpolate the string.
 			while chars? && curr != quote
 				if curr == '\\'
 					eat
@@ -207,7 +207,7 @@ module Drive
 							it << "\\#{escaped}"
 						end
 					else
-						raise Tape::Unterminated_String_Literal.new
+						raise Disk::Unterminated_String_Literal.new
 					end
 				else
 					it << eat
@@ -215,7 +215,7 @@ module Drive
 			end
 
 			if !chars? || curr != quote
-				raise Tape::Unterminated_String_Literal.new
+				raise Disk::Unterminated_String_Literal.new
 			end
 
 			eat quote
@@ -233,14 +233,14 @@ module Drive
 				# Don't append `.` onto a trailing `>` unless it's forming a genuine range operator (`>..`, `>.<`). Otherwise `Type<Struct>.member` would lex `>.` as one bogus operator token, swallowing the `>` that's supposed to close the struct's member list on its own.
 
 				break if it == '>' && curr == '.' && !%w(. <).include?(peek)
-				break if it == Tape::TAG_OPERATOR && curr == '<'
-				break if it == Tape::CONTEXT_OPERATOR && curr == '.'
+				break if it == Disk::TAG_OPERATOR && curr == '<'
+				break if it == Disk::CONTEXT_OPERATOR && curr == '.'
 				break if it == '<' && curr == '>'
 
 				it << eat
-				break if Tape::RANGE_OPERATORS.include? it
-				break if Tape::ILLEGAL_OPERATOR_CHARS.include? it
-				break if Tape::ILLEGAL_OPERATOR_CHARS.include? curr
+				break if Disk::RANGE_OPERATORS.include? it
+				break if Disk::ILLEGAL_OPERATOR_CHARS.include? it
+				break if Disk::ILLEGAL_OPERATOR_CHARS.include? curr
 			end
 			it
 		end
@@ -265,11 +265,11 @@ module Drive
 		def lex_route
 			verb = ::String.new
 			while chars? && (identifier? || alphanumeric?)
-				break unless Tape::HTTP_VERBS.any? { |v| v.start_with?(verb + curr) }
+				break unless Disk::HTTP_VERBS.any? { |v| v.start_with?(verb + curr) }
 				verb << eat
 			end
 
-			protocol_sep = lex_many 3, Tape::HTTP_VERB_SEPARATOR
+			protocol_sep = lex_many 3, Disk::HTTP_VERB_SEPARATOR
 
 			path = ::String.new
 			while chars? && !whitespace? && !newline? && curr != '('
@@ -283,11 +283,11 @@ module Drive
 			tokens = []
 
 			while chars?
-				single = curr == Tape::COMMENT_CHAR
-				blocked = peek(0, Tape::BLOCK_COMMENT_CHARS.length) == Tape::BLOCK_COMMENT_CHARS
-				fenced = peek(0, Tape::FENCE_CHARS.length) == Tape::FENCE_CHARS
+				single = curr == Disk::COMMENT_CHAR
+				blocked = peek(0, Disk::BLOCK_COMMENT_CHARS.length) == Disk::BLOCK_COMMENT_CHARS
+				fenced = peek(0, Disk::FENCE_CHARS.length) == Disk::FENCE_CHARS
 
-				token = Tape::Lexeme.new.tap do
+				token = Disk::Lexeme.new.tap do
 					it.source_file = source_file
 					it.l0          = line
 					it.c0          = col
@@ -380,7 +380,7 @@ module Drive
 						end
 
 					else
-						raise Tape::Lex_Char_Not_Implemented.new(char: curr)
+						raise Disk::Lex_Char_Not_Implemented.new(char: curr)
 					end
 
 					it.l1 = line
@@ -389,7 +389,7 @@ module Drive
 
 				next if token.type == :whitespace
 
-				token.reserved = Tape::RESERVED.include? token.value
+				token.reserved = Disk::RESERVED.include? token.value
 				tokens << token
 			end
 

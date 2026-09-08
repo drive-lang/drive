@@ -1,4 +1,4 @@
-module Tape
+module Disk
 	class Expression
 		attr_accessor :lexemes # the entire span of lexemes that make up this expression
 
@@ -11,12 +11,12 @@ module Tape
 
 		def lexeme= lexeme
 			case lexeme
-			when Tape::Lexeme
+			when Disk::Lexeme
 				@value  = lexeme.value
 				@lexeme = lexeme
 			when ::String, ::Symbol
 				@value  = lexeme
-				@lexeme = Tape::Lexeme.new Helpers.type_identifier?(lexeme), lexeme
+				@lexeme = Disk::Lexeme.new Helpers.type_identifier?(lexeme), lexeme
 			end
 		end
 
@@ -63,7 +63,7 @@ module Tape
 				default = param.default ? "=#{param.default.value}" : ''
 				"#{label}#{param.name.value}#{default}"
 			end.join(',')
-			sig += Tape::FUNCTION_DELIMITER
+			sig += Disk::FUNCTION_DELIMITER
 			sig += ')'
 			sig
 		end
@@ -233,7 +233,7 @@ module Tape
 		attr_accessor :header
 		# ```header
 		# ```
-		# Examples are md, css, html, tape, etc
+		# Examples are md, css, html, disk, etc
 	end
 
 	class Statement_Expr < Expression

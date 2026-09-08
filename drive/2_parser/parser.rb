@@ -1,6 +1,6 @@
 module Drive
 	class Parser
-		include Tape
+		include Disk
 		attr_accessor :i, :input, :precedences
 
 		def initialize input = []
@@ -72,7 +72,7 @@ module Drive
 			end
 		end
 
-		# If the given operator doesn't exist then it returns Tape::DEFAULT_OPERATOR_PRECEDENCE which binds somewhere around the equality operators. See Tape::PRECEDENCES
+		# If the given operator doesn't exist then it returns Disk::DEFAULT_OPERATOR_PRECEDENCE which binds somewhere around the equality operators. See Disk::PRECEDENCES
 		# Neat reference for precedences: https://rosettacode.org/wiki/Operator_precedence
 		# @param operator [::String]
 		# @return precedence [Integer]
@@ -86,7 +86,7 @@ module Drive
 		end
 
 		# input[i]
-		# @return [Tape::Lexeme]
+		# @return [Disk::Lexeme]
 		def curr_lexeme
 			input[i]
 		end
@@ -116,7 +116,7 @@ module Drive
 			slice.each_with_index.all? do |lexeme, index|
 				expected = sequence[index]
 
-				if expected.is_a?(Tape::Array) || expected.is_a?(::Array)
+				if expected.is_a?(Disk::Array) || expected.is_a?(::Array)
 					expected.any? do |alt|
 						lexeme.is(alt)
 					end
@@ -171,7 +171,7 @@ module Drive
 				depth += 1 if token.value == '('
 				depth -= 1 if token.value == ')'
 
-				return true if token.value == Tape::FUNCTION_DELIMITER && depth == 1
+				return true if token.value == Disk::FUNCTION_DELIMITER && depth == 1
 				return false if depth <= 0 && token.value == ')'
 			end
 			false
@@ -194,7 +194,7 @@ module Drive
 				depth -= 1 if token.value == ')'
 				return false if depth <= 0
 
-				return true if token.value == Tape::FUNCTION_DELIMITER
+				return true if token.value == Disk::FUNCTION_DELIMITER
 				next if token.type == :newline
 				next if %i[identifier Identifier].include? token.type
 				next if PARAM_LIST_TOKEN_VALUES.include? token.value
@@ -216,8 +216,8 @@ module Drive
 		def try_parse_struct_body
 			saved_i = @i
 			start   = curr_lexeme
-			Tape::Struct_Expr.new.tap do |it|
-				it.lexeme = Tape::Lexeme.new :struct, '<>'
+			Disk::Struct_Expr.new.tap do |it|
+				it.lexeme = Disk::Lexeme.new :struct, '<>'
 				it.types  = []
 				it.names  = []
 				eat '<'
@@ -258,11 +258,11 @@ module Drive
 		#   end
 		#
 		def parse_for_loop_expr
-			it            = Tape::For_Loop_Expr.new
+			it            = Disk::For_Loop_Expr.new
 			it.lexeme     = eat 'for'
 			it.collection = parse_expression
 
-			if curr? Tape::FOR_VERBS and verb = eat
+			if curr? Disk::FOR_VERBS and verb = eat
 				it.type   = verb
 				it.lexeme = verb
 			end
@@ -286,7 +286,7 @@ module Drive
 		end
 
 		def parse_conditional_expr
-			it            = Tape::Conditional_Expr.new
+			it            = Disk::Conditional_Expr.new
 			it.type       = eat # One of %w(if while unless until)
 			it.condition  = parse_expression
 			it.when_true  = []
@@ -324,7 +324,7 @@ module Drive
 
 		def parse_circumfix_expr opening: '('
 			start = curr_lexeme
-			it    = Tape::Circumfix_Expr.new
+			it    = Disk::Circumfix_Expr.new
 			it.grouping = CIRCUMFIX_GROUPINGS[opening] or raise "parse_circumfix_expr unknown opening #{opening}"
 			eat opening
 			reduce_newlines
@@ -360,7 +360,7 @@ module Drive
 		# ]
 		def parse_enum_expr
 			# TYPE_IDENT [
-			expr             = Tape::Enum_Expr.new
+			expr             = Disk::Enum_Expr.new
 			expr.expressions = []
 			expr.name        = eat TYPE_IDENTIFIER
 			eat '['
@@ -380,21 +380,21 @@ module Drive
 					#   TYPE_IDENT: TYPE_IDENT = EXPR
 					item_name = parse_identifier_expr # also consumes a trailing `: Type` annotation itself, if there is one
 
-					Drive.assert item_name.is_a? Tape::Identifier_Expr
+					Drive.assert item_name.is_a? Disk::Identifier_Expr
 
 					case curr_lexeme.value
 					when ','
 						parse_nil_init_expr item_name
 					when ':='
 						eat ':='
-						infix          = Tape::Infix_Expr.new
+						infix          = Disk::Infix_Expr.new
 						infix.operator = Lexeme.new(:operator, ':=')
 						infix.left     = item_name
 						infix.right    = parse_expression
 						infix
 					when '='
 						eat '='
-						infix          = Tape::Infix_Expr.new
+						infix          = Disk::Infix_Expr.new
 						infix.operator = Lexeme.new(:operator, '=')
 						infix.left     = item_name
 						infix.right    = parse_expression
@@ -417,7 +417,7 @@ module Drive
 		def parse_func precedence = STARTING_PRECEDENCE
 			named            = curr?(:identifier)
 			start            = curr_lexeme
-			func             = Tape::Func_Expr.new
+			func             = Disk::Func_Expr.new
 			func.expressions = [] # Expression
 			func.parameters  = [] # Param_Expr
 
@@ -435,7 +435,7 @@ module Drive
 			eat '('
 			reduce_newlines
 
-			until curr? Tape::FUNCTION_DELIMITER
+			until curr? Disk::FUNCTION_DELIMITER
 				before_i = @i
 
 				if curr? '->' and eat '->'
@@ -444,9 +444,9 @@ module Drive
 					next
 				end
 
-				param = Tape::Param_Expr.new
+				param = Disk::Param_Expr.new
 
-				if curr? Tape::CONTEXT_OPERATOR
+				if curr? Disk::CONTEXT_OPERATOR
 					identifier = parse_identifier_expr
 					case identifier&.value
 					when 'splatr'
@@ -476,7 +476,7 @@ module Drive
 
 					if curr?('...') and eat('...') # f (x...; ...) -- same as f (x: Arguments; ...)
 						param.variadic = true
-						param.type     ||= Tape::Identifier_Expr.new('Arguments')
+						param.type     ||= Disk::Identifier_Expr.new('Arguments')
 					end
 
 					if curr?(':', TYPE_IDENTIFIER)
@@ -511,7 +511,7 @@ module Drive
 				raise "unexpected #{curr_lexeme.value.inspect} in function parameter list" if @i == before_i
 			end
 
-			eat Tape::FUNCTION_DELIMITER if curr? Tape::FUNCTION_DELIMITER
+			eat Disk::FUNCTION_DELIMITER if curr? Disk::FUNCTION_DELIMITER
 			reduce_newlines
 
 			until curr? ')'
@@ -525,9 +525,9 @@ module Drive
 
 			if (func.type || signature_colon) && !has_real_body
 				untyped_param = func.parameters.find { |param| param.type.nil? }
-				raise Tape::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
+				raise Disk::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
 
-				sig        = Tape::Func_Signature_Expr.new
+				sig        = Disk::Func_Signature_Expr.new
 				sig.name   = func.name
 				sig.type   = func.type
 				sig.lexeme = func.lexeme
@@ -565,8 +565,8 @@ module Drive
 		def integer_tag_struct_expr
 			start  = curr_lexeme
 			member = parse_number_expr
-			Tape::Struct_Expr.new.tap do |it|
-				it.lexeme      = Tape::Lexeme.new :struct, '<>'
+			Disk::Struct_Expr.new.tap do |it|
+				it.lexeme      = Disk::Lexeme.new :struct, '<>'
 				it.types       = [member]
 				it.names       = [nil]
 				it.c0          = start.c0
@@ -580,9 +580,9 @@ module Drive
 		def parse_struct
 			# TYPE_IDENTIFIER <...>
 			start = curr_lexeme
-			Tape::Struct_Expr.new.tap do |it|
+			Disk::Struct_Expr.new.tap do |it|
 				it.name   = eat if curr? TYPE_IDENTIFIER
-				it.lexeme = Tape::Lexeme.new :struct, '<>'
+				it.lexeme = Disk::Lexeme.new :struct, '<>'
 				it.types  = []
 				it.names  = []
 				eat '<'
@@ -622,18 +622,18 @@ module Drive
 					if curr? ':='
 						eat ':='
 						element.member_default = parse_expression(precedence_for('<'))
-					elsif element.is_a?(Tape::Identifier_Expr) && element.type && curr?('=')
+					elsif element.is_a?(Disk::Identifier_Expr) && element.type && curr?('=')
 						eat '='
 						element.member_default = parse_expression(precedence_for('<'))
 					end
 
 					# A `:` still here means `element`'s own `: Type` lookahead saw one but declined it (not a valid type) -- almost always a Dictionary-style `key: value` typo, invalid in a struct member list.
-					raise Tape::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
+					raise Disk::Invalid_Struct_Member_Annotation.new(curr_lexeme) if curr? ':'
 
 					it.types << element
-					it.names << if element.is_a?(Tape::Func_Signature_Expr)
+					it.names << if element.is_a?(Disk::Func_Signature_Expr)
 						element.name&.value || element.value
-					elsif element.is_a?(Tape::Identifier_Expr) && (element.type || element.member_default)
+					elsif element.is_a?(Disk::Identifier_Expr) && (element.type || element.member_default)
 						element.value
 					end
 
@@ -657,7 +657,7 @@ module Drive
 			#
 
 			start        = curr_lexeme
-			it           = Tape::Type_Expr.new eat # one of valid_idents
+			it           = Disk::Type_Expr.new eat # one of valid_idents
 			it.name      = it.lexeme.value
 			valid_idents = %i(Identifier IDENTIFIER)
 			is_type      = Helpers.type_identifier? it.name
@@ -725,9 +725,9 @@ module Drive
 
 		def parse_comment
 			lexeme   = eat
-			it       = Tape::Comment_Expr.new lexeme
-			it.value = Tape::String_Expr.new lexeme
-			it.body  = Tape::String_Expr.new lexeme
+			it       = Disk::Comment_Expr.new lexeme
+			it.value = Disk::String_Expr.new lexeme
+			it.body  = Disk::String_Expr.new lexeme
 			it.type  = lexeme.type
 			it
 		end
@@ -735,8 +735,8 @@ module Drive
 		def parse_fence_expr
 			start    = curr_lexeme
 			lexeme   = eat
-			it       = Tape::Fence_Expr.new lexeme
-			it.value = Tape::String_Expr.new lexeme
+			it       = Disk::Fence_Expr.new lexeme
+			it.value = Disk::String_Expr.new lexeme
 			it.type  = lexeme.type # :fence by default
 			copy_location it, start
 			it
@@ -745,8 +745,8 @@ module Drive
 		def parse_html_expr
 			# TODO: :html_vs_type_expr
 			start      = curr_lexeme
-			it         = Tape::Html_Fence_Expr.new eat
-			it.value   = Tape::String_Expr.new start
+			it         = Disk::Html_Fence_Expr.new eat
+			it.value   = Disk::String_Expr.new start
 			it.body    = it.value
 			it.element = it.lexeme
 			copy_location it, start
@@ -754,14 +754,14 @@ module Drive
 
 		def parse_composition_expr
 			start         = curr_lexeme
-			expr          = Tape::Composition_Expr.new
+			expr          = Disk::Composition_Expr.new
 			expr.operator = eat(:operator)
 			ident         = parse_identifier_expr
 
 			while curr?('.') && peek.is(:Identifier)
 				dot_op         = eat('.')
 				right          = parse_identifier_expr
-				infix          = Tape::Infix_Expr.new
+				infix          = Disk::Infix_Expr.new
 				infix.left     = ident
 				infix.operator = dot_op
 				infix.right    = right
@@ -770,8 +770,8 @@ module Drive
 			end
 
 			# A composed operand can itself be a tagged reference (`| Other\<'users'>`) -- #parse_identifier_expr already consumed it onto `.tag`; repackage into a Type_Expr so #interp_composition resolves it properly instead of dropping it.
-			if ident.is_a?(Tape::Identifier_Expr) && ident.tag
-				type_ref      = Tape::Type_Expr.new
+			if ident.is_a?(Disk::Identifier_Expr) && ident.tag
+				type_ref      = Disk::Type_Expr.new
 				type_ref.name = ident.value
 				type_ref.tag  = ident.tag
 				copy_location type_ref, ident
@@ -786,7 +786,7 @@ module Drive
 		# `x := |Compo` / `y := |This ^ That` -- a composition chain with no left operand, used as a value. Same Type_Expr shape #parse_type_decl builds for `Base | Compo`, just with `.name` left nil. Only reachable from `:=`'s own RHS parsing.
 		def parse_bare_composition_chain
 			start                    = curr_lexeme
-			it                       = Tape::Type_Expr.new
+			it                       = Disk::Type_Expr.new
 			it.anonymous_composition = true
 			it.expressions           = []
 
@@ -796,7 +796,7 @@ module Drive
 		end
 
 		def parse_statement_expr
-			Tape::Statement_Expr.new.tap do |it|
+			Disk::Statement_Expr.new.tap do |it|
 				eat '`'
 				it.expression = parse_expression
 				eat '`'
@@ -805,7 +805,7 @@ module Drive
 
 		def parse_identifier_expr
 			start = curr_lexeme
-			expr  = Tape::Identifier_Expr.new
+			expr  = Disk::Identifier_Expr.new
 
 			if curr? CONTEXT_OPERATOR
 				at_lexeme = eat CONTEXT_OPERATOR
@@ -857,14 +857,14 @@ module Drive
 			eat '.'
 
 			expr                = parse_identifier_expr
-			expr.scope_operator = Tape::Lexeme.new(:operator, keyword.value)
+			expr.scope_operator = Disk::Lexeme.new(:operator, keyword.value)
 			expr
 		end
 
 		def parse_symbol_expr
 			start = curr_lexeme
 			eat ':'
-			it = Tape::Symbol_Expr.new eat
+			it = Disk::Symbol_Expr.new eat
 			copy_location it, start
 		end
 
@@ -889,7 +889,7 @@ module Drive
 			expr = parse_expression
 
 			# Validate: handler params must include all route params
-			handler_params = if expr.is_a? Tape::Func_Expr
+			handler_params = if expr.is_a? Disk::Func_Expr
 				expr.parameters.map(&:name).map(&:value)
 			else
 				[]
@@ -900,8 +900,8 @@ module Drive
 			# unless missing_params.empty?
 			# end
 
-			route             = Tape::Route_Expr.new
-			route.http_method = Tape::Identifier_Expr.new.tap do |expr|
+			route             = Disk::Route_Expr.new
+			route.http_method = Disk::Identifier_Expr.new.tap do |expr|
 				expr.value = http_method
 				expr.kind  = :identifier
 			end
@@ -934,17 +934,17 @@ module Drive
 
 			eat ')'
 
-			percent_lit             = Tape::Percent_Literal_Expr.new # This extends Circumfix_Expr
+			percent_lit             = Disk::Percent_Literal_Expr.new # This extends Circumfix_Expr
 			percent_lit.kind        = kind.value
 			percent_lit.grouping    = '[]' # so that it interprets as an array later
 			percent_lit.expressions = items
 
 			valid_items = percent_lit.expressions.all? do |it|
 				# Each of these can easily be converted to a string, so for now they're the only ones allowed.
-				it.is_a?(Tape::Identifier_Expr) || it.is_a?(Tape::Number_Expr) || it.is_a?(Tape::Operator_Expr) || it.is_a?(Tape::Statement_Expr)
+				it.is_a?(Disk::Identifier_Expr) || it.is_a?(Disk::Number_Expr) || it.is_a?(Disk::Operator_Expr) || it.is_a?(Disk::Statement_Expr)
 			end
 
-			raise Tape::Invalid_Percent_Literal_Expression.new(percent_lit) unless valid_items
+			raise Disk::Invalid_Percent_Literal_Expression.new(percent_lit) unless valid_items
 
 			copy_location percent_lit, start
 		end
@@ -952,7 +952,7 @@ module Drive
 		# One item is a run of tokens with no whitespace between them, not one lexer token (`1px` lexes as number+identifier). A backtick item never merges -- it's a whole evaluated expression.
 		def parse_percent_literal_item
 			item = parse_percent_literal_token
-			return item if item.is_a? Tape::Statement_Expr
+			return item if item.is_a? Disk::Statement_Expr
 
 			while !curr?(')') && !curr?(',') && !curr?('`') && lexeme_adjacent?(item.lexeme, curr_lexeme)
 				item = merge_percent_literal_items item, parse_percent_literal_token
@@ -989,7 +989,7 @@ module Drive
 			lexeme.l1    = right.lexeme.l1
 			lexeme.c1    = right.lexeme.c1
 
-			merged               = Tape::Identifier_Expr.new lexeme
+			merged               = Disk::Identifier_Expr.new lexeme
 			merged.l0, merged.c0 = left.l0, left.c0
 			merged.l1, merged.c1 = right.l1, right.c1
 			merged.source_file   = left.source_file
@@ -997,18 +997,18 @@ module Drive
 		end
 
 		def parse_beginless_range_expr
-			Tape::Infix_Expr.new.tap do |it|
+			Disk::Infix_Expr.new.tap do |it|
 				it.left     = nil
 				it.operator = eat
 				it.right    = parse_expression precedence_for(it.operator.value)
-				it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
+				it.right    = it.right.left if it.right.is_a? Disk::Nil_Init_Expr
 
 				copy_location it, it.operator # Typically I store `start = curr_lexeme` but here I know that it.operator was the first eaten lexeme here.
 			end
 		end
 
 		def parse_endless_range_expr left_side_expr
-			Tape::Infix_Expr.new.tap do |it|
+			Disk::Infix_Expr.new.tap do |it|
 				it.left     = left_side_expr
 				it.operator = eat
 
@@ -1017,7 +1017,7 @@ module Drive
 					it.right = nil
 				else
 					it.right = parse_expression
-					it.right = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
+					it.right = it.right.left if it.right.is_a? Disk::Nil_Init_Expr
 				end
 
 				copy_location it, left_side_expr
@@ -1030,16 +1030,16 @@ module Drive
 
 			operator_lexeme = eat(:operator)
 
-			it = Tape::Operator_Expr.new operator_lexeme
+			it = Disk::Operator_Expr.new operator_lexeme
 			copy_location it, start
 		end
 
 		def parse_number_expr
 			start       = curr_lexeme
-			expr        = Tape::Number_Expr.new start
+			expr        = Disk::Number_Expr.new start
 			expr.lexeme = eat(:number)
 			if expr.lexeme.value.count('.') > 1
-				expr                  = Tape::Array_Index_Expr.new expr.lexeme
+				expr                  = Disk::Array_Index_Expr.new expr.lexeme
 				expr.indices_in_order = expr.lexeme.value.split '.'
 				expr.indices_in_order = expr.indices_in_order.map &:to_i
 				# It's important not to convert number.value here to anything to preserve the variant number of dots in the string. I think this'll be cool syntax, 2d_array.1.2 would be the equivalent of 2d_array[1][2].
@@ -1058,29 +1058,29 @@ module Drive
 		def parse_nil_init_expr left = nil
 			start = left&.lexeme || curr_lexeme
 
-			expr          = Tape::Nil_Init_Expr.new
+			expr          = Disk::Nil_Init_Expr.new
 			expr.lexeme   = start
 			expr.left     = left || (curr?(SELF_KEYWORDS, '.') ? parse_self_prefixed_identifier : parse_identifier_expr)
 			expr.operator = Lexeme.new(:operator, '=')
 
-			nil_expr         = Tape::Identifier_Expr.new
+			nil_expr         = Disk::Identifier_Expr.new
 			nil_expr.value   = 'nil'
 			nil_expr.kind    = :identifier
 			nil_expr.privacy = Drive.privacy_of_ident 'nil'
 			expr.right       = nil_expr
 
-			@declared_identifiers << expr.left.value if expr.left.is_a?(Tape::Identifier_Expr)
+			@declared_identifiers << expr.left.value if expr.left.is_a?(Disk::Identifier_Expr)
 
 			copy_location expr, start
 		end
 
 		def begin_expression precedence = STARTING_PRECEDENCE, member_rhs: false
-			raise Tape::Out_Of_Tokens.new unless lexemes?
+			raise Disk::Out_Of_Tokens.new unless lexemes?
 
 			if curr? :route
 				parse_route_expr
 
-			elsif curr?(ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX) || curr?(SCOPE_KEYWORDS, '.', ANY_IDENTIFIER, Tape::NIL_INIT_POSTFIX)
+			elsif curr?(ANY_IDENTIFIER, Disk::NIL_INIT_POSTFIX) || curr?(SCOPE_KEYWORDS, '.', ANY_IDENTIFIER, Disk::NIL_INIT_POSTFIX)
 				parse_nil_init_expr
 
 			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_KEYWORDS, '(') || curr?(SCOPE_KEYWORDS, '.', :identifier, '(') || curr?(SCOPE_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
@@ -1135,7 +1135,7 @@ module Drive
 
 			elsif curr? :string
 				start = curr_lexeme
-				expr  = Tape::String_Expr.new eat(:string)
+				expr  = Disk::String_Expr.new eat(:string)
 				copy_location expr, start
 
 			elsif curr? ','
@@ -1143,7 +1143,7 @@ module Drive
 				eat and nil
 
 			elsif curr? FUNCTION_DELIMITER
-				raise Tape::Reserved_Function_Delimiter.new curr_lexeme
+				raise Disk::Reserved_Function_Delimiter.new curr_lexeme
 
 			elsif curr?(:delimiter) && NEWLINES.include?(curr_lexeme.value)
 				reduce_newlines and nil
@@ -1177,20 +1177,20 @@ module Drive
 		end
 
 		def parse_context_call context_ident, precedence
-			member          = Tape::Infix_Expr.new
-			member.operator = Tape::Lexeme.new(:operator, '.')
-			member.left     = Tape::Identifier_Expr.new(Tape::CONTEXT_OPERATOR)
-			member.right    = Tape::Identifier_Expr.new(context_ident.value)
+			member          = Disk::Infix_Expr.new
+			member.operator = Disk::Lexeme.new(:operator, '.')
+			member.left     = Disk::Identifier_Expr.new(Disk::CONTEXT_OPERATOR)
+			member.right    = Disk::Identifier_Expr.new(context_ident.value)
 			copy_location member, context_ident
 
 			paren    = curr?('(') && lexeme_adjacent?(context_ident.lexeme, curr_lexeme)
 			bare_arg = lexemes? && !paren && !(curr?(:delimiter) && CONTEXT_ARG_TERMINATORS.include?(curr_lexeme.value))
 
 			# note; A stack function (`@push_scope`, `@load`, ...) is never a capturable reference.
-			bare_ref = !paren && !bare_arg && !Tape::Context::STACK_FUNCTIONS.include?(context_ident.value)
+			bare_ref = !paren && !bare_arg && !Disk::Context::STACK_FUNCTIONS.include?(context_ident.value)
 			return complete_expression member, precedence if bare_ref
 
-			call           = Tape::Call_Expr.new
+			call           = Disk::Call_Expr.new
 			call.receiver  = member
 			call.arguments = if paren and eat '('
 				args = []
@@ -1220,11 +1220,11 @@ module Drive
 			unless %i(operator identifier).include? op_lexeme.type
 				raise "An operator can only be an :operator or :identifier. Your `#{op_lexeme.value}` is :#{op_lexeme.type}. Maybe it's reserved. todo; Better message!"
 			end
-			operator_expr = Tape::Operator_Expr.new op_lexeme
+			operator_expr = Disk::Operator_Expr.new op_lexeme
 			copy_location operator_expr, op_lexeme
 
 			next_expr = begin_expression
-			if next_expr.is_a?(Tape::Identifier_Expr) && next_expr.prefixed_with_at && %w(prefix infix postfix circumfix).include?(next_expr.value)
+			if next_expr.is_a?(Disk::Identifier_Expr) && next_expr.prefixed_with_at && %w(prefix infix postfix circumfix).include?(next_expr.value)
 				prec = if curr? '('
 					precedence_for(operator_expr.value)
 				else
@@ -1236,7 +1236,7 @@ module Drive
 					raise "an operator overload requires the following form:\n\n\t@operator <operator> @infix <precedence> (left, right; ...)\twhere <precedence> is optional."
 				end
 
-				overload            = Tape::Operator_Overload_Expr.new operator_expr.lexeme
+				overload            = Disk::Operator_Overload_Expr.new operator_expr.lexeme
 				overload.fixity     = next_expr.lexeme
 				overload.precedence = prec
 				overload.func_expr  = parse_func
@@ -1251,14 +1251,14 @@ module Drive
 		def complete_expression expr, precedence = STARTING_PRECEDENCE, member_rhs: false
 			return expr unless expr && lexemes?
 
-			if !member_rhs && expr.is_a?(Tape::Identifier_Expr) && expr.prefixed_with_at
+			if !member_rhs && expr.is_a?(Disk::Identifier_Expr) && expr.prefixed_with_at
 				# `@name: T` / `@name := v` / `@name = v`
 				context_member_decl = !%w(operator ruby).include?(expr.value) &&
 				                      (expr.type || curr?('=') || curr?(':='))
 
 				unless context_member_decl
 					return parse_operator_overload(expr, precedence) if expr.value == 'operator'
-					return parse_context_call(expr, precedence) if Tape::Context::FUNCTIONS.include?(expr.value)
+					return parse_context_call(expr, precedence) if Disk::Context::FUNCTIONS.include?(expr.value)
 				end
 			end
 
@@ -1270,13 +1270,13 @@ module Drive
 			# string literally spelled `'return'`) matched too -- `"hi".end_with?('!')` parsed `'!'` as
 			# the `!` prefix operator applied to nothing, not the string value "!". A string's content
 			# should never be reinterpreted as an operator, so it's excluded here regardless of value.
-			prefix    = !expr.is_a?(Tape::Operator_Overload_Expr) && !expr.is_a?(Tape::String_Expr) && (PREFIX.include?(expr.value) || (expr.is_a?(Tape::Operator_Expr) && @custom_prefix.include?(expr.value)))
+			prefix    = !expr.is_a?(Disk::Operator_Overload_Expr) && !expr.is_a?(Disk::String_Expr) && (PREFIX.include?(expr.value) || (expr.is_a?(Disk::Operator_Expr) && @custom_prefix.include?(expr.value)))
 			infix     = INFIX.include?(curr_lexeme.value) || @custom_infix.include?(curr_lexeme.value)
 			postfix   = POSTFIX.include?(curr_lexeme.value) || @custom_postfix.include?(curr_lexeme.value)
 			circumfix = CIRCUMFIX.include?(curr_lexeme.value)
 
 			if prefix
-				expr = Tape::Prefix_Expr.new.tap do |it|
+				expr = Disk::Prefix_Expr.new.tap do |it|
 					it.operator   = expr
 					it.expression = parse_expression precedence_for(it.operator.value)
 				end
@@ -1288,11 +1288,11 @@ module Drive
 					curr_operator_prec = precedence_for curr_lexeme.value
 					return expr if curr_operator_prec <= precedence
 
-					it          = Tape::Infix_Expr.new
+					it          = Disk::Infix_Expr.new
 					it.left     = expr
 					it.operator = eat
 					it.right    = parse_expression precedence_for it.operator.value
-					it.right    = it.right.left if it.right.is_a? Tape::Nil_Init_Expr
+					it.right    = it.right.left if it.right.is_a? Disk::Nil_Init_Expr
 
 					copy_location it, expr
 					return complete_expression it, precedence
@@ -1306,7 +1306,7 @@ module Drive
 						# A `>>`/`>>>`/etc token might really be two or more `<...>` structs closing back-to-back (`Array\<String>>`), glued at the lexer level -- split it into individual `>` tokens whenever a lone `>` would stop this very loop anyway (i.e. we're already at or below `>`'s own precedence) AND we're actually somewhere inside a `<...>` struct right now. Both conditions matter: the precedence check alone would also misfire on an ordinary top-level `8 >> 2 >> 1` (that recurses into its own right-hand side at `>>`'s own high precedence, satisfying the precedence check on its own); gating on `@struct_nesting_depth` keeps a genuine `>>`/`>>=` completely unaffected everywhere outside a struct.
 						split_glued_close_angles! if @struct_nesting_depth > 0 && curr_lexeme.value.length > 1 && curr_lexeme.value.chars.all? { |char| char == '>' } && precedence_for('>') <= precedence
 
-						# It's very important that the curr?(:operator) check here remains because otherwise it breaks Tape::Call_Expr when the receiver is an Tape::Infix_Expr.
+						# It's very important that the curr?(:operator) check here remains because otherwise it breaks Disk::Call_Expr when the receiver is an Disk::Infix_Expr.
 						curr_operator      = curr_lexeme.value
 						curr_operator_prec = precedence_for curr_operator
 
@@ -1315,7 +1315,7 @@ module Drive
 						end
 
 						left          = expr
-						expr          = Tape::Infix_Expr.new
+						expr          = Disk::Infix_Expr.new
 						expr.left     = left
 						expr.operator = eat(curr_lexeme.value)
 						expr.right    = if expr.operator.value == ':=' && curr?(TYPE_COMPOSITION_OPERATORS) && peek.is(:Identifier)
@@ -1324,16 +1324,16 @@ module Drive
 						else
 							parse_expression curr_operator_prec, member_rhs: DOT_ACCESS_OPERATORS.include?(expr.operator.value)
 						end
-						expr.right    = expr.right.left if expr.right.is_a? Tape::Nil_Init_Expr
+						expr.right    = expr.right.left if expr.right.is_a? Disk::Nil_Init_Expr
 						copy_location expr, left
 
-						if %w(:= =).include?(expr.operator.value) && expr.left.is_a?(Tape::Identifier_Expr)
+						if %w(:= =).include?(expr.operator.value) && expr.left.is_a?(Disk::Identifier_Expr)
 							@declared_identifiers << expr.left.value
 						end
 
-						if expr.left.is(Tape::Identifier_Expr) && expr.operator.value == '.' && expr.right.is(Tape::Number_Expr) && expr.right.type == :float
+						if expr.left.is(Disk::Identifier_Expr) && expr.operator.value == '.' && expr.right.is(Disk::Number_Expr) && expr.right.type == :float
 							# @copypaste from above #parse_expression when :number.
-							number                  = Tape::Array_Index_Expr.new expr.right
+							number                  = Disk::Array_Index_Expr.new expr.right
 							number.indices_in_order = expr.right.value.to_s.split '.'
 							number.indices_in_order = number.indices_in_order.map &:to_i
 							expr.right              = number
@@ -1344,7 +1344,7 @@ module Drive
 				end
 
 			elsif postfix && precedence_for(curr_lexeme.value) > precedence
-				expr = Tape::Postfix_Expr.new.tap do |it|
+				expr = Disk::Postfix_Expr.new.tap do |it|
 					it.expression = expr
 					it.operator   = eat(%i(operator identifier))
 				end
@@ -1353,13 +1353,13 @@ module Drive
 			# `!func_declaration_follows?` matters here too, not just #begin_expression's own dispatch: any expression immediately followed by `(...)` looks like a call continuation regardless of what the receiver even is (a string, a number, ...), so `"endpoint" (;)` – an unrelated anonymous func literal on the same line – would otherwise get swallowed as a bogus call on the string instead of starting its own, separate top-level expression.
 			#
 			# Exception – the "spread lambda" sugar: a single anonymous-function argument may drop its own parens, `xs.map(x; x * 2)` for `xs.map((x; x * 2))`. Only when the receiver is a member access, a call result, or a subscript – shapes that are unambiguously a call target and can't be an accidental adjacent `(;)` literal (`"endpoint" (;)`) or a fresh `f(x; body)` declaration (#begin_expression's `member_rhs` path already kept the member name an identifier so we land here with the whole `x.foo` as `expr`).
-			spread_receiver   = expr.is_a?(Tape::Call_Expr) || expr.is_a?(Tape::Subscript_Expr) || (expr.is_a?(Tape::Infix_Expr) && expr.operator&.value == '.')
+			spread_receiver   = expr.is_a?(Disk::Call_Expr) || expr.is_a?(Disk::Subscript_Expr) || (expr.is_a?(Disk::Infix_Expr) && expr.operator&.value == '.')
 			spread_lambda_arg = curr?('(') && spread_receiver && anon_func_param_list_follows?
 			call_expr         = curr?('(') && curr?(:delimiter) && (!func_declaration_follows? || spread_lambda_arg)
 			subscript         = curr? '['
 			if call_expr && (precedence_for(curr_lexeme.value) > precedence)
 				receiver       = expr
-				expr           = Tape::Call_Expr.new
+				expr           = Disk::Call_Expr.new
 				expr.receiver  = receiver
 				expr.arguments = if spread_lambda_arg
 					[parse_func]
@@ -1370,7 +1370,7 @@ module Drive
 				copy_location expr, receiver
 				return complete_expression expr, precedence
 			elsif subscript && (precedence_for(curr_lexeme.value) > precedence)
-				it            = Tape::Subscript_Expr.new
+				it            = Disk::Subscript_Expr.new
 				it.receiver   = expr
 				it.expression = parse_circumfix_expr opening: curr_lexeme.value
 				it
@@ -1384,7 +1384,7 @@ module Drive
 					return expr
 				end
 
-				it            = Tape::Conditional_Expr.new
+				it            = Disk::Conditional_Expr.new
 				it.when_true  = []
 				it.when_false = []
 				it.type       = eat # One of %w(if while unless until)

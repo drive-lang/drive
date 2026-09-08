@@ -1,12 +1,12 @@
 module Drive
-	# Runs a `.tape` entry file and, if it starts a server, keeps the process alive and re-runs the
-	# whole file whenever any watched `.tape` changes on disk. Each cycle is a brand-new Interpreter
+	# Runs a `.disk` entry file and, if it starts a server, keeps the process alive and re-runs the
+	# whole file whenever any watched `.disk` changes on disk. Each cycle is a brand-new Interpreter
 	# (all instance state reset for free) plus a drop of the class-level lex/parse caches -- no
 	# partial state to reconcile. The server's port is reused across reloads.
 	#
 	# A file that never starts a server behaves exactly as before: run once, return, no watching.
 	class Hot_Reloader
-		include Tape
+		include Disk
 		def initialize entry_filepath
 			@entry  = File.expand_path entry_filepath
 			@events = Queue.new # fed [:change] by Listen and [:shutdown] by the INT/TERM trap
@@ -39,7 +39,7 @@ module Drive
 				when :change
 					interpreter&.shutdown_all_servers
 					Drive::Interpreter.reset_file_caches!
-					puts Tape::Ascii.dim '↻ reloading'
+					puts Disk::Ascii.dim '↻ reloading'
 				end
 			end
 		end
@@ -58,7 +58,7 @@ module Drive
 			interpreter.register_source @entry, source
 			interpreter.run source
 			[interpreter, interpreter.last_output, nil]
-		rescue Tape::Error, Errno::ENOENT => e
+		rescue Disk::Error, Errno::ENOENT => e
 			[interpreter, nil, e]
 		end
 
@@ -66,12 +66,12 @@ module Drive
 			interpreter.servers.each do |server|
 				puts "Drive server `#{server.name}` on http://localhost:#{server.port}"
 			end
-			puts Tape::Ascii.dim 'watching .tape files — ^C to stop (browser auto-refreshes on save)'
+			puts Disk::Ascii.dim 'watching .disk files — ^C to stop (browser auto-refreshes on save)'
 		end
 
 		def report_error error
 			$stderr.puts error.message
-			$stderr.puts Tape::Ascii.dim 'save a fix to retry'
+			$stderr.puts Disk::Ascii.dim 'save a fix to retry'
 		end
 
 		def install_signal_traps
@@ -86,19 +86,19 @@ module Drive
 		def start_watching
 			return if @listener
 			require 'listen'
-			@listener = Listen.to(*watch_dirs, only: /\.tape\z/) do |modified, added, removed|
+			@listener = Listen.to(*watch_dirs, only: /\.disk\z/) do |modified, added, removed|
 				@events << [:change] unless (modified + added + removed).empty?
 			end
 			@listener.start
 		end
 
-		# The stdlib dir (the user edits `tapes/*.tape` too) plus the entry file's own dir when that
+		# The stdlib dir (the user edits `disks/*.disk` too) plus the entry file's own dir when that
 		# sits outside it. Listen watches recursively.
 		def watch_dirs
-			tape_dir  = File.join(Drive::ROOT_PATH, 'tapes')
+			disk_dir  = File.join(Drive::ROOT_PATH, 'disks')
 			entry_dir = File.dirname(@entry)
-			dirs      = [tape_dir]
-			dirs << entry_dir unless entry_dir == tape_dir || entry_dir.start_with?("#{tape_dir}/")
+			dirs      = [disk_dir]
+			dirs << entry_dir unless entry_dir == disk_dir || entry_dir.start_with?("#{disk_dir}/")
 			dirs
 		end
 	end

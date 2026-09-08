@@ -1,7 +1,7 @@
 module Drive
 	# @param [::String] key
-	# @param [Tape::Expression | Tape::Declaration] expr_or_decl
-	# @param [Tape::Expression] expr, the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution, see Interpreter#resolve_forward_declaration)
+	# @param [Disk::Expression | Disk::Declaration] expr_or_decl
+	# @param [Disk::Expression] expr, the original expression that must be interpreted to actually bring this declaration into being (used for lazy/forward resolution, see Interpreter#resolve_forward_declaration)
 	Declaration = ::Data.define(:key, :expr_or_decl, :expr) do
 		def == other
 			other.key == key
@@ -9,7 +9,7 @@ module Drive
 	end
 
 	class Declarator
-		include Tape
+		include Disk
 		extend Cached_By_Path
 
 		# {::String resolved_path => Hash{::String => Declaration}}
@@ -25,8 +25,8 @@ module Drive
 		# Mirrors Interpreter#load_file_into_scope's own path resolution exactly -- kept here too since Declarator has to resolve a load target itself, ahead of the real interpreter ever reaching that @load.
 		def self.resolve_load_filepath filepath
 			filepath = filepath.dup
-			filepath << '.tape' unless filepath.end_with? '.tape'
-			if filepath.start_with? 'tapes/'
+			filepath << '.disk' unless filepath.end_with? '.disk'
+			if filepath.start_with? 'disks/'
 				File.join Drive::ROOT_PATH, filepath
 			else
 				File.expand_path filepath
@@ -37,10 +37,10 @@ module Drive
 		attr_reader :declarations
 
 		# note; I'm not evaluating any of these input expressions, I'm just storing them
-		# @param [Array<Tape::Expression>] input
+		# @param [Array<Disk::Expression>] input
 		def initialize input = []
-			@input        = input # [Tape::Expression]
-			@declarations = Hash.new # {::String : Tape::Declaration}
+			@input        = input # [Disk::Expression]
+			@declarations = Hash.new # {::String : Disk::Declaration}
 		end
 
 		def output
@@ -57,8 +57,8 @@ module Drive
 			Declaration[key, expr, expr]
 		end
 
-		# @param [Array<Tape::Expression>] expressions
-		# @return [Hash{::String => Tape::Declaration}]
+		# @param [Array<Disk::Expression>] expressions
+		# @return [Hash{::String => Disk::Declaration}]
 		def declare_all expressions
 			expressions.each_with_object(Hash.new) do |expr, declarations|
 				decl = declare expr
@@ -89,11 +89,11 @@ module Drive
 		def load_call? expr
 			r = expr.receiver
 			r.is_a?(Infix_Expr) && r.operator&.value == '.' &&
-				r.left.is_a?(Identifier_Expr) && r.left.value == Tape::CONTEXT_OPERATOR &&
+				r.left.is_a?(Identifier_Expr) && r.left.value == Disk::CONTEXT_OPERATOR &&
 				r.right.is_a?(Identifier_Expr) && r.right.value == 'load'
 		end
 
-		# @return [Hash{::String => Tape::Declaration}, nil]
+		# @return [Hash{::String => Disk::Declaration}, nil]
 		def declarations_for_load expr
 			path_expr = expr.arguments&.first
 			return nil unless path_expr.is_a? String_Expr
@@ -112,7 +112,7 @@ module Drive
 		end
 
 		# @param [::String] filepath
-		# @return [Hash{::String => Tape::Declaration}]
+		# @return [Hash{::String => Disk::Declaration}]
 		def cached_declarations_for_load filepath
 			filepath = self.class.resolve_load_filepath filepath
 			return Hash.new if self.class.currently_loading_filepaths.include? filepath
@@ -132,8 +132,8 @@ module Drive
 			Hash.new # missing/unreadable file -- not this pass's job to raise; the real @load will, once actually reached
 		end
 
-		# @param [Tape::Expression] expr to declare
-		# @return [Tape::Declaration, Hash, nil]
+		# @param [Disk::Expression] expr to declare
+		# @return [Disk::Declaration, Hash, nil]
 		def declare expr
 			case expr
 			when Param_Expr

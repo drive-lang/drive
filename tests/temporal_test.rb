@@ -51,11 +51,11 @@ class Temporal_Test < Base_Test
 	end
 
 	def test_date_time_comparison
-		code = <<~TAPE
+		code = <<~DISK
 		    a := Date_Time.parse("2020-01-01T00:00:00+00:00")
 		    b := Date_Time.parse("2020-01-01T00:00:01+00:00")
 		    [a < b, a <= a, b > a, a == a]
-		TAPE
+		DISK
 		assert_equal [true, true, true, true], Drive.interp(code).values
 	end
 
@@ -63,9 +63,9 @@ class Temporal_Test < Base_Test
 		filepath = "./temp_temporal_test_#{Process.pid}.db"
 		File.delete(filepath) if File.exist?(filepath)
 
-		code = <<~TAPE
-		    @load 'tapes/database.tape'
-		    @load 'tapes/table.tape'
+		code = <<~DISK
+		    @load 'disks/database.disk'
+		    @load 'disks/table.disk'
 		    db := @connect Sqlite('#{filepath}')
 
 		    Log_Schema <
@@ -80,7 +80,7 @@ class Temporal_Test < Base_Test
 		    old := table.all().0
 		    fresh := table.all().1
 		    [old.note, old.logged_at.year, old.logged_at < fresh.logged_at]
-		TAPE
+		DISK
 
 		out = Drive.interp(code)
 		assert_equal 'old', out.values[0]

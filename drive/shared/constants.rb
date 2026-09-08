@@ -1,11 +1,11 @@
-module Tape
+module Disk
 	DOM_CONSTRUCTOR_PROP_NAMES        = %w(onclick key)
 	DOM_CONSTRUCTOR_PROP_PREFIXES     = %w(html_ css_)
 	HTML_ATTRS                        = %w(id class href)
 	HTTP_VERBS                        = %w(get put patch post delete head options connect trace)
 	VOID_HTML_TAGS                    = %w(area base br col command embed hr img input keygen link meta param source track wbr)
 	HTTP_VERB_SEPARATOR               = '://'
-	# Every `@` (Context) member is defined once, on Tape::Context (see drive/backings/context.rb):
+	# Every `@` (Context) member is defined once, on Disk::Context (see drive/backings/context.rb):
 	# Context::MEMBERS, and the derived Context::FUNCTIONS / ::STACK_FUNCTIONS / ::VITALS.
 	CONTEXT_OPERATOR                  = '@'
 	CONTEXT_ARG_TERMINATORS           = %W( \n \r \) \} \] \, \; )

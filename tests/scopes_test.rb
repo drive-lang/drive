@@ -19,7 +19,7 @@ class Scopes_Test < Base_Test
 
 			Vec2()
 		CODE
-		assert_kind_of Tape::Instance, out
+		assert_kind_of Disk::Instance, out
 		assert_equal 'Vec2', out.name
 	end
 
@@ -33,7 +33,7 @@ class Scopes_Test < Base_Test
 
 			Vec2.ZERO
 		CODE
-		assert_kind_of Tape::Instance, out
+		assert_kind_of Disk::Instance, out
 		assert_equal 'Vec2', out.name
 		assert_equal [0, 0], [out.get(:x), out.get(:y)]
 	end
@@ -84,7 +84,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pop_scope_with_nothing_pushed_raises
-		# No dedicated Tape:: error -- pop_scope refuses to pop the last remaining scope, so the identity check fails.
+		# No dedicated Disk:: error -- pop_scope refuses to pop the last remaining scope, so the identity check fails.
 		assert_raises RuntimeError do
 			Drive.interp <<-CODE
 				#{SHARED_VEC2}
@@ -94,7 +94,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pop_scope_without_target_raises_invalid_directive_usage
-		assert_raises Tape::Invalid_Context_Function_Usage do
+		assert_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp <<-CODE
 				#{SHARED_VEC2}
 				@push_scope Vec2
@@ -118,7 +118,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_popping_a_doubly_pushed_scope_the_right_number_of_times_fully_exits
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp <<-CODE
 				#{SHARED_VEC2}
 
@@ -176,7 +176,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_unsplatting_without_a_reference
-		assert_raises Tape::Invalid_Context_Function_Usage do
+		assert_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp <<-CODE
 				#{SHARED_VEC2}
 
@@ -269,42 +269,42 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_add_readable_and_writable_scope_with_non_scope_argument_wraps_arg_with_maybe_instance
-		refute_raises Tape::Invalid_Scope_Function_Argument do
+		refute_raises Disk::Invalid_Scope_Function_Argument do
 			Drive.interp '@splatr 4'
 		end
 
-		refute_raises Tape::Invalid_Scope_Function_Argument do
+		refute_raises Disk::Invalid_Scope_Function_Argument do
 			Drive.interp "@splat 'eight'"
 		end
 	end
 
 	def test_add_readable_scope_with_nil_argument_is_silently_accepted
-		# Gap in the falsy-guard: maybe_instance(nil) -> a Tape::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
-		refute_raises Tape::Invalid_Context_Function_Usage do
+		# Gap in the falsy-guard: maybe_instance(nil) -> a Disk::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
+		refute_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp '@splatr nil'
 		end
 	end
 
 	def test_add_readable_scope_with_false_argument_is_silently_accepted
 		# Same gap, for false -- maybe_instance(false) => Bool::FALSE, also Ruby-truthy.
-		refute_raises Tape::Invalid_Context_Function_Usage do
+		refute_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp '@splatr false'
 		end
 	end
 
 	def test_add_writable_scope_with_nil_and_false_arguments_are_silently_accepted
-		refute_raises Tape::Invalid_Context_Function_Usage do
+		refute_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp '@splat nil'
 		end
 
-		refute_raises Tape::Invalid_Context_Function_Usage do
+		refute_raises Disk::Invalid_Context_Function_Usage do
 			Drive.interp '@splat false'
 		end
 	end
 
 	def test_an_undeclared_identifier_argument_still_raises_undeclared_identifier
 		# Contrast: a real typo still raises -- that check happens in #interpret, before maybe_instance ever runs.
-		assert_raises Tape::Undeclared_Identifier do
+		assert_raises Disk::Undeclared_Identifier do
 			Drive.interp '@splatr this_was_never_declared'
 		end
 	end
@@ -470,7 +470,7 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_function_is_rejected_at_push_time
 		# Used to succeed silently, then fail confusingly on pop -- Func is duped on every lookup (#rebind_func_to_scope), so identity can never match. Now rejected immediately, on push.
-		assert_raises Tape::Invalid_Scope_Function_Argument do
+		assert_raises Disk::Invalid_Scope_Function_Argument do
 			Drive.interp <<-CODE
 				funk (; 1 )
 				@push_scope funk
@@ -480,14 +480,14 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_bare_literal_is_rejected_at_push_time
 		# Number passes the Func-rejecting Type check, but maybe_instance builds a fresh object every call -- identity can never match. Target must now be a bare identifier naming something already bound.
-		assert_raises Tape::Invalid_Scope_Function_Argument do
+		assert_raises Disk::Invalid_Scope_Function_Argument do
 			Drive.interp '@push_scope 4'
 		end
 	end
 
 	def test_push_scope_an_explicit_constructor_call_is_rejected_at_push_time
 		# Same fix, different freshness source: a constructor call builds a new instance every run too.
-		assert_raises Tape::Invalid_Scope_Function_Argument do
+		assert_raises Disk::Invalid_Scope_Function_Argument do
 			Drive.interp '@push_scope Number(4)'
 		end
 	end

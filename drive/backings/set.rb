@@ -1,6 +1,6 @@
 require 'set'
 
-module Tape
+module Disk
 	class Set < Instance
 		extend Ruby_Proxies
 		attr_accessor :set
@@ -13,7 +13,7 @@ module Tape
 		def to_ruby_set other
 			return ::Set.new               if other.nil?
 			return other.dup              if other.is_a? ::Set
-			return other.set.dup         if other.is_a? Tape::Set
+			return other.set.dup         if other.is_a? Disk::Set
 			return ::Set.new(other.values) if other.respond_to? :values
 			return ::Set.new(other.to_a)  if other.respond_to?(:to_a) || other.respond_to?(:each)
 			Drive.assert false, "Set expected an Array, Range, or Set, got #{other.class.name.split('::').last}"
@@ -53,7 +53,7 @@ module Tape
 
 		# A fresh Array snapshot -- mutating it can't corrupt the Set's own store.
 		def proxy_values
-			Tape::Array.new @set.to_a
+			Disk::Array.new @set.to_a
 		end
 
 		def proxy_subset? other
@@ -75,23 +75,23 @@ module Tape
 		# --- set algebra ---
 
 		def | other
-			Tape::Set.new.tap { |s| s.set.replace(@set | to_ruby_set(other)) }
+			Disk::Set.new.tap { |s| s.set.replace(@set | to_ruby_set(other)) }
 		end
 
 		def & other
-			Tape::Set.new.tap { |s| s.set.replace(@set & to_ruby_set(other)) }
+			Disk::Set.new.tap { |s| s.set.replace(@set & to_ruby_set(other)) }
 		end
 
 		def - other
-			Tape::Set.new.tap { |s| s.set.replace(@set - to_ruby_set(other)) }
+			Disk::Set.new.tap { |s| s.set.replace(@set - to_ruby_set(other)) }
 		end
 
 		def ^ other
-			Tape::Set.new.tap { |s| s.set.replace(@set ^ to_ruby_set(other)) }
+			Disk::Set.new.tap { |s| s.set.replace(@set ^ to_ruby_set(other)) }
 		end
 
 		def == other
-			other.is_a?(Tape::Set) && @set == other.set
+			other.is_a?(Disk::Set) && @set == other.set
 		end
 
 		def to_s

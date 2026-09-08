@@ -1,0 +1,76 @@
+### Introduction
+
+`disks/css.disk` isn't loaded by default -- it needs an explicit `@load`. CSS is plain data here: a handful of structs (`Property`, `Style_Rule`, `At_Rule`, ...) build a small AST by hand, and a single `Css_Formatter_Visitor` walks whatever tree you built and turns it into a real CSS string. No parser -- you construct the tree directly.
+###
+@load 'disks/css.disk'
+
+rule := Style_Rule(['.box'], [Property('color', 'red'), Property('padding', '8px')])
+css   := Css_Formatter_Visitor().format(rule)
+
+@assert css == ".box {\n    color: red;\n    padding: 8px;\n}", 'format should pretty-print a rule with one declaration per line'
+
+
+### minify
+
+The same visitor, constructed with `minify := true`, collapses everything onto one line with no extra whitespace -- same tree, same method, different output:
+###
+minified := Css_Formatter_Visitor(minify := true).format(rule)
+@assert minified == '.box{color:red;padding:8px;}', 'minify should collapse the same rule onto one line'
+
+
+### Nested rules get a synthesized &
+
+A `Style_Rule` can nest more rules inside its own `rules` -- real CSS nesting. A nested selector that doesn't already start with `&`/`:` gets one synthesized in front of it:
+###
+nested := Style_Rule(['.box'], [], [Style_Rule(['.inner'], [Property('color', 'blue')])])
+@assert Css_Formatter_Visitor().format(nested) == ".box {\n    & .inner {\n        color: blue;\n    }\n}", 'a rule nested inside another rule should get a synthesized & prefix'
+
+
+### At-rules and @scope don't synthesize &
+
+A rule merely sitting inside an `At_Rule`'s (`@media`, ...) or `Scope_Rule`'s (`@scope`) own body isn't "nested" the same way -- there's no parent selector for `&` to refer to, so nothing gets added:
+###
+media := At_Rule('media', '(min-width: 100px)', [Style_Rule(['.a'], [Property('color', 'red')])])
+@assert Css_Formatter_Visitor().format(media) == "@media (min-width: 100px) {\n    .a {\n        color: red;\n    }\n}", 'a rule inside an At_Rule body should not get a synthesized &'
+
+scope := Scope_Rule('.widget', '', [Style_Rule(['p'], [Property('margin', '0')])])
+@assert Css_Formatter_Visitor().format(scope) == "@scope (.widget) {\n    p {\n        margin: 0;\n    }\n}", 'a rule inside a Scope_Rule body should not get a synthesized & either'
+
+
+### A Stylesheet is just a list of top-level rules
+
+`format` dispatches on whatever struct kind it's handed -- a `Stylesheet` formats each of its rules and joins them, with a blank line between in pretty mode:
+###
+sheet := Stylesheet([Style_Rule(['.a'], [Property('color', 'red')]), Style_Rule(['.b'], [Property('color', 'blue')])])
+@assert Css_Formatter_Visitor().format(sheet) == ".a {\n    color: red;\n}\n\n.b {\n    color: blue;\n}", 'a Stylesheet should format each rule and join them with a blank line'
+@assert Css_Formatter_Visitor(minify := true).format(sheet) == '.a{color:red;}.b{color:blue;}', 'minify should join rules with no separator at all'
+
+
+### Css_Lint_Visitor
+
+A separate visitor walks the same kind of tree looking for problems instead of formatting it: duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` where `0` would do). `.lint` resets its own warnings list at the start of every call, so one instance can be reused across trees:
+###
+flagged := Style_Rule(['.box'], [
+	Property('color', 'red'),
+	Property('color', 'blue'),
+	Property('-webkit-transform', 'none'),
+	Property('margin', '0px 10px')
+])
+
+warnings := Css_Lint_Visitor().lint(flagged)
+@assert warnings == [
+	"Duplicate property 'color'",
+	"Avoid hardcoded vendor prefix in '-webkit-transform'",
+	"Unit unneeded for zero value in 'margin: 0px 10px'"
+], 'lint should flag all three problems, in the order the declarations appear'
+
+clean := Style_Rule(['.box'], [Property('color', 'red'), Property('padding', '10px')])
+@assert Css_Lint_Visitor().lint(clean) == [], 'a rule with no problems should produce no warnings'
+
+
+### Custom indent size
+
+Both visitors take an `indent_size` as their first constructor argument (default 4) -- everything else about pretty-printing stays the same, just narrower or wider:
+###
+narrow := Css_Formatter_Visitor(2).format(Style_Rule(['.box'], [Property('color', 'red')]))
+@assert narrow == ".box {\n  color: red;\n}", 'a custom indent_size should be honored throughout'

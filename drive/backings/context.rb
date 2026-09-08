@@ -1,10 +1,10 @@
 require 'objspace'
 
-module Tape
+module Disk
 	class Context < Struct
 		attr_accessor :subject
 
-		# The single source of truth for every `@` member. `tapes/context.tape` is the human-readable
+		# The single source of truth for every `@` member. `disks/context.disk` is the human-readable
 		# mirror -- its member list is asserted to match MEMBERS.keys (tests/context_test.rb).
 		#   {}                 -- a reflective vital (computed onto each Context, not callable)
 		#   { fn: :intrinsic } -- a function dispatched via Interpreter#interp_intrinsic

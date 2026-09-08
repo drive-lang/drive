@@ -1,6 +1,6 @@
 require 'sequel'
 
-module Tape
+module Disk
 	class Database < Instance
 		extend Ruby_Proxies
 		include Declaration_Accessors
@@ -32,13 +32,13 @@ module Tape
 		#   Todo<id: Primary_Key, text: String>
 		#
 		# creates a table called `todos` where the name is inferred from the name of the struct, hence the requirement for it to be named.
-		# @param [Tape::Struct] struct with name
-		# @return [Tape::Table] table
+		# @param [Disk::Struct] struct with name
+		# @return [Disk::Table] table
 		def proxy_create_table struct
-			Drive.assert struct.is_a? Tape::Struct
+			Drive.assert struct.is_a? Disk::Struct
 			Drive.assert struct.name
 
-			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Tape::Table
+			# It appears that #create_table here doesn't return anything so below this block, I'm forwarding to #find_table which actually builds a Disk::Table
 			connection.create_table table_name_for(struct) do
 				# Structs can have unnamed members because it's basically linear storage with indices as well as names. To create a table, I want both name and type present, otherwise see ya.
 				struct.members.values.each do |member|
@@ -72,7 +72,7 @@ module Tape
 					when 'Blob', 'Binary'
 						column column_name, ::File
 					else
-						if member.type.is_a? Tape::Enum
+						if member.type.is_a? Disk::Enum
 							# todo; should these be considered strings? Or maybe integers? Can it be more complex?
 							column column_name, ::String
 						end
@@ -86,17 +86,17 @@ module Tape
 		end
 
 		proxy_overload :find_table,
-		               Tape::Struct => :find_table_struct,
+		               Disk::Struct => :find_table_struct,
 		               ::String     => :find_table_named
 
 		# @param [::Symbol] name as symbol
-		# @return [Tape::Table] table
+		# @return [Disk::Table] table
 		def find_table_named name
 			Drive.assert name.is_a? ::String
 
 			# note; `connection[name]` alone is always truthy so you have to explicitly check if the table exists.
 			if connection.table_exists? name.to_sym
-				table            = Tape::Table.new
+				table            = Disk::Table.new
 				table.table_name = name.to_s
 				table.database   = self
 				table
@@ -112,20 +112,20 @@ module Tape
 			table
 		end
 
-		# @param [::Symbol, Tape::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		# @param [::Symbol, Disk::Struct] name_or_struct a table name, or a named schema struct to derive one from
 		def proxy_delete_table! name_or_struct
-			name = name_or_struct.is_a?(Tape::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			name = name_or_struct.is_a?(Disk::Struct) ? table_name_for(name_or_struct) : name_or_struct
 			connection.drop_table name
 		end
 
-		# @param [::Symbol, Tape::Struct] name_or_struct a table name, or a named schema struct to derive one from
+		# @param [::Symbol, Disk::Struct] name_or_struct a table name, or a named schema struct to derive one from
 		def proxy_table_exists? name_or_struct
-			name = name_or_struct.is_a?(Tape::Struct) ? table_name_for(name_or_struct) : name_or_struct
+			name = name_or_struct.is_a?(Disk::Struct) ? table_name_for(name_or_struct) : name_or_struct
 			connection.table_exists? name
 		end
 
 		def proxy_tables
-			Tape::Array.new connection.tables
+			Disk::Array.new connection.tables
 		end
 
 		def proxy_to_s
