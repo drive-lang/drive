@@ -584,7 +584,7 @@ module Drive
 			when Tape::Type
 				value.types
 			else
-				# Covers intrinsics (Number/String/Array/Dictionary/Bool) and anything else -- neither needs special handling, both resolve by name.
+				# Covers backings (Number/String/Array/Dictionary/Bool) and anything else -- neither needs special handling, both resolve by name.
 				composed_types_by_name type_name_to_string(value)
 			end
 		end

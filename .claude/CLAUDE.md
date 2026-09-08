@@ -77,22 +77,19 @@ Five phases: **Lexer → Parser → Type Checker → Forward Declarator → Inte
 
 ### Directory layout — `drive/`
 
-The pipeline phases are numbered folders, in run order. `drive/drive.rb` requires everything in that order (it *is* the load-order spec). Anything not in the pipeline gets no number.
+Two kinds of folder: a numbered one per pipeline phase (in run order), holding **only** that phase's `Drive::` processor; and `backings/`, holding **everything `module Tape`** (the AST, the scopes, the errors, the value types). `drive/drive.rb` requires everything in load order (it *is* the load-order spec).
 
 - `drive.rb` — entry point; requires all components, then defines `Drive.lex`/`.parse`/`.declare`/`.interp` (+ `_file` variants), `ROOT_PATH`, `STANDARD_LIBRARY_PATH`, `VERSION`
-- `cli.rb` — `Drive::CLI` (the `bin/drive` commands)
-- `repl.rb` — `Drive::REPL`
-- `1_lexer/` — `lexer.rb` (`Drive::Lexer`: source → tokens), `lexeme.rb` (`Tape::Lexeme`)
-- `2_parser/` — `parser.rb` (`Drive::Parser`: tokens → AST), `expressions.rb` (`Tape::Expression` + every `*_Expr`)
-- `3_type_checker/` — `type_checker.rb` (`Drive::Type_Checker`: static checks on the AST)
-- `4_declarator/` — `declarator.rb` (`Drive::Declarator`: builds `Interpreter#declarations` for forward resolution — see Forward Declarations)
-- `5_interpreter/` — the AST executor and everything it needs at runtime:
-	- `interpreter.rb` — `Drive::Interpreter`, the running program; owns `@lexer`/`@parser`, `stack`, `routes`, `servers`, `cached_expressions_by_filepath`; `run(source)` is the entry point
-	- `scopes.rb` — the scope hierarchy: `Tape::Scope`, `Global < Scope` (bottom of the stack, holds the stdlib), `Type`, `Instance`, `Func`, `Route`, `Return`, `Any`, `Nil`, `Bool`, `Server`, `Request`, `Response`
-	- `errors.rb` — runtime + compile error classes; `func_signature.rb`, `return.rb` — small runtime value types
-	- `dom_renderer.rb` — `Drive::Dom_Renderer`, HTML for `Dom` composition; `hot_reloader.rb` — `Drive::Hot_Reloader`, file-watch + re-run
-	- `dom.js`, `live_reload.js`, `view_transition.css` — browser assets `interpreter.rb` serves (read by literal path `drive/5_interpreter/…`)
-- `backings/` — the Ruby class behind a built-in `.tape` type (`string.rb` ↔ `tapes/string.tape`, …): `string array number range set dictionary struct context enum statement member file_system temporal database table`. Each is `class X < Instance` inside `module Tape`.
+- `cli.rb` — `Drive::CLI` (the `bin/drive` commands); `repl.rb` — `Drive::REPL`
+- `1_lexer/lexer.rb` — `Drive::Lexer`, source → tokens
+- `2_parser/parser.rb` — `Drive::Parser`, tokens → AST
+- `3_type_checker/type_checker.rb` — `Drive::Type_Checker`, static checks on the AST
+- `4_declarator/declarator.rb` — `Drive::Declarator`, builds `Interpreter#declarations` for forward resolution (see Forward Declarations)
+- `5_interpreter/` — `interpreter.rb` (`Drive::Interpreter`, the running program; owns `@lexer`/`@parser`, `stack`, `routes`, `servers`, `cached_expressions_by_filepath`; `run(source)` is the entry point), `dom_renderer.rb` (`Drive::Dom_Renderer`), `hot_reloader.rb` (`Drive::Hot_Reloader`), and the browser assets `interpreter.rb` serves by literal path (`dom.js`, `live_reload.js`, `view_transition.css`)
+- `backings/` — `module Tape`, base types first in the require list:
+	- `scopes.rb` — the scope hierarchy: `Scope`, `Global < Scope` (bottom of the stack, holds the stdlib), `Type`, `Instance`, `Func`, `Route`, `Return`, `Any`, `Nil`, `Bool`, `Server`, `Request`, `Response`
+	- `lexeme.rb` (`Tape::Lexeme`), `expressions.rb` (`Tape::Expression` + every `*_Expr`), `errors.rb`, `func_signature.rb`, `return.rb`
+	- the Ruby class behind each built-in `.tape` type (`string.rb` ↔ `tapes/string.tape`, …): `string array number range set dictionary struct context enum statement member file_system temporal database table` — each `class X < Instance`
 - `shared/` — pulled in across the codebase: `constants.rb` (`module Tape`: operators, precedence, reserved words), `helpers.rb` (`module Helpers`: identifier casing, `assert`), `ascii.rb` (`Tape::Ascii`), `ruby_proxies.rb`, `declaration_accessors.rb`, `cached_by_path.rb`, `error_formatter.rb` (`Tape::Error_Formatter`), `documenter.rb` (`Drive::Documenter` — a separate doc-comment pass, not in the run pipeline)
 
 ### Standard Library
@@ -214,7 +211,7 @@ The consuming side lives in `#interp_identifier`'s final `else` branch — the c
 
 ## Scope System
 
-Drive uses a scope hierarchy, all defined in `drive/5_interpreter/scopes.rb`:
+Drive uses a scope hierarchy, all defined in `drive/backings/scopes.rb`:
 
 - **Global** - The global scope; pushed as the bottom of `Interpreter#stack` on first `run`; standard library declarations live here; execution state (routes, servers, loaded files, etc.) lives directly on `Interpreter`
 - **Type** - Class definitions (tracks `@types`, `@expressions`)

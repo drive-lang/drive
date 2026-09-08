@@ -14,23 +14,15 @@ require_relative 'shared/cached_by_path'
 require_relative 'shared/error_formatter'
 require_relative 'shared/documenter'
 
-# The pipeline, in run order: 1_lexer -> 2_parser -> 3_type_checker -> 4_declarator -> 5_interpreter.
-require_relative '1_lexer/lexeme'
-require_relative '1_lexer/lexer'
+# backings/ is the Tape vocabulary: the AST, the scopes, the errors, and the Ruby class behind
+# each built-in .tape type. Base types first -- the value types subclass Instance from scopes.
+require_relative 'backings/errors'
+require_relative 'backings/lexeme'
+require_relative 'backings/expressions'
+require_relative 'backings/scopes'
+require_relative 'backings/func_signature'
+require_relative 'backings/return'
 
-require_relative '2_parser/expressions'
-require_relative '2_parser/parser'
-
-require_relative '3_type_checker/type_checker'
-
-require_relative '4_declarator/declarator'
-
-require_relative '5_interpreter/errors'
-require_relative '5_interpreter/scopes'
-require_relative '5_interpreter/func_signature'
-require_relative '5_interpreter/return'
-
-# Ruby backings for the built-in .tape types (they subclass Instance from scopes.rb above).
 require_relative 'backings/string'
 require_relative 'backings/array'
 require_relative 'backings/range'
@@ -47,6 +39,11 @@ require_relative 'backings/member'
 require_relative 'backings/statement'
 require_relative 'backings/enum'
 
+# The pipeline, in run order: 1_lexer -> 2_parser -> 3_type_checker -> 4_declarator -> 5_interpreter.
+require_relative '1_lexer/lexer'
+require_relative '2_parser/parser'
+require_relative '3_type_checker/type_checker'
+require_relative '4_declarator/declarator'
 require_relative '5_interpreter/dom_renderer'
 require_relative '5_interpreter/interpreter'
 require_relative '5_interpreter/hot_reloader'

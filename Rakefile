@@ -11,5 +11,5 @@ Minitest::TestTask.create(:test) do |t|
 end
 
 task :cloc do
-	sh "\ncloc --quiet --force-lang-def=drive.cloc --exclude-dir=.project,.working,.temporary,tests ."
+	sh "\ncloc --quiet --force-lang-def=drive.cloc --exclude-dir=.projects,.working,.temporary,tests ."
 end

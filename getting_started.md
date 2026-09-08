@@ -34,7 +34,7 @@ Pipeline: **Lexer → Parser → Type_Checker → Interpreter**. Methods: `lex_*
 1. **Lex it** — [`lexer.rb`](drive/1_lexer/lexer.rb)`#output` is one big `if/elsif` dispatching on the current char(s). Add a branch (or a `lex_*` helper called from one) that sets `token.type`/`token.value`.
    1. `l0`/`c0`/`l1`/`c1`/`source_file` are set automatically around every branch — you don't touch them here.
    2. Add any new symbols/keywords to the relevant list in [`constants.rb`](drive/shared/constants.rb) (`RESERVED`, `PERCENT_LITERALS`, an operator list, etc.) so they're recognized/reserved.
-2. **Add an AST node** — a new `Tape::Foo_Expr < Expression` in [`expressions.rb`](drive/2_parser/expressions.rb). Only add `attr_accessor`s for what's structurally new; `value`/`type`/`l0..c1`/`source_file` are inherited.
+2. **Add an AST node** — a new `Tape::Foo_Expr < Expression` in [`expressions.rb`](drive/backings/expressions.rb). Only add `attr_accessor`s for what's structurally new; `value`/`type`/`l0..c1`/`source_file` are inherited.
 3. **Parse it** — add a branch to `Parser#begin_expression` (prefix position) or `#complete_expression` (infix/postfix position) in [`parser.rb`](drive/2_parser/parser.rb), dispatching on `curr?`/`peek`, calling a new `parse_foo_expr`. Build the `Foo_Expr`, set its location (see below), return it.
 4. **Type-check it (optional)** — only if it introduces a new literal type or call shape worth statically checking. Extend `infer_type`/`check` in [`type_checker.rb`](drive/3_type_checker/type_checker.rb). Most constructs skip this — the static checker only handles literal type mismatches.
 5. **Interpret it** — add a case to `Interpreter#interpret`'s dispatch and a new `interp_foo` in [`interpreter.rb`](drive/5_interpreter/interpreter.rb) that walks the `Foo_Expr` and produces a runtime value (an `Tape::*` instance, a Ruby primitive, `nil`, etc.).
@@ -57,7 +57,7 @@ Two files, independently optional — pure-Drive types skip #2, rare Ruby-only t
 
 1. **`tapes/foo.tape`** — the Drive-level declaration (`Foo { ... }`). A method that defers to Ruby is just `some_method (; @ruby )`.
 2. **`drive/backings/foo.rb`** — `class Foo < Tape::Instance` (or `< Tape::Type`), inside `module Drive`. `extend Ruby_Proxies` + `proxy :method_name` for 1:1 delegation ([`ruby_proxies.rb`](drive/shared/ruby_proxies.rb)), or hand-write `def proxy_method_name(...)` for custom logic. `@ruby` calls `proxy_#{method_name}` on the backing instance.
-3. **Register the Ruby file** — `require_relative 'backings/foo'` in [`drive/drive.rb`](drive/drive.rb)'s "backings" block (after `5_interpreter/scopes`).
+3. **Register the Ruby file** — `require_relative 'backings/foo'` in [`drive/drive.rb`](drive/drive.rb)'s "backings" block (after `backings/scopes`).
 4. **Load the Drive file** — `@load 'tapes/foo.tape'` in [`tapes/global.tape`](tapes/global.tape) for always-on, or leave opt-in for the user's own program to `@load` (e.g. `tapes/database.tape`).
 5. Nothing else — matching Drive type ↔ Ruby class is by name, dynamic at construction time (next section).
 
@@ -84,14 +84,14 @@ Two files, independently optional — pure-Drive types skip #2, rare Ruby-only t
 |---|---|
 | Tokens, reserved words, operator lists, precedence | [`drive/shared/constants.rb`](drive/shared/constants.rb) |
 | Identifier casing rules (`type_identifier?`, etc.) | [`drive/shared/helpers.rb`](drive/shared/helpers.rb) |
-| Lexemes → tokens | [`drive/1_lexer/lexer.rb`](drive/1_lexer/lexer.rb), [`lexeme.rb`](drive/1_lexer/lexeme.rb) |
-| AST node classes | [`drive/2_parser/expressions.rb`](drive/2_parser/expressions.rb) |
+| Lexemes → tokens | [`drive/1_lexer/lexer.rb`](drive/1_lexer/lexer.rb), [`lexeme.rb`](drive/backings/lexeme.rb) |
+| AST node classes | [`drive/backings/expressions.rb`](drive/backings/expressions.rb) |
 | Tokens → AST | [`drive/2_parser/parser.rb`](drive/2_parser/parser.rb) |
 | Static literal type checks | [`drive/3_type_checker/type_checker.rb`](drive/3_type_checker/type_checker.rb) |
-| Scope hierarchy (`Global`/`Type`/`Instance`/`Func`/...) | [`drive/5_interpreter/scopes.rb`](drive/5_interpreter/scopes.rb) |
+| Scope hierarchy (`Global`/`Type`/`Instance`/`Func`/...) | [`drive/backings/scopes.rb`](drive/backings/scopes.rb) |
 | AST → execution | [`drive/5_interpreter/interpreter.rb`](drive/5_interpreter/interpreter.rb) |
-| Runtime errors | [`drive/5_interpreter/errors.rb`](drive/5_interpreter/errors.rb) |
-| Ruby-backed built-in types | [`drive/backings/`](drive/backings) |
+| Runtime errors | [`drive/backings/errors.rb`](drive/backings/errors.rb) |
+| Ruby-backed built-in types | [`drive/backings/`](backings) |
 | `proxy`/`proxy_delegate` helpers | [`drive/shared/ruby_proxies.rb`](drive/shared/ruby_proxies.rb) |
 | Standard library (`.tape` side of built-ins) | [`tapes/`](tapes), auto-loaded via [`tapes/global.tape`](tapes/global.tape) |
 | Entry points (`Drive.lex`/`.parse`/`.interp`, `+_file` variants) | [`drive/drive.rb`](drive/drive.rb) |
