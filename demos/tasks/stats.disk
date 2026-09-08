@@ -40,7 +40,7 @@ make_stats ( filepath: String -> Task_List_Stats;
 	)
 )
 
-files := ['demos/tasks/backlog.md' 'demos/tasks/polish.md'] # note; optional commas
+files := ['demos/tasks/bugs.md' 'demos/tasks/design.md' 'demos/tasks/todos.md'] # note; optional commas
 for files
 	@puts make_stats(filepath := it).to_s(compact := false)
 end
