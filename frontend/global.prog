@@ -1,0 +1,27 @@
+@load 'frontend/any'
+@load 'frontend/nil'
+@load 'frontend/file_system'
+@load 'frontend/date'
+@load 'frontend/time'
+@load 'frontend/date_time'
+@load 'frontend/number'
+@load 'frontend/array'
+@load 'frontend/range'
+@load 'frontend/set'
+@load 'frontend/dictionary'
+@load 'frontend/string'
+@load 'frontend/symbol'
+@load 'frontend/fence'
+@load 'frontend/struct'
+@load 'frontend/statement'
+@load 'frontend/enum'
+@load 'frontend/tuple'
+@load 'frontend/bool'
+@load 'frontend/context'
+
+### How to load programs.
+@load 'frontend/some.prog'  # backend/ is the stdlib found in ./backend/
+@load './this.prog'      # relative to wherever you ran bin/prog from (cwd)
+@load 'that.prog'        # relative to wherever you ran bin/prog from (cwd)
+@load 'and_this'         # no .prog extension required
+###

@@ -1,13 +1,13 @@
 require 'minitest/autorun'
 require 'weakref'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
 class Scopes_Test < Base_Test
 	SHARED_VEC2 = "Vec2 { x:=0, y:=0, Self ( x,y; self.x=x, self.y=y ) }".freeze
 
 	def test_declaring_self_inside_pushed_scope
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Vec2 { x := 0, y := 0 }
 			# Vec2 intentionally doesn't declare Self(;)
 
@@ -19,12 +19,12 @@ class Scopes_Test < Base_Test
 
 			Vec2()
 		CODE
-		assert_kind_of Disk::Instance, out
+		assert_kind_of Prog::Instance, out
 		assert_equal 'Vec2', out.name
 	end
 
 	def test_basic_pushing_and_popping
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			@push_scope Vec2
@@ -33,13 +33,13 @@ class Scopes_Test < Base_Test
 
 			Vec2.ZERO
 		CODE
-		assert_kind_of Disk::Instance, out
+		assert_kind_of Prog::Instance, out
 		assert_equal 'Vec2', out.name
 		assert_equal [0, 0], [out.get(:x), out.get(:y)]
 	end
 
 	def test_writable_scopes_with_long_form
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			double ( @splat v: Vec2 -> Vec2;
@@ -54,7 +54,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_writable_scopes_with_add_medium_form
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			double ( @splat v -> Vec2;
@@ -69,7 +69,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_writable_scopes_with_add_short_form
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			double ( @splat v -> Vec2;
@@ -84,9 +84,9 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pop_scope_with_nothing_pushed_raises
-		# No dedicated Disk:: error -- pop_scope refuses to pop the last remaining scope, so the identity check fails.
+		# No dedicated Prog:: error -- pop_scope refuses to pop the last remaining scope, so the identity check fails.
 		assert_raises RuntimeError do
-			Drive.interp <<-CODE
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 				@pop_scope Vec2
 			CODE
@@ -94,8 +94,8 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pop_scope_without_target_raises_invalid_directive_usage
-		assert_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp <<-CODE
+		assert_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 				@push_scope Vec2
 				@pop_scope
@@ -104,7 +104,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_pushing_the_same_scope_twice_requires_popping_twice
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			@push_scope Vec2
@@ -118,8 +118,8 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_popping_a_doubly_pushed_scope_the_right_number_of_times_fully_exits
-		assert_raises Disk::Undeclared_Identifier do
-			Drive.interp <<-CODE
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 
 				@push_scope Vec2
@@ -135,7 +135,7 @@ class Scopes_Test < Base_Test
 
 	def test_adding_the_same_instance_to_readable_scope_twice_does_not_duplicate
 		# Delta, not absolute count -- Global's readable_scopes always holds the stdlib's own Scope too.
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run <<-CODE
 			#{SHARED_VEC2}
 
@@ -151,7 +151,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_adding_the_same_instance_to_writable_scope_twice_does_not_duplicate
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run <<-CODE
 			#{SHARED_VEC2}
 
@@ -164,7 +164,7 @@ class Scopes_Test < Base_Test
 
 	def test_removing_readable_scope_twice_is_a_safe_no_op
 		refute_raises do
-			Drive.interp <<-CODE
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 
 				v := Vec2(1, 2)
@@ -176,8 +176,8 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_unsplatting_without_a_reference
-		assert_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp <<-CODE
+		assert_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 
 				v := Vec2(1, 2)
@@ -189,7 +189,7 @@ class Scopes_Test < Base_Test
 
 	def test_removing_writable_scope_twice_is_a_safe_no_op
 		refute_raises do
-			Drive.interp <<-CODE
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 
 				v := Vec2(1, 2)
@@ -202,7 +202,7 @@ class Scopes_Test < Base_Test
 
 	def test_removing_a_never_added_scope_is_a_safe_no_op
 		refute_raises do
-			Drive.interp <<-CODE
+			Backend.interp <<-CODE
 				#{SHARED_VEC2}
 
 				v := Vec2(1, 2)
@@ -214,7 +214,7 @@ class Scopes_Test < Base_Test
 
 	def test_popping_a_scope_does_not_remove_it_from_readable_or_writable_scopes
 		# @push_scope/@pop_scope and @splatr/@splat are independent -- popping doesn't touch readable/writable membership.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			v := Vec2(9, 9)
@@ -239,7 +239,7 @@ class Scopes_Test < Base_Test
 
 	def test_own_declaration_wins_over_writable_and_readable_collision_on_read
 		# The bug that drove [self, writable, readable] ordering -- own declaration must win over both fallbacks.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			x := 100
@@ -254,7 +254,7 @@ class Scopes_Test < Base_Test
 
 	def test_own_declaration_wins_over_writable_and_readable_collision_on_write
 		# Write version: must land on the own declaration, never redirect through the writable scope.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 
 			x := 100
@@ -269,43 +269,43 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_add_readable_and_writable_scope_with_non_scope_argument_wraps_arg_with_maybe_instance
-		refute_raises Disk::Invalid_Scope_Function_Argument do
-			Drive.interp '@splatr 4'
+		refute_raises Prog::Invalid_Scope_Function_Argument do
+			Backend.interp '@splatr 4'
 		end
 
-		refute_raises Disk::Invalid_Scope_Function_Argument do
-			Drive.interp "@splat 'eight'"
+		refute_raises Prog::Invalid_Scope_Function_Argument do
+			Backend.interp "@splat 'eight'"
 		end
 	end
 
 	def test_add_readable_scope_with_nil_argument_is_silently_accepted
-		# Gap in the falsy-guard: maybe_instance(nil) -> a Disk::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
-		refute_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp '@splatr nil'
+		# Gap in the falsy-guard: maybe_instance(nil) -> a Prog::Nil instance, Ruby-truthy, so the guard never fires. Documents current behavior, not a verdict.
+		refute_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp '@splatr nil'
 		end
 	end
 
 	def test_add_readable_scope_with_false_argument_is_silently_accepted
 		# Same gap, for false -- maybe_instance(false) => Bool::FALSE, also Ruby-truthy.
-		refute_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp '@splatr false'
+		refute_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp '@splatr false'
 		end
 	end
 
 	def test_add_writable_scope_with_nil_and_false_arguments_are_silently_accepted
-		refute_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp '@splat nil'
+		refute_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp '@splat nil'
 		end
 
-		refute_raises Disk::Invalid_Context_Function_Usage do
-			Drive.interp '@splat false'
+		refute_raises Prog::Invalid_Context_Function_Usage do
+			Backend.interp '@splat false'
 		end
 	end
 
 	def test_an_undeclared_identifier_argument_still_raises_undeclared_identifier
 		# Contrast: a real typo still raises -- that check happens in #interpret, before maybe_instance ever runs.
-		assert_raises Disk::Undeclared_Identifier do
-			Drive.interp '@splatr this_was_never_declared'
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp '@splatr this_was_never_declared'
 		end
 	end
 
@@ -320,7 +320,7 @@ class Scopes_Test < Base_Test
 
 	def test_readable_short_form_as_bare_manual_directive
 		# @splatr/@splat also work as bare directives, not just inside a param list.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Island { name := 'unknown', }
 			island := Island()
 			island.name = 'The Island'
@@ -331,7 +331,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_writable_short_form_as_bare_manual_directive
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Raft { length := 0 }
 			r := Raft()
 			r.length = 12
@@ -345,7 +345,7 @@ class Scopes_Test < Base_Test
 	# `@push_scope` / `@pop_scope` / `@declare` are ordinary Context function calls now -- the paren
 	# form works the same as the space form, and both run in the caller's scope frame.
 	def test_scope_functions_accept_paren_call_syntax
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			#{SHARED_VEC2}
 			@push_scope(Vec2)
 			ZERO := Vec2(0, 0)
@@ -354,12 +354,12 @@ class Scopes_Test < Base_Test
 		CODE
 		assert_equal 0, out
 
-		out = Drive.interp "@declare('answer', 42)\nanswer"
+		out = Backend.interp "@declare('answer', 42)\nanswer"
 		assert_equal 42, out
 	end
 
 	def test_standard_library_is_reachable_but_not_a_global_own_declaration
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run 'nil'
 		global = interpreter.stack.first
 
@@ -368,7 +368,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_standard_library_scope_is_named_standard_library_and_is_globals_only_readable_scope_entry_by_default
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run 'nil'
 		global = interpreter.stack.first
 
@@ -377,7 +377,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_composing_a_builtin_type_still_works
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Mine | Array { extra := true }
 			m := Mine([1, 2, 3])
 			(m.length(), m.extra)
@@ -386,7 +386,7 @@ class Scopes_Test < Base_Test
 	end
 
 	def test_deliberately_reopening_a_builtin_type_via_push_scope_still_mutates_the_real_shared_type
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			@push_scope Array
 			greet (; 'hi from array' )
 			@pop_scope Array
@@ -398,7 +398,7 @@ class Scopes_Test < Base_Test
 
 	def test_nested_scopes_readable_scope_shadows_an_outer_readable_scope_when_both_have_the_name
 		# Resolution continues outward through the stack when a level's own chain is empty. Both levels have it here, so inner wins first.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Marker { val := 0 }
 
 			outer (;
@@ -422,7 +422,7 @@ class Scopes_Test < Base_Test
 
 	def test_nested_scopes_fall_through_an_inner_readable_scope_that_has_unrelated_content
 		# Sharper case: inner scope's chain has *something*, just not this name -- proves the search doesn't stop early.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Marker { val := 0 }
 			Other { unrelated := 99 }
 
@@ -446,7 +446,7 @@ class Scopes_Test < Base_Test
 
 	def test_nested_scopes_fall_through_an_inner_writable_scope_that_has_unrelated_content
 		# Same as above, but the inner scope's non-matching addition is writable instead of readable.
-		out = Drive.interp <<-CODE
+		out = Backend.interp <<-CODE
 			Marker { val := 0 }
 			Other { unrelated := 99 }
 
@@ -470,8 +470,8 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_function_is_rejected_at_push_time
 		# Used to succeed silently, then fail confusingly on pop -- Func is duped on every lookup (#rebind_func_to_scope), so identity can never match. Now rejected immediately, on push.
-		assert_raises Disk::Invalid_Scope_Function_Argument do
-			Drive.interp <<-CODE
+		assert_raises Prog::Invalid_Scope_Function_Argument do
+			Backend.interp <<-CODE
 				funk (; 1 )
 				@push_scope funk
 			CODE
@@ -480,15 +480,15 @@ class Scopes_Test < Base_Test
 
 	def test_push_scope_a_bare_literal_is_rejected_at_push_time
 		# Number passes the Func-rejecting Type check, but maybe_instance builds a fresh object every call -- identity can never match. Target must now be a bare identifier naming something already bound.
-		assert_raises Disk::Invalid_Scope_Function_Argument do
-			Drive.interp '@push_scope 4'
+		assert_raises Prog::Invalid_Scope_Function_Argument do
+			Backend.interp '@push_scope 4'
 		end
 	end
 
 	def test_push_scope_an_explicit_constructor_call_is_rejected_at_push_time
 		# Same fix, different freshness source: a constructor call builds a new instance every run too.
-		assert_raises Disk::Invalid_Scope_Function_Argument do
-			Drive.interp '@push_scope Number(4)'
+		assert_raises Prog::Invalid_Scope_Function_Argument do
+			Backend.interp '@push_scope Number(4)'
 		end
 	end
 
@@ -496,7 +496,7 @@ class Scopes_Test < Base_Test
 
 	# Isolates readable_scopes as the only thing keeping the instance alive. Trailing `nil` matters -- otherwise `wm[x] = x`'s return value would land in Interpreter#last_output, a stray strong reference.
 	def _build_interpreter_with_orphaned_readable_instance
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run <<-CODE
 			#{SHARED_VEC2}
 
@@ -514,7 +514,7 @@ class Scopes_Test < Base_Test
 
 	# Same as the readable-scope version above, for writable_scopes.
 	def _build_interpreter_with_orphaned_writable_instance
-		interpreter = Drive::Interpreter.new
+		interpreter = Backend::Interpreter.new
 		interpreter.run <<-CODE
 			#{SHARED_VEC2}
 

@@ -1,0 +1,238 @@
+# Second version of tasks.prog: identical functionality, built on backend/css.prog + backend/html2.prog
+# (struct-and-visitor) instead of backend/html.prog's Dom types. One real, unavoidable difference:
+# backend/html2.prog deliberately doesn't hook into the server-side live-render pipeline (onclick
+# wiring, dom.js, X-Backend-Target-Id partial updates) the way backend/html.prog's Dom does -- it only
+# builds an HTML string (see its own header comment). So every "click a button, something changes"
+# interaction here is a plain HTML form POST + redirect instead of an onclick handler -- same
+# capabilities (add a task, toggle done, edit type/text, see it reflected), just a full page
+# reload to get there instead of an in-place AJAX-style swap.
+
+@load 'frontend/database'
+@load 'frontend/table'
+@load 'frontend/css'
+@load 'frontend/html2'
+@load 'frontend/server'
+
+Task_Type [TODO BUG DESIGN]
+
+# This struct represents the table columns for a single Task
+Task <
+	id: Primary_Key
+	type: Task_Type
+	done := false
+	text: String
+>
+
+# -----------------------------------------------------------------------------
+# Page-wide styling -- real css.prog structs, attached to each page's <body> via its `css` param
+# (rather than an inline `style=` attribute) since that's the whole point of the new mechanism.
+# -----------------------------------------------------------------------------
+
+INVERT_FILTER := Style_Rule(["body"], [Property("filter", "invert()")])
+
+# -----------------------------------------------------------------------------
+# Shared bits
+# -----------------------------------------------------------------------------
+
+# `Option` has no way to omit `selected` other than not including the attribute at all -- a boolean
+# HTML attribute is "on" just by being present, regardless of its value, so a stray
+# `selected="false"` would still mark that option selected. Mirrors backend/html.prog's own
+# Task_Type_Option, just built from a plain Array\Attribute instead of a composed Dom type.
+# note; the single-line `if COND [...] else [...] end` form parses `COND[...]` as a subscript into
+# COND, always -- even with parens around COND (bugs.md) -- so this needs the block form instead.
+task_type_option ( label, selected := false;
+	selected_attrs := if selected
+		[Attribute("selected", "selected")]
+	else
+		[]
+	end
+	option(label, selected_attrs)
+)
+
+# -----------------------------------------------------------------------------
+# All tasks (list + add-task form)
+# -----------------------------------------------------------------------------
+
+render_tasks_list ( tasks_table;
+	task_rows := tasks_table.all().map((it;
+		# An unset `type`/`done` reads back as its own declared type (Task_Type/Bool), not nil --
+		# guard against that placeholder before displaying it.
+		type_display := if it.type == Task_Type "" else " -- `it.type`" end
+		status       := if it.done == true " (done)" else "" end
+		li([href("/`it.id`", it.text), type_display, status])
+	))
+
+	add_task_form := form([
+		textarea([], [Attribute("name", "text")]),
+		button("Add Task")
+	], [Attribute("method", "post"), Attribute("action", "/tasks")])
+
+	page_body := body([h1("Tasks"), add_task_form, ul(task_rows)], [], INVERT_FILTER)
+	page      := html([head(title("Tasks")), page_body])
+
+	Html_Format.render(page)
+)
+
+# -----------------------------------------------------------------------------
+# Single task (toggle-done form + edit-type/text form)
+# -----------------------------------------------------------------------------
+
+render_task_page ( tasks_table, task;
+	# Task_Type.keys (a plain Array value, not a method -- no `()`) stays in sync with the enum's
+	# own declared members automatically, unlike a hardcoded list.
+	type_options := Task_Type.keys.map(( it; task_type_option(it, it == task.type) ))
+	# `task.done` reads back as the plain Bool type itself (truthy!) for any task where `done` was
+	# never explicitly set -- never check it bare, always normalize to a real true/false first.
+	done_label   := if task.done == true "Mark Not Done" else "Mark Done" end
+
+	toggle_form := form([button(done_label)],
+		[Attribute("method", "post"), Attribute("action", "/`task.id`/toggle")])
+
+	save_form := form([
+		select(type_options, [Attribute("name", "type")]),
+		# Passing task.text as the textarea's own child pre-fills it visibly with the current text.
+		textarea(task.text, [Attribute("name", "text")]),
+		button("Save")
+	], [Attribute("method", "post"), Attribute("action", "/`task.id`")])
+
+	page_body := body([h1(task.text), toggle_form, save_form, href("/", "Back to all")], [], INVERT_FILTER)
+	page      := html([head(title(task.text)), page_body])
+
+	Html_Format.render(page)
+)
+
+# -----------------------------------------------------------------------------
+# Server
+# -----------------------------------------------------------------------------
+
+App | Server {
+	DB    := @connect Sqlite.local()
+	tasks := DB.find_or_create_table(Task)
+
+	# root path /
+	get:// (;
+		render_tasks_list(tasks)
+	)
+
+	post://tasks (;
+		new_text := request.body[:text]
+		tasks.create(<text := new_text>)
+		response.redirect('/')
+	)
+
+	get://:id (id;
+		task := tasks.find(id)
+		render_task_page(tasks, task)
+	)
+
+	post://:id/toggle (id;
+		task         := tasks.find(id)
+		current_done := task.done == true
+		tasks.update(task.id, <done := !current_done>)
+		response.redirect("/`id`")
+	)
+
+	post://:id (id;
+		task          := tasks.find(id)
+		submitted_type := request.body[:type]
+
+		# Array has no index-of-a-value method, so this walks Task_Type.keys/.values (parallel
+		# Arrays, same order) with the loop's own `at` to recover the enum's actual member value
+		# from the plain String the <select> submitted.
+		new_type := nil
+		for Task_Type.keys
+			if it == submitted_type
+				new_type = Task_Type.values.get(at)
+				stop
+			end
+		end
+
+		tasks.update(task.id, <type := new_type, text := request.body[:text]>)
+		response.redirect("/`id`")
+	)
+
+	get://terminal (;
+		render_terminal_canvas_page()
+	)
+}
+
+
+app := App()
+@start_server app
+
+# -----------------------------------------------------------------------------
+# Unrelated demo route, ported over unchanged in spirit -- a canvas-drawn terminal, styled via a
+# real Style_Rule (background/color) instead of the Dom css_ prefix convention.
+# -----------------------------------------------------------------------------
+
+CASCADIA_FONT_LINK := link([
+	Attribute("rel", "stylesheet"),
+	Attribute("href", "https://cdn.jsdelivr.net/npm/@fontsource/cascadia-mono@5.0.1/index.css")
+])
+
+TERMINAL_CSS := Style_Rule(["body"], [Property("background-color", "#051308"), Property("color", "#fff")])
+
+DRAW_SCRIPT := "
+	const canvas = document.getElementById('crt-screen');
+	const ctx = canvas.getContext('2d');
+
+	let inputBuffer = 'SYSTEM READY> ';
+	let mouseX = 0, mouseY = 0;
+	let cursorVisible = true;
+
+	setInterval(() => { cursorVisible = !cursorVisible; draw(); }, 500);
+
+	function draw() {
+		ctx.fillStyle = '#051308';
+		ctx.fillRect(0, 0, 640, 480);
+
+		// Specified Cascadia Mono here
+		ctx.fillStyle = '#33ff66';
+		ctx.font = '20px \"Cascadia Mono\" monospace';
+
+		const textToRender = inputBuffer + (cursorVisible ? '_' : ' ');
+		ctx.fillText(textToRender, 30, 60);
+
+		// Mouse Block Tracer
+		ctx.fillStyle = 'rgba(51, 255, 102, 0.4)';
+		ctx.fillRect(mouseX - 10, mouseY - 10, 20, 20);
+
+		// Scanlines
+		ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+		for (let y = 0; y < 480; y += 4) {
+			ctx.fillRect(0, y, 640, 2);
+		}
+	}
+
+	canvas.addEventListener('mousemove', (e) => {
+		const rect = canvas.getBoundingClientRect();
+		mouseX = e.clientX - rect.left;
+		mouseY = e.clientY - rect.top;
+		draw();
+	});
+
+	window.addEventListener('keydown', (e) => {
+		if (e.key === 'Backspace') {
+			inputBuffer = inputBuffer.slice(0, -1);
+		} else if (e.key.length === 1) {
+			inputBuffer += e.key;
+		}
+		draw();
+	});
+
+	// Wait for custom font payload to settle before rendering to canvas
+	document.fonts.ready.then(() => {
+		draw();
+	});
+"
+
+render_terminal_canvas_page (;
+	terminal_canvas := canvas([], [Attribute("id", "crt-screen"), Attribute("width", "640"), Attribute("height", "480")])
+	terminal_script := script(DRAW_SCRIPT)
+
+	page_head := head([utf8_meta(), CASCADIA_FONT_LINK])
+	page_body := body([terminal_canvas, terminal_script], [Attribute("id", "canvas-container")], TERMINAL_CSS)
+	page      := html([page_head, page_body])
+
+	Html_Format.render(page)
+)

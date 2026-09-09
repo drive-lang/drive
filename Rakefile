@@ -1,5 +1,5 @@
 require 'minitest/test_task'
-require_relative 'drive/drive'
+require_relative 'backend/backend'
 require 'pp'
 
 task :default => [:test, :cloc]

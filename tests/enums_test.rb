@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
 # TYPE_IDENT :: (OPTIONAL_FORCED_TYPE_IDENT_FOR_CONSTANTS) {
@@ -13,108 +13,108 @@ require_relative 'base_test'
 # }
 class Enums_Test < Base_Test
 	def test_empty_enum
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum []
 		CODE
-		assert_kind_of Disk::Enum_Expr, out.first
+		assert_kind_of Prog::Enum_Expr, out.first
 		refute out.first.type
 		assert_equal 'My_Enum', out.first.name.value
 		assert_empty out.first.expressions
 	end
 
 	def test_enum_with_forced_type
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum []
 		CODE
-		assert_kind_of Disk::Enum_Expr, out.first
+		assert_kind_of Prog::Enum_Expr, out.first
 		assert_equal 'My_Enum', out.first.name.value
 		assert_empty out.first.expressions
 	end
 
 	# TYPE_IDENT # gets its own unique value
 	def test_bare_member_gets_its_own_unique_value
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Nil_Init_Expr, member
+		assert_kind_of Prog::Nil_Init_Expr, member
 		assert_equal 'ABC', member.left.value
 	end
 
 	# TYPE_IDENT, # with comma -- same shape as the bare form above, comma is just a separator
 	def test_member_with_trailing_comma
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC,
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Nil_Init_Expr, member
+		assert_kind_of Prog::Nil_Init_Expr, member
 		assert_equal 'ABC', member.left.value
 	end
 
 	# TYPE_IDENT: TYPE_IDENT
 	def test_member_with_type_annotation_only
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC: Some_Type
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Identifier_Expr, member
+		assert_kind_of Prog::Identifier_Expr, member
 		assert_equal 'ABC', member.value
 		assert_equal 'Some_Type', member.type.value
 	end
 
 	# TYPE_IDENT := EXPR
 	def test_member_with_self_declared_value
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC := 1
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Infix_Expr, member
+		assert_kind_of Prog::Infix_Expr, member
 		assert_equal ':=', member.operator.value
 		assert_equal 'ABC', member.left.value
-		assert_kind_of Disk::Number_Expr, member.right
+		assert_kind_of Prog::Number_Expr, member.right
 		assert_equal 1, member.right.value
 	end
 
 	# TYPE_IDENT: TYPE_IDENT = EXPR
 	def test_member_with_type_annotation_and_value
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC: Some_Type = 1
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Infix_Expr, member
+		assert_kind_of Prog::Infix_Expr, member
 		assert_equal '=', member.operator.value
-		assert_kind_of Disk::Identifier_Expr, member.left
+		assert_kind_of Prog::Identifier_Expr, member.left
 		assert_equal 'ABC', member.left.value
 		assert_equal 'Some_Type', member.left.type.value
-		assert_kind_of Disk::Number_Expr, member.right
+		assert_kind_of Prog::Number_Expr, member.right
 		assert_equal 1, member.right.value
 	end
 
 	# A member can be another enum declaration, nested (recursive TYPE_IDENT [ ... ])
 	def test_nested_enum_member
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	Nested []
 		    ]
 		CODE
 		member = out.first.expressions.first
-		assert_kind_of Disk::Enum_Expr, member
+		assert_kind_of Prog::Enum_Expr, member
 		assert_equal 'Nested', member.name.value
 		assert_empty member.expressions
 	end
 
 	def test_multiple_bare_members
-		out = Drive.parse <<~CODE
+		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC
 		    	DEF
@@ -125,9 +125,9 @@ class Enums_Test < Base_Test
 		assert_equal 'DEF', out.first.expressions[1].left.value
 	end
 
-	# `Disk::Enum.new` (no name argument) used to bake "Instance" into @declarations['name'] at construction time; a later `.name =` (a plain Ruby attr write) never touched it, so an enum's own name was permanently wrong. `name` is `@`-only now (`@.name`), read straight off the Ruby-level attr.
+	# `Prog::Enum.new` (no name argument) used to bake "Instance" into @declarations['name'] at construction time; a later `.name =` (a plain Ruby attr write) never touched it, so an enum's own name was permanently wrong. `name` is `@`-only now (`@.name`), read straight off the Ruby-level attr.
 	def test_enum_reports_its_own_name_not_the_ruby_default_regression
-		out = Drive.interp <<~CODE
+		out = Backend.interp <<~CODE
 		    Task_Type [ TODO, BUG ]
 		    Task_Type.@name
 		CODE
@@ -136,8 +136,8 @@ class Enums_Test < Base_Test
 
 	# The same bug, as it actually surfaced: a struct member typed with a user-declared enum displayed its type as "Instance" instead of the real enum name.
 	def test_struct_member_typed_with_an_enum_displays_the_real_enum_name_regression
-		out = Drive.interp <<~CODE
-		    @load 'disks/struct.disk'
+		out = Backend.interp <<~CODE
+		    @load 'frontend/struct.prog'
 		    Task_Type [ TODO, BUG ]
 		    s := <kind: Task_Type = Task_Type.TODO>
 		    s.to_s()

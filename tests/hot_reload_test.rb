@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 require 'timeout'
 require 'net/http'
@@ -13,31 +13,31 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def server_code port
-		<<~DISK
-		    @load 'disks/server'
+		<<~CODE
+		    @load 'frontend/server'
 		    App | Server {
 		    	Self (; self.port = #{port} )
 		    	get:// (; "ok" )
 		    }
 		    app := App()
 		    @start_server app
-		DISK
+		CODE
 	end
 
 	def test_serve_in_foreground_false_makes_run_return_instead_of_blocking
-		@interpreter                     = Drive::Interpreter.new
+		@interpreter                     = Backend::Interpreter.new
 		@interpreter.serve_in_foreground = false
 
 		# With the default (true) this call never returns -- it sits in #loop_servers until ^C.
 		result = Timeout.timeout(5) { @interpreter.run server_code(9810 + rand(80)) }
 
-		assert_instance_of Disk::Server, result
+		assert_instance_of Prog::Server, result
 		assert_equal 1, @interpreter.servers.length
 		assert_equal :Running, @interpreter.servers.first.webrick_server.status
 	end
 
 	def test_shutdown_all_servers_stops_every_server_and_empties_the_list
-		@interpreter                     = Drive::Interpreter.new
+		@interpreter                     = Backend::Interpreter.new
 		@interpreter.serve_in_foreground = false
 		@interpreter.run server_code(9810 + rand(80))
 		server = @interpreter.servers.first
@@ -49,28 +49,28 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def test_reset_file_caches_clears_every_parse_cache
-		Drive.interp "@load 'tests/fixtures/test_module.disk'"
-		refute_empty Drive::Interpreter.cached_expressions_by_filepath
+		Backend.interp "@load 'tests/fixtures/test_module.prog'"
+		refute_empty Backend::Interpreter.cached_expressions_by_filepath
 
-		Drive::Interpreter.reset_file_caches!
+		Backend::Interpreter.reset_file_caches!
 
-		assert_empty Drive::Interpreter.cached_expressions_by_filepath
-		assert_empty Drive::Interpreter.type_checked_filepaths
-		assert_empty Drive::Declarator.cached_declarations_by_filepath
+		assert_empty Backend::Interpreter.cached_expressions_by_filepath
+		assert_empty Backend::Interpreter.type_checked_filepaths
+		assert_empty Backend::Declarator.cached_declarations_by_filepath
 	end
 
 	# --- live reload (browser auto-refresh) -------------------------------------------------------
 
 	def html_server_code port
-		<<~DISK
-		    @load 'disks/server'
+		<<~CODE
+		    @load 'frontend/server'
 		    App | Server {
 		    	Self (; self.port = #{port} )
 		    	get:// (; "<html><head></head><body>hi</body></html>" )
 		    }
 		    app := App()
 		    @start_server app
-		DISK
+		CODE
 	end
 
 	# Reads a Server-Sent-Events response for `seconds` then returns whatever arrived. Net::HTTP would
@@ -93,8 +93,8 @@ class Hot_Reload_Test < Base_Test
 	end
 
 	def test_live_reload_defaults_off_and_the_token_is_unique_per_interpreter
-		a = Drive::Interpreter.new
-		b = Drive::Interpreter.new
+		a = Backend::Interpreter.new
+		b = Backend::Interpreter.new
 
 		refute a.live_reload, 'live_reload must be opt-in -- a plain interpf run should never stream events'
 		refute_nil a.live_reload_token
@@ -103,12 +103,12 @@ class Hot_Reload_Test < Base_Test
 
 	def test_live_reload_endpoint_streams_the_interpreter_token
 		port                             = 9810 + rand(80)
-		@interpreter                     = Drive::Interpreter.new
+		@interpreter                     = Backend::Interpreter.new
 		@interpreter.serve_in_foreground = false
 		@interpreter.live_reload         = true
 		@interpreter.run html_server_code(port)
 
-		frame = read_sse 'localhost', port, '/_drive/live-reload'
+		frame = read_sse 'localhost', port, '/_backend/live-reload'
 
 		assert_includes frame, 'text/event-stream'
 		assert_includes frame, "data: #{@interpreter.live_reload_token}"
@@ -116,47 +116,47 @@ class Hot_Reload_Test < Base_Test
 
 	def test_live_reload_endpoint_is_absent_when_disabled
 		port                             = 9810 + rand(80)
-		@interpreter                     = Drive::Interpreter.new
+		@interpreter                     = Backend::Interpreter.new
 		@interpreter.serve_in_foreground = false
 		# live_reload left at its default (false)
 		@interpreter.run html_server_code(port)
 
-		response = Net::HTTP.get_response 'localhost', '/_drive/live-reload', port
+		response = Net::HTTP.get_response 'localhost', '/_backend/live-reload', port
 
 		assert_kind_of Net::HTTPNotFound, response
 	end
 
 	def test_client_script_is_injected_only_under_live_reload
 		off_port                          = 9810 + rand(80)
-		off                               = Drive::Interpreter.new
+		off                               = Backend::Interpreter.new
 		off.serve_in_foreground           = false
 		off.run html_server_code(off_port)
 		off_body = Net::HTTP.get 'localhost', '/', off_port
 		off.shutdown_all_servers
 
 		on_port                           = 9810 + rand(80)
-		@interpreter                      = Drive::Interpreter.new
+		@interpreter                      = Backend::Interpreter.new
 		@interpreter.serve_in_foreground  = false
 		@interpreter.live_reload          = true
 		@interpreter.run html_server_code(on_port)
 		on_body = Net::HTTP.get 'localhost', '/', on_port
 
-		refute_includes off_body, '/_drive/live-reload', 'the client must not ship without hot reload'
-		assert_includes on_body, "new EventSource('/_drive/live-reload')"
+		refute_includes off_body, '/_backend/live-reload', 'the client must not ship without hot reload'
+		assert_includes on_body, "new EventSource('/_backend/live-reload')"
 	end
 
 	def test_reset_file_caches_with_paths_only_drops_those_paths
-		fixture = File.expand_path 'tests/fixtures/test_module.disk'
-		Drive.interp "@load 'tests/fixtures/test_module.disk'" # caches stdlib + the fixture
-		stdlib = Drive::STANDARD_LIBRARY_PATH
+		fixture = File.expand_path 'tests/fixtures/test_module.prog'
+		Backend.interp "@load 'tests/fixtures/test_module.prog'" # caches stdlib + the fixture
+		stdlib = Backend::STANDARD_LIBRARY_PATH
 
-		assert Drive::Interpreter.cached_expressions_by_filepath.key?(stdlib)
-		assert Drive::Interpreter.cached_expressions_by_filepath.key?(fixture)
+		assert Backend::Interpreter.cached_expressions_by_filepath.key?(stdlib)
+		assert Backend::Interpreter.cached_expressions_by_filepath.key?(fixture)
 
-		Drive::Interpreter.reset_file_caches! [fixture]
+		Backend::Interpreter.reset_file_caches! [fixture]
 
-		assert Drive::Interpreter.cached_expressions_by_filepath.key?(stdlib), 'stdlib entry should survive a targeted reset'
-		refute Drive::Interpreter.cached_expressions_by_filepath.key?(fixture), 'the named path should be dropped'
+		assert Backend::Interpreter.cached_expressions_by_filepath.key?(stdlib), 'stdlib entry should survive a targeted reset'
+		refute Backend::Interpreter.cached_expressions_by_filepath.key?(fixture), 'the named path should be dropped'
 	end
 
 	# These boot a real WEBrick server (~2s total). CI runs them; locally they're removed outright so

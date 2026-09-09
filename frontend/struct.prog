@@ -1,0 +1,34 @@
+@load 'frontend/member.prog'
+
+### The reflective quartet -- `@.names` / `@.type_names` / `@.values` / `@.members` -- lives on the
+struct's Context (Ruby ivars on Prog::Struct, exposed by src/external/ruby/context.rb). Plain `.`
+on a struct is user members only, so `Node <names: Array>` keeps `node.names` as its own data.
+
+Valid member syntax:
+
+  m := Member()
+  <Member, mem1: Member, mem2 := Member(), mem3: Member = Member(), m, Member\String>
+###
+
+Struct {
+	has? ( member: Member -> Bool;
+		self.@members.include?(member)
+	)
+
+	include? ( query;
+		self.@members.any?(( it;
+			it.name == query or it.type == query
+		))
+	)
+
+	to_s ( compact := false;
+		formatted_members := self.@members.map((it; it.to_s(compact) )).join(', ')
+		"<`formatted_members`>"
+	)
+
+	# todo; implement set comparison as well
+	@operator == @infix ( left, right;
+		# `.?@members`, not `.@members` -- `right` isn't guaranteed to be Struct-shaped (e.g. `!=` derives from `==` when a type has no `!=` of its own, see interp_infix); Array's own `==` (backend/array.prog) already handles a nil right side safely.
+		left.@members == right.?@members
+	)
+}

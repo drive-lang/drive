@@ -1,14 +1,14 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
-# disks/visitor.disk's Warnings_Visitor mixin -- composed into disks/css.disk's Css_Lint_Visitor and
-# disks/html2.disk's Html_Lint_Visitor. See test/css_test.rb and test/html2_test.rb for those.
+# backend/visitor.prog's Warnings_Visitor mixin -- composed into backend/css.prog's Css_Lint_Visitor and
+# backend/html2.prog's Html_Lint_Visitor. See test/css_test.rb and test/html2_test.rb for those.
 class Visitor_Test < Base_Test
-	VISITOR = "@load 'disks/visitor.disk'"
+	VISITOR = "@load 'frontend/visitor.prog'"
 
 	def test_warn_pushes_onto_warnings
-		out = Drive.interp "
+		out = Backend.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		t := Thing()
@@ -18,7 +18,7 @@ class Visitor_Test < Base_Test
 	end
 
 	def test_warn_appends_in_order
-		out = Drive.interp "
+		out = Backend.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		t := Thing()
@@ -32,7 +32,7 @@ class Visitor_Test < Base_Test
 	# test/composition_test.rb) from the composed side: two different types each composing
 	# Warnings_Visitor must not share one `warnings` Array between them.
 	def test_warnings_are_independent_across_composing_types
-		out = Drive.interp "
+		out = Backend.interp "
 		#{VISITOR}
 		Thing_A | Warnings_Visitor {}
 		Thing_B | Warnings_Visitor {}
@@ -46,7 +46,7 @@ class Visitor_Test < Base_Test
 
 	# Same, but two instances of the *same* composing type.
 	def test_warnings_are_independent_across_instances_of_the_same_type
-		out = Drive.interp "
+		out = Backend.interp "
 		#{VISITOR}
 		Thing | Warnings_Visitor {}
 		a := Thing()

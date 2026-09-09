@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
 # The Advent of Code solutions in demos/aoc/ crunch real puzzle input and are slow (day 4 brute-forces
@@ -22,8 +22,8 @@ class Advent_Of_Code_Test < Base_Test
 
 	SOLVED.each do |day|
 		define_method "test_2015_#{day}" do
-			assert Drive.interp_file("demos/aoc/2015/#{day}.disk"),
-			       "demos/aoc/2015/#{day}.disk did not return a truthy answer check"
+			assert Backend.interp_file("demos/aoc/2015/#{day}.prog"),
+			       "demos/aoc/2015/#{day}.prog did not return a truthy answer check"
 		end
 	end
 

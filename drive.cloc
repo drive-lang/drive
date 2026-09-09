@@ -1,5 +1,5 @@
 # cloc language definitions for this repo. Loaded via: cloc --force-lang-def=drive.cloc
-# Ruby is trimmed to what this repo actually has. Drive is the .disk language: `#` and
+# Ruby is trimmed to what this repo actually has. Prog is the .prog language: `#` and
 # `###`/`###` comments, backtick is interpolation (not a comment), ``` is a fence.
 Ruby
     filter remove_matches ^\s*#
@@ -10,11 +10,11 @@ Ruby
     script_exe ruby
     3rd_gen_scale 4.20
     end_of_line_continuation \\$
-Drive
+Prog
     filter remove_between_general ### ###
     filter remove_matches ^\s*#
     filter remove_inline \s+#.*$
-    extension disk
+    extension prog
     3rd_gen_scale 2.00
 JavaScript
     filter rm_comments_in_strings ' /* */

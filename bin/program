@@ -1,0 +1,20 @@
+#!/usr/bin/env ruby
+
+# You can start `program` (or its `prog` alias) from any directory, including
+# through a symlink. When you
+# start it outside the project, the Ruby version manager can pick a Ruby without
+# the gems (it looks beside the *symlink*, not the real file). If the running
+# Ruby is not the one in `.ruby-version`, start again once with the correct one.
+bin_path     = File.realpath __FILE__
+project_root = File.expand_path '../..', bin_path
+wanted_ruby  = File.read(File.join(project_root, '.ruby-version')).strip rescue nil
+
+if wanted_ruby && RUBY_VERSION != wanted_ruby && !ENV['BACKEND_RUBY_SELECTED']
+	shim = File.expand_path 'shims/ruby', ENV.fetch('RBENV_ROOT', '~/.rbenv')
+	ruby = File.executable?(shim) ? shim : 'ruby'
+	exec({ 'RBENV_VERSION' => wanted_ruby, 'BACKEND_RUBY_SELECTED' => '1' }, ruby, bin_path, *ARGV)
+end
+
+require_relative '../backend/backend.rb'
+
+Backend::CLI.run ARGV

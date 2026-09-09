@@ -1,62 +1,62 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
 class Lexer_Test < Base_Test
 	def test_single_linecomment
-		out = Drive.lex '# single line comment'
+		out = Backend.lex '# single line comment'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line comment', out.first.value
-		assert_kind_of Disk::Lexeme, out.first
+		assert_kind_of Prog::Lexeme, out.first
 	end
 
 	def test_block_comment
-		out = Drive.lex '###single line block comment###'
+		out = Backend.lex '###single line block comment###'
 		assert_equal :comment, out.first.type
 		assert_equal 'single line block comment', out.first.value
-		assert_kind_of Disk::Lexeme, out.first
+		assert_kind_of Prog::Lexeme, out.first
 
-		out = Drive.lex '###multi
+		out = Backend.lex '###multi
 		line
 		block
 		comment###'
 		assert_equal :comment, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Disk::Lexeme, out.first
+		assert_kind_of Prog::Lexeme, out.first
 
 		# a lone `#` or `##` inside a block comment's body shouldn't close it early -- only a real ### does
-		out = Drive.lex "###\n# not a real comment\n## still not\n###"
+		out = Backend.lex "###\n# not a real comment\n## still not\n###"
 		assert_equal :comment, out.first.type
 		assert_equal 1, out.length
 
 		# nesting: a same-length ### inside closes the outer block early, same as an unnested one would
-		out = Drive.lex "###\nouter\n### inner ###\nouter again\n###"
+		out = Backend.lex "###\nouter\n### inner ###\nouter again\n###"
 		assert_equal :identifier, out[1].type # `inner` leaks out as real code
 		assert_equal 'inner', out[1].value
 
 		# a longer run of #s on the outer marker safely swallows a same-length (or shorter) ### inside, uncommenting nothing early
-		out = Drive.lex "####\nouter\n### inner ###\nouter again\n####"
+		out = Backend.lex "####\nouter\n### inner ###\nouter again\n####"
 		assert_equal :comment, out.first.type
 		assert_equal 1, out.length
 		assert out.first.value.include? '### inner ###'
 	end
 
 	def test_fence_blocks
-		out = Drive.lex '```single line fence block```'
+		out = Backend.lex '```single line fence block```'
 		assert_equal :fence, out.first.type
 		assert_equal 'single line fence block', out.first.value
-		assert_kind_of Disk::Lexeme, out.first
+		assert_kind_of Prog::Lexeme, out.first
 
-		out = Drive.lex '```multi
+		out = Backend.lex '```multi
 		line
 		fence
 		block```'
 		assert_equal :fence, out.first.type
 		assert out.first.value.start_with? 'multi'
-		assert_kind_of Disk::Lexeme, out.first
+		assert_kind_of Prog::Lexeme, out.first
 
 		# a longer run of backticks on the outer marker safely nests a same-length (or shorter) ``` inside, mirroring Markdown's own fence-nesting rule
-		out = Drive.lex "`````\nouter\n```\ninner-looking, but shorter than the outer marker\n```\nouter again\n`````"
+		out = Backend.lex "`````\nouter\n```\ninner-looking, but shorter than the outer marker\n```\nouter again\n`````"
 		assert_equal :fence, out.first.type
 		assert_equal 1, out.length
 		assert out.first.value.include? '```'
@@ -65,190 +65,190 @@ class Lexer_Test < Base_Test
 	def test_identifiers
 		tests = %w(lowercase UPPERCASE Capitalized).zip %I(identifier IDENTIFIER Identifier)
 		tests.all? do |code, type|
-			out = Drive.lex code
+			out = Backend.lex code
 			assert_equal type, out.first.type
-			assert_kind_of Disk::Lexeme, out.first
+			assert_kind_of Prog::Lexeme, out.first
 		end
 	end
 
 	def test_numbers
-		assert_equal :number, Drive.lex('4').first.type
-		assert_equal :number, Drive.lex('8.0').first.type
+		assert_equal :number, Backend.lex('4').first.type
+		assert_equal :number, Backend.lex('8.0').first.type
 	end
 
 	def test_prefixed_numbers
-		out = Drive.lex '-15'
+		out = Backend.lex '-15'
 		assert_equal %I(number), out.map(&:type)
 		assert_equal '-15', out.last.value # These are converted to numerical values once they become Number_Exprs
 		assert_equal 1, out.count
 
-		out = Drive.lex '+1.6'
+		out = Backend.lex '+1.6'
 		assert_equal %I(operator number), out.map(&:type)
 		assert_equal '1.6', out.last.value
 		assert_equal 2, out.count
 	end
 
 	def test_unusual_number_situations
-		out = Drive.lex '20three'
+		out = Backend.lex '20three'
 		assert_equal %I(number identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Drive.lex '40__two'
+		out = Backend.lex '40__two'
 		assert_equal %I(number identifier), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Drive.lex '4_15_6_3_4'
+		out = Backend.lex '4_15_6_3_4'
 		assert_equal :number, out.first.type
 		assert_equal 1, out.count
 
-		out = Drive.lex 'abc123'
+		out = Backend.lex 'abc123'
 		assert_equal :identifier, out.first.type
 		assert_equal 1, out.count
 	end
 
 	def test_strings
-		out = Drive.lex '"A string"'
+		out = Backend.lex '"A string"'
 		assert_equal :string, out.first.type
 
-		out = Drive.lex "'Another string'"
+		out = Backend.lex "'Another string'"
 		assert_equal :string, out.first.type
 
 	end
 
 	def test_interpolated_strings
-		out = Drive.lex '"An `interpolated` string"'
+		out = Backend.lex '"An `interpolated` string"'
 		assert_equal :string, out.first.type
 
-		out = Drive.lex "'Another `interpolated` string'"
+		out = Backend.lex "'Another `interpolated` string'"
 		assert_equal :string, out.first.type
 	end
 
 	def test_unterminated_string_literal
-		assert_raises Disk::Unterminated_String_Literal do
-			Drive.lex '"test\\'
+		assert_raises Prog::Unterminated_String_Literal do
+			Backend.lex '"test\\'
 		end
 
-		assert_raises Disk::Unterminated_String_Literal do
-			Drive.lex "'test\\"
+		assert_raises Prog::Unterminated_String_Literal do
+			Backend.lex "'test\\"
 		end
 	end
 
 	def test_operators
 		# todo Should this be such a long test?
-		out = Drive.lex 'numbers += 4815162342'
+		out = Backend.lex 'numbers += 4815162342'
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex 'ENABLED = true'
+		out = Backend.lex 'ENABLED = true'
 		assert_equal %I(IDENTIFIER operator identifier), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex 'Type = {}'
+		out = Backend.lex 'Type = {}'
 		assert_equal %I(Identifier operator delimiter delimiter), out.map(&:type)
 		assert_equal 4, out.count
 
-		out = Drive.lex 'numbers,'
+		out = Backend.lex 'numbers,'
 		assert_equal %I(identifier delimiter), out.map(&:type)
 		assert_equal 2, out.count
 
-		out = Drive.lex 'number: Number = 1'
+		out = Backend.lex 'number: Number = 1'
 		assert_equal %I(identifier operator Identifier operator number), out.map(&:type)
 		assert_equal 5, out.count
 
-		out = Drive.lex '1 + 2 * 3 / 4'
+		out = Backend.lex '1 + 2 * 3 / 4'
 		assert_equal %I(number operator number operator number operator number), out.map(&:type)
 		assert_equal 7, out.count
 
-		out = Drive.lex '1 <=> 2'
+		out = Backend.lex '1 <=> 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '1 == 2'
+		out = Backend.lex '1 == 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '1 != 2'
+		out = Backend.lex '1 != 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '1 > 2'
+		out = Backend.lex '1 > 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '1 <= 2'
+		out = Backend.lex '1 <= 2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '1...2'
+		out = Backend.lex '1...2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '3.0...4.0'
+		out = Backend.lex '3.0...4.0'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '3..<4'
+		out = Backend.lex '3..<4'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '5>..6'
+		out = Backend.lex '5>..6'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex '7>.<8'
+		out = Backend.lex '7>.<8'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex 'a, B, 5, "cool"'
+		out = Backend.lex 'a, B, 5, "cool"'
 		assert_equal %I(identifier delimiter IDENTIFIER delimiter number delimiter string), out.map(&:type)
 		assert_equal 7, out.count
 
-		out = Drive.lex '1...2, 3..<4, 5>..6, 7>.<8'
+		out = Backend.lex '1...2, 3..<4, 5>..6, 7>.<8'
 		assert_equal %I(number operator number delimiter number operator number delimiter number operator number delimiter number operator number), out.map(&:type)
 		assert_equal 15, out.count
 
-		out = Drive.lex 'Global.global'
+		out = Backend.lex 'Global.global'
 		assert_equal %I(Identifier operator identifier), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex 'Self.class_scope'
+		out = Backend.lex 'Self.class_scope'
 		assert_equal %I(Identifier operator identifier), out.map(&:type)
 		assert_equal 3, out.count
 	end
 
 	def test_declaration_operators
-		out = Drive.lex 'numbers := 4815162342' # This parses but I'm not using this any longer. Maybe I'll repurpose it.
+		out = Backend.lex 'numbers := 4815162342' # This parses but I'm not using this any longer. Maybe I'll repurpose it.
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Drive.lex 'numbers = 123'
+		out = Backend.lex 'numbers = 123'
 		assert_equal %I(identifier operator number), out.map(&:type)
 		assert_equal 3, out.count
 	end
 
 	def test_functions
-		out = Drive.lex '(;)'
+		out = Backend.lex '(;)'
 		assert_equal [:delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex 'named_function (;)'
+		out = Backend.lex 'named_function (;)'
 		assert_equal [:identifier, :delimiter, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex '( input; )'
+		out = Backend.lex '( input; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex '( labeled input; )'
+		out = Backend.lex '( labeled input; )'
 		assert_equal [:delimiter, :identifier, :identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex '( value := 123; )'
+		out = Backend.lex '( value := 123; )'
 		assert_equal [:delimiter, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex '( labeled value := 123; )'
+		out = Backend.lex '( labeled value := 123; )'
 		assert_equal [:delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex '( mixed, labeled value := 456; )'
+		out = Backend.lex '( mixed, labeled value := 456; )'
 		assert_equal [:delimiter, :identifier, :delimiter, :identifier, :identifier, :operator, :number, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex 'square ( input;
+		out = Backend.lex 'square ( input;
 		 		input * input
 		 	 )'
 		assert_equal [
@@ -256,7 +256,7 @@ class Lexer_Test < Base_Test
 			             :identifier, :operator, :identifier, :delimiter, :delimiter
 		             ], out.map(&:type)
 
-		out = Drive.lex 'wrap ( number, limit;
+		out = Backend.lex 'wrap ( number, limit;
 		 		if number > limit
 		 			number = 0
 		 		end
@@ -270,10 +270,10 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_types
-		out = Drive.lex 'String {}'
+		out = Backend.lex 'String {}'
 		assert_equal [:Identifier, :delimiter, :delimiter], out.map(&:type)
 
-		out = Drive.lex 'Transform {
+		out = Backend.lex 'Transform {
 		 	position,
 		 	rotation,
 		 }'
@@ -284,7 +284,7 @@ class Lexer_Test < Base_Test
 			             :delimiter
 		             ], out.map(&:type)
 
-		out = Drive.lex 'Entity {
+		out = Backend.lex 'Entity {
 		 	|Transform
 		}'
 		assert_equal [
@@ -295,7 +295,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_control_flow
-		out = Drive.lex 'if true
+		out = Backend.lex 'if true
 			celebrate()
 		end'
 		assert_equal [
@@ -304,7 +304,7 @@ class Lexer_Test < Base_Test
 			             :identifier
 		             ], out.map(&:type)
 
-		out = Drive.lex 'if 1 + 2 * 3 == 7
+		out = Backend.lex 'if 1 + 2 * 3 == 7
 			"This one!"
 		elif 1 + 2 * 3 == 9
 			\'No, this one!\'
@@ -321,7 +321,7 @@ class Lexer_Test < Base_Test
 			             :identifier
 		             ], out.map(&:type)
 
-		out = Drive.lex 'for [1, 2, 3, 4, 5]
+		out = Backend.lex 'for [1, 2, 3, 4, 5]
 			remove it if randf() > 0.5
 			skip
 			stop
@@ -336,33 +336,33 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_compound_operators
-		Disk::COMPOUND_OPERATORS.each do |operator|
-			out = Drive.lex operator
+		Prog::COMPOUND_OPERATORS.each do |operator|
+			out = Backend.lex operator
 			assert_equal operator, out.first.value
 		end
 	end
 
 	def test_conditional_keywords
-		out = Drive.lex 'and or'
+		out = Backend.lex 'and or'
 		assert_equal :operator, out.first.type
 		assert_equal :operator, out.last.type
 	end
 
 	def test_return_is_an_operator
-		out = Drive.lex 'return 1 + 2'
+		out = Backend.lex 'return 1 + 2'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_skip_and_stop_are_operators
-		out = Drive.lex 'skip'
+		out = Backend.lex 'skip'
 		assert_equal :operator, out.first.type
 
-		out = Drive.lex 'stop'
+		out = Backend.lex 'stop'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_identifier_dot_integer
-		out = Drive.lex 'array.0'
+		out = Backend.lex 'array.0'
 		assert_equal :identifier, out.first.type
 		assert_equal 'array', out.first.value
 		assert_equal :operator, out[1].type
@@ -373,7 +373,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_identifier_dot_float
-		out = Drive.lex 'array.2.0'
+		out = Backend.lex 'array.2.0'
 		assert_equal :identifier, out.first.type
 		assert_equal 'array', out.first.value
 		assert_equal :operator, out[1].type
@@ -384,52 +384,52 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_number_with_multiple_decimal_points
-		out = Drive.lex '1.2.3'
+		out = Backend.lex '1.2.3'
 		assert_equal 1, out.count
 		assert_equal :number, out.first.type
 	end
 
 	def test_double_less_than_is_operator
-		out = Drive.lex '<<'
+		out = Backend.lex '<<'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_at_at_prefix
-		out = Drive.lex '@count'
+		out = Backend.lex '@count'
 		assert_equal :operator, out.first.type
 	end
 
 	def test_allowed_identifier_special_chars
-		out = Drive.lex 'what?,'
+		out = Backend.lex 'what?,'
 		assert_equal :identifier, out.first.type
 		assert_equal 'what?', out.first.value
 
-		out = Drive.lex 'okay!,'
+		out = Backend.lex 'okay!,'
 		assert_equal :identifier, out.first.type
 		assert_equal 'okay!', out.first.value
 	end
 
 	def test_unpack_prefix
-		out = Drive.lex '@instance_to_unpack'
+		out = Backend.lex '@instance_to_unpack'
 		assert_equal :operator, out.first.type
-		assert_equal Disk::CONTEXT_OPERATOR, out.first.value
+		assert_equal Prog::CONTEXT_OPERATOR, out.first.value
 		assert_equal :identifier, out.last.type
 		assert_equal 'instance_to_unpack', out.last.value
 	end
 
 	def test_for_keyword
-		out = Drive.lex 'for'
+		out = Backend.lex 'for'
 		assert_equal :operator, out.last.type
 	end
 
 	def test_single_line_code_location
-		out = Drive.lex 'abracadabra'
+		out = Backend.lex 'abracadabra'
 		assert_equal 1, out.last.l0
 		assert_equal 1, out.last.c0
 		assert_equal 1, out.last.l1
 		assert_equal 11, out.last.c1
 
-		out = Drive.lex 'abracadabra = whatever'
+		out = Backend.lex 'abracadabra = whatever'
 		assert_equal 1, out.last.l0
 		assert_equal 1, out.last.l1
 		assert_equal 15, out.last.c0
@@ -437,7 +437,7 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_multiline_code_location
-		out = Drive.lex <<~LEX
+		out = Backend.lex <<~LEX
 		    Thing {
 		    	id,
 		    	name,
@@ -481,6 +481,6 @@ class Lexer_Test < Base_Test
 	end
 
 	def test_debug
-		Drive.lex '{ a=1, b="two", c=three }'
+		Backend.lex '{ a=1, b="two", c=three }'
 	end
 end

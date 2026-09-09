@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 require 'net/http'
 require 'uri'
@@ -7,8 +7,8 @@ require 'sequel'
 require 'securerandom'
 
 class Database_Test < Base_Test
-	DATABASE = "@load 'disks/database.disk'"
-	RECORD   = "@load 'disks/table.disk'"
+	DATABASE = "@load 'frontend/database.prog'"
+	RECORD   = "@load 'frontend/table.prog'"
 
 	def before_setup
 		@filepath = "./temp#{SecureRandom.hex}.db"
@@ -20,14 +20,14 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_instance
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 			db := Database()
 		    sq := Sqlite('#{@filepath}')
 			(db, sq)
-		DISK
-		assert_instance_of Disk::Database, out.values.first
-		assert_instance_of Disk::Database, out.values.last
+		CODE
+		assert_instance_of Prog::Database, out.values.first
+		assert_instance_of Prog::Database, out.values.last
 
 		assert_nil out.values.first.get 'adapter'
 		assert_nil out.values.first.get 'url'
@@ -40,46 +40,46 @@ class Database_Test < Base_Test
 	end
 
 	def test_database_connection_instance
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    @connect db
 			db.connection
-		DISK
+		CODE
 		refute_nil out
 		assert_instance_of Sequel::SQLite::Database, out
 	end
 
 	def test_database_connection_is_cached
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 		    c1 := @connect db
 		    c2 := @connect db
 		    (c1, c2)
-		DISK
+		CODE
 		assert_equal out.values[0].object_id, out.values[1].object_id
 	end
 
 	def test_connect_directive_creates_database_connection
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			db.connection
-		DISK
+		CODE
 		assert_nil out
 
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
 			db.connection
-		DISK
+		CODE
 		assert_instance_of Sequel::SQLite::Database, out
 	end
 
 	def test_creating_table
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Sqlite('#{@filepath}')
 			@connect db
@@ -91,12 +91,12 @@ class Database_Test < Base_Test
 			post_tables := db.tables()
 
 			(pre_tables, post_tables)
-		DISK
-		assert_equal [[], [:users]], out.values.map { |disk_array| disk_array.get('values') }
+		CODE
+		assert_equal [[], [:users]], out.values.map { |prog_array| prog_array.get('values') }
 	end
 
 	def test_record_database_reference
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -113,7 +113,7 @@ class Database_Test < Base_Test
 
 			users := user.all()
 			(none, users, cooper, luna, db.table_exists?(User))
-		DISK
+		CODE
 		assert_equal 0, out.values[0].values.count
 		assert_equal 2, out.values[1].values.count
 		assert_equal [{ id: 1, name: 'Cooper' }, { id: 2, name: 'Luna' }], out.values[1].values.map(&:to_h)
@@ -124,7 +124,7 @@ class Database_Test < Base_Test
 
 	def test_create_table_column_types
 		refute_raises do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -135,12 +135,12 @@ class Database_Test < Base_Test
 					active: Bool
 				>
 				db.create_table(Things)
-			DISK
+			CODE
 		end
 	end
 
 	def test_record_update
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -153,7 +153,7 @@ class Database_Test < Base_Test
 			created := user.create(<name := 'Cooper'>)
 			user.update(created.id, <name := 'Cooper Updated'>)
 			user.find(created.id)
-		DISK
+		CODE
 		assert_equal 'Cooper Updated', out.to_h[:name]
 	end
 
@@ -161,7 +161,7 @@ class Database_Test < Base_Test
 	# coerce it back so `if record.done` behaves; before the fix an unset value read as the truthy
 	# Bool *type* and a set one read as a truthy Integer.
 	def test_bool_column_round_trips_as_a_usable_boolean
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -185,12 +185,12 @@ class Database_Test < Base_Test
 				marks << 'set-truthy'
 			end
 			marks
-		DISK
+		CODE
 		assert_equal ['unset-falsy', 'set-truthy'], out.values
 	end
 
 	def test_record_find_by
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -203,12 +203,12 @@ class Database_Test < Base_Test
 			user.create(<name := 'Cooper'>)
 			user.create(<name := 'Luna'>)
 			user.find_by(<name := 'Luna'>)
-		DISK
+		CODE
 		assert_equal({ id: 2, name: 'Luna' }, out.to_h)
 	end
 
 	def test_record_find_by_returns_nil_when_not_found
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -219,12 +219,12 @@ class Database_Test < Base_Test
 			user := db.find_or_create_table(User)
 
 			user.find_by(<name := 'nobody'>)
-		DISK
+		CODE
 		assert_nil out
 	end
 
 	def test_record_where
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -240,13 +240,13 @@ class Database_Test < Base_Test
 			item.create(<name := 'Carrot', kind := 'vegetable'>)
 
 			item.where(<kind := 'fruit'>)
-		DISK
+		CODE
 		assert_equal 2, out.values.count
 		assert_equal ['Apple', 'Banana'], out.values.map { |d| d.to_h[:name] }
 	end
 
 	def test_find_or_create_table_creates_when_missing
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -258,7 +258,7 @@ class Database_Test < Base_Test
 			pre   := db.table_exists?(Widget)
 			table := db.find_or_create_table(Widget)
 			(pre, db.table_exists?(Widget), table.table_name, table.columns)
-		DISK
+		CODE
 		assert_equal false, out.values[0]
 		assert_equal true, out.values[1]
 		assert_equal 'widgets', out.values[2]
@@ -266,7 +266,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_find_or_create_table_reuses_existing_table
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -280,13 +280,13 @@ class Database_Test < Base_Test
 
 			second := db.find_or_create_table(Widget)
 			(second.table_name, second.all().length())
-		DISK
+		CODE
 		assert_equal 'widgets', out.values[0]
 		assert_equal 1, out.values[1]
 	end
 
 	def test_find_table_by_struct
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -298,13 +298,13 @@ class Database_Test < Base_Test
 
 			table := db.find_table(Widget)
 			(table.table_name, table.columns)
-		DISK
+		CODE
 		assert_equal 'widgets', out.values[0]
 		refute_nil out.values[1]
 	end
 
 	def test_find_table_by_name
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -312,21 +312,21 @@ class Database_Test < Base_Test
 			db.create_table(Widget)
 
 			db.find_table('widgets').table_name
-		DISK
+		CODE
 		assert_equal 'widgets', out
 	end
 
 	def test_find_table_returns_nil_when_missing
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    db.find_table('ghosts')
-		DISK
+		CODE
 		assert_nil out
 	end
 
 	def test_delete_table
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -336,13 +336,13 @@ class Database_Test < Base_Test
 			pre := db.table_exists?(Widget)
 			db.delete_table!(Widget)
 			(pre, db.table_exists?(Widget))
-		DISK
+		CODE
 		assert_equal true, out.values[0]
 		assert_equal false, out.values[1]
 	end
 
 	def test_delete_table_by_name_without_the_struct_in_hand
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -354,23 +354,23 @@ class Database_Test < Base_Test
 			pre := db.table_exists?(:widgets)
 			db.delete_table!(:widgets)
 			(pre, db.table_exists?(:widgets))
-		DISK
+		CODE
 		assert_equal true, out.values[0]
 		assert_equal false, out.values[1]
 	end
 
 	def test_table_exists_false_for_missing_table
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 		    Widget <id: Primary_Key>
 		    db.table_exists?(Widget)
-		DISK
+		CODE
 		assert_equal false, out
 	end
 
 	def test_table_exists_by_name
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -378,12 +378,12 @@ class Database_Test < Base_Test
 			db.create_table(Widget)
 
 			db.table_exists?(:widgets)
-		DISK
+		CODE
 		assert_equal true, out
 	end
 
 	def test_tables_lists_every_table
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -393,25 +393,25 @@ class Database_Test < Base_Test
 			db.create_table(Gadget)
 
 			db.tables()
-		DISK
+		CODE
 		assert_equal [:widgets, :gadgets], out.values
 	end
 
 	def test_database_to_s
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := Database()
 		    db.to_s()
-		DISK
+		CODE
 		assert_match(/\ADatabase\{\d+\}\z/, out)
 	end
 
-	def test_sqlite_memory_does_not_persist_to_disk
-		out = Drive.interp <<~DISK
+	def test_sqlite_memory_does_not_persist_to_CODE
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite.memory()
 		    db.url
-		DISK
+		CODE
 		assert_equal ':memory:', out
 	end
 
@@ -420,11 +420,11 @@ class Database_Test < Base_Test
 		filepath = File.expand_path("../.temporary/#{filename}.db", __dir__)
 		File.delete(filepath) if File.exist? filepath
 
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}
 		    db := @connect Sqlite.local('#{filename}')
 		    db.url
-		DISK
+		CODE
 		assert_equal filepath, out
 		assert File.exist?(filepath), 'Sqlite.local should create the db file under .temporary/'
 	ensure
@@ -432,7 +432,7 @@ class Database_Test < Base_Test
 	end
 
 	def test_table_find_returns_nil_when_missing
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -443,12 +443,12 @@ class Database_Test < Base_Test
 			table := db.find_or_create_table(Widget)
 
 			table.find(999)
-		DISK
+		CODE
 		assert_nil out
 	end
 
 	def test_table_delete
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -463,51 +463,51 @@ class Database_Test < Base_Test
 
 			table.delete(a.id)
 			(table.all().length(), table.find(a.id))
-		DISK
+		CODE
 		assert_equal 1, out.values[0]
 		assert_nil out.values[1]
 	end
 
-	# --- Drive.assert failure paths ---
+	# --- Backend.assert failure paths ---
 
 	def test_create_table_raises_for_non_struct
 		error = assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table('not a struct')
-			DISK
+			CODE
 		end
 		assert_match(/Expected condition to be truthy/, error.message)
 	end
 
 	def test_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.create_table(<id: Primary_Key>)
-			DISK
+			CODE
 		end
 	end
 
 	def test_find_or_create_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_or_create_table(<id: Primary_Key>)
-			DISK
+			CODE
 		end
 	end
 
 	def test_find_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.find_table(<id: Primary_Key>)
-			DISK
+			CODE
 		end
 	end
 
@@ -516,33 +516,33 @@ class Database_Test < Base_Test
 	# caught there instead, one guard covering every caller.
 	def test_table_exists_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.table_exists?(<id: Primary_Key>)
-			DISK
+			CODE
 		end
 	end
 
 	def test_delete_table_raises_for_unnamed_struct
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 			    db.delete_table!(<id: Primary_Key>)
-			DISK
+			CODE
 		end
 	end
 
 	# --- Column types available to create_table ---
 
 	def test_create_table_every_column_type
-		# No distinct Drive Flo/Decimal/Blob type exists yet -- alias one yourself, same as the
+		# No distinct Backend Flo/Decimal/Blob type exists yet -- alias one yourself, same as the
 		# codebase's own `Text | String {}` pattern (see database.rb's #proxy_create_table).
 		# Primary_Key/String/Int/Bool/Date/Time/Date_Time/Enum need no aliasing -- all real,
 		# provided types.
 		refute_raises do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -567,14 +567,14 @@ class Database_Test < Base_Test
 					status: Status
 				>
 				db.create_table(Everything)
-			DISK
+			CODE
 		end
 	end
 
 	# --- Building a Table by hand instead of through Database ---
 
 	def test_table_built_manually_and_linked_to_a_database
-		out = Drive.interp <<~DISK
+		out = Backend.interp <<~CODE
 		    #{DATABASE}, #{RECORD}
 		    db := @connect Sqlite('#{@filepath}')
 
@@ -592,7 +592,7 @@ class Database_Test < Base_Test
 
 			created := table.create(<name := 'Manual'>)
 			(created.name, table.all().length())
-		DISK
+		CODE
 		assert_equal 'Manual', out.values[0]
 		assert_equal 1, out.values[1]
 	end
@@ -601,7 +601,7 @@ class Database_Test < Base_Test
 
 	def test_create_raises_for_dictionary
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -611,13 +611,13 @@ class Database_Test < Base_Test
 				>
 				table := db.find_or_create_table(Widget)
 				table.create({name: 'oops'})
-			DISK
+			CODE
 		end
 	end
 
 	def test_update_raises_for_dictionary
 		assert_raises RuntimeError do
-			Drive.interp <<~DISK
+			Backend.interp <<~CODE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -628,15 +628,15 @@ class Database_Test < Base_Test
 				table := db.find_or_create_table(Widget)
 				created := table.create(<name := 'A'>)
 				table.update(created.id, {name: 'oops'})
-			DISK
+			CODE
 		end
 	end
 
 	# --- find_by/where filtering on a column the schema doesn't have ---
 
 	def test_find_by_raises_for_unknown_column
-		error = assert_raises Disk::Table_Invalid_Filter_Column do
-			Drive.interp <<~DISK
+		error = assert_raises Prog::Table_Invalid_Filter_Column do
+			Backend.interp <<~CODE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -647,14 +647,14 @@ class Database_Test < Base_Test
 				table := db.find_or_create_table(Widget)
 				table.create(<name := 'A'>)
 				table.find_by(<ghost_column := 'x'>)
-			DISK
+			CODE
 		end
 		assert_match(/ghost_column/, error.message)
 	end
 
 	def test_where_raises_for_unknown_column
-		error = assert_raises Disk::Table_Invalid_Filter_Column do
-			Drive.interp <<~DISK
+		error = assert_raises Prog::Table_Invalid_Filter_Column do
+			Backend.interp <<~CODE
 			    #{DATABASE}, #{RECORD}
 			    db := @connect Sqlite('#{@filepath}')
 
@@ -665,7 +665,7 @@ class Database_Test < Base_Test
 				table := db.find_or_create_table(Widget)
 				table.create(<name := 'A'>)
 				table.where(<ghost_column := 'x'>)
-			DISK
+			CODE
 		end
 		assert_match(/ghost_column/, error.message)
 	end

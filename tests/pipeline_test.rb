@@ -1,23 +1,23 @@
 require 'minitest/autorun'
-require_relative '../drive/drive'
+require_relative '../backend/backend'
 require_relative 'base_test'
 
 class Pipeline_Test < Base_Test
 	def test_interp
-		assert_equal 42, Drive::Interpreter.new.run("42")
+		assert_equal 42, Backend::Interpreter.new.run("42")
 	end
 
 	def test_lex
-		result = Drive::Lexer.new("42").output
+		result = Backend::Lexer.new("42").output
 		assert_instance_of ::Array, result
-		assert_instance_of Disk::Lexeme, result.first
+		assert_instance_of Prog::Lexeme, result.first
 	end
 
 	def test_parse
-		lexemes = Drive::Lexer.new("42").output
-		result  = Drive::Parser.new(lexemes).output
+		lexemes = Backend::Lexer.new("42").output
+		result  = Backend::Parser.new(lexemes).output
 		assert_instance_of ::Array, result
-		assert_instance_of Disk::Number_Expr, result.first
+		assert_instance_of Prog::Number_Expr, result.first
 	end
 
 	def test_documenter
@@ -25,15 +25,15 @@ class Pipeline_Test < Base_Test
 		    # a comment
 		    1 + 1 # another comment
 		CODE
-		lexemes     = Drive::Lexer.new(code).output
-		expressions = Drive::Parser.new(lexemes).output
-		result      = Drive::Documenter.new(expressions).output
+		lexemes     = Backend::Lexer.new(code).output
+		expressions = Backend::Parser.new(lexemes).output
+		result      = Backend::Documenter.new(expressions).output
 		assert_equal ['a comment', 'another comment'], result.map(&:value)
 	end
 
 	def test_type_checker
-		lexemes     = Drive::Lexer.new("42").output
-		expressions = Drive::Parser.new(lexemes).output
-		assert_nil Drive::Type_Checker.new(expressions).output
+		lexemes     = Backend::Lexer.new("42").output
+		expressions = Backend::Parser.new(lexemes).output
+		assert_nil Backend::Type_Checker.new(expressions).output
 	end
 end
