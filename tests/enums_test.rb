@@ -2,15 +2,16 @@ require 'minitest/autorun'
 require_relative '../backend/backend'
 require_relative 'base_test'
 
-# TYPE_IDENT :: (OPTIONAL_FORCED_TYPE_IDENT_FOR_CONSTANTS) {
+# TYPE_IDENT [ ... ]                    -- bare form (needs a comma / 2+ items / a member form, else it's a subscript)
+# TYPE_IDENT: Enum [ ... ]              -- annotated: always an enum, any item count
+# TYPE_IDENT: Enum\Backing_Type [ ... ] -- annotated with a backing/value type (rides on `expr.type`)
+# TYPE_IDENT: Backing_Type [ ... ]      -- the backing type on its own, no `Enum\` needed
 #
 #   TYPE_IDENT              # gets its own unique value
 #   TYPE_IDENT,             # with comma, also unique'd
 #   TYPE_IDENT: TYPE_IDENT
 #   TYPE_IDENT := EXPR
 #   TYPE_IDENT: TYPE_IDENT = EXPR
-#
-# }
 class Enums_Test < Base_Test
 	def test_empty_enum
 		out = Backend.parse <<~CODE
@@ -22,25 +23,54 @@ class Enums_Test < Base_Test
 		assert_empty out.first.expressions
 	end
 
-	def test_enum_with_forced_type
-		out = Backend.parse <<~CODE
-		    My_Enum []
-		CODE
+	# `NAME: Enum [ ... ]` -- an explicit annotation. Always an enum, whatever the item count.
+	def test_annotated_enum_is_always_an_enum_even_with_one_member
+		out = Backend.parse 'My_Enum: Enum [ ABC ]'
 		assert_kind_of Prog::Enum_Expr, out.first
 		assert_equal 'My_Enum', out.first.name.value
-		assert_empty out.first.expressions
+		refute out.first.type
+		assert_equal 'ABC', out.first.expressions.first.left.value
 	end
 
-	# TYPE_IDENT # gets its own unique value
+	# `NAME: Enum\Backing_Type [ ... ]` -- the backing/value type rides on `expr.type`.
+	def test_annotated_enum_records_its_backing_type
+		out = Backend.parse 'My_Enum: Enum\Int [ ABC, DEF ]'
+		assert_kind_of Prog::Enum_Expr, out.first
+		assert_equal 'Int', out.first.type.value
+	end
+
+	# The backing type can be the annotation on its own -- `NAME: Int [ ... ]`, no `Enum\` needed.
+	def test_bare_backing_type_annotation_is_an_enum
+		out = Backend.parse 'My_Enum: Int [ ABC ]'
+		assert_kind_of Prog::Enum_Expr, out.first
+		assert_equal 'Int', out.first.type.value
+	end
+
+	# TYPE_IDENT # gets its own unique value. Two members here -- a single bare member (`My_Enum [ ABC ]`)
+	# is an ordinary subscript now, see #test_single_bare_member_is_a_subscript below.
 	def test_bare_member_gets_its_own_unique_value
 		out = Backend.parse <<~CODE
 		    My_Enum [
 		    	ABC
+		    	DEF
 		    ]
 		CODE
 		member = out.first.expressions.first
 		assert_kind_of Prog::Nil_Init_Expr, member
 		assert_equal 'ABC', member.left.value
+	end
+
+	# The deliberate tradeoff for dropping the declared-identifier tracking: bare `NAME [ one_item ]` reads
+	# as a subscript. Write a trailing comma, or annotate, to force the one-option enum.
+	def test_single_bare_member_is_a_subscript
+		out = Backend.parse 'My_Enum [ ABC ]'
+		assert_kind_of Prog::Subscript_Expr, out.first
+	end
+
+	def test_single_member_with_trailing_comma_is_an_enum
+		out = Backend.parse 'My_Enum [ ABC, ]'
+		assert_kind_of Prog::Enum_Expr, out.first
+		assert_equal 'ABC', out.first.expressions.first.left.value
 	end
 
 	# TYPE_IDENT, # with comma -- same shape as the bare form above, comma is just a separator

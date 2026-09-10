@@ -10,7 +10,6 @@ module Backend
 			@custom_prefix        = ::Set.new
 			@custom_postfix       = ::Set.new
 			@custom_circumfix     = ::Set.new
-			@declared_identifiers = ::Set.new # Keep track of declarations so that we can disambiguate subscript and enum declaration.
 			@input                = input
 			@i                    = 0 # index of current lexeme
 			@struct_nesting_depth = 0 # how many `<...>` structs #parse_struct is currently inside of -- see #split_glued_close_angles!
@@ -34,7 +33,6 @@ module Backend
 		end
 
 		def output
-			@declared_identifiers.clear
 			scan_and_register_operator_overloads_before_parsing # This has to be done before parsing because overloaded operators have to set their precedence level, which if done at runtime would the behavior of #precedence_for that now depends on an updated prcedence table with new precedences added.
 
 			expressions = []
@@ -350,7 +348,9 @@ module Backend
 			copy_location it, start
 		end
 
-		# TYPE_IDENT [
+		# TYPE_IDENT [                       -- bare form
+		# TYPE_IDENT: Enum [                 -- annotated (any item count, see #annotated_enum_declaration_follows?)
+		# TYPE_IDENT: Enum\Backing_Type [    -- annotated with a backing/value type
 		#
 		#   TYPE_IDENT              # gets its own unique value
 		#   TYPE_IDENT,             # with comma
@@ -359,10 +359,25 @@ module Backend
 		#   TYPE_IDENT: TYPE_IDENT = EXPR
 		# ]
 		def parse_enum_expr
-			# TYPE_IDENT [
 			expr             = Prog::Enum_Expr.new
 			expr.expressions = []
 			expr.name        = eat TYPE_IDENTIFIER
+
+			# Optional annotation. `: Enum` / `: Enum\Backing_Type`, or the backing type on its own
+			# (`: Int`). Either way the backing type rides on `expr.type`, the slot #build_enum reads for `@.type`.
+			if curr? ':'
+				eat ':'
+				base = eat TYPE_IDENTIFIER
+				if base.value == 'Enum'
+					if curr? TAG_OPERATOR
+						eat TAG_OPERATOR
+						expr.type = parse_identifier_expr
+					end
+				else
+					expr.type = Prog::Identifier_Expr.new base # the annotation itself is the backing type
+				end
+			end
+
 			eat '['
 
 			#   TYPE_IDENT [ ... ]
@@ -412,6 +427,59 @@ module Backend
 			end
 			eat ']'
 			expr
+		end
+
+		# `NAME: <Type> [ ... ]` -- an explicit enum annotation: `NAME: Enum [ ... ]`, `NAME: Enum\Backing [ ... ]`,
+		# or the backing type on its own (`NAME: Int [ ... ]`). Always an enum, whatever the item count, so it's
+		# the way to write a one-option enum that the bare form would otherwise read as a subscript. Safe to
+		# claim broadly: a `Capitalized: Type` expression is never subscripted (capitalized names are types).
+		def annotated_enum_declaration_follows?
+			return false unless curr?(TYPE_IDENTIFIER, ':')
+			base = peek 2
+			return false unless base && TYPE_IDENTIFIER.include?(base.type)
+
+			ahead = 3
+			ahead += 2 if base.value == 'Enum' && peek(ahead)&.value == TAG_OPERATOR # skip `\` and the backing type
+			peek(ahead)&.value == '['
+		end
+
+		# `curr` is a TYPE_IDENTIFIER and `peek` is `[`. It's an enum unless the brackets hold exactly one
+		# plain expression -- that lone case is an ordinary subscript (`Config[key]`). Anything that can't be
+		# a single subscript index marks it as an enum: an empty body, a `,`, a `:=`/`=`/`NAME:` member form,
+		# a nested `NAME [`, or two-plus items (whitespace-, newline-, or comma-separated). A single bare option
+		# (`My_Enum [ One ]`) reads as a subscript -- write `My_Enum [ One, ]` or annotate it.
+		def bare_enum_declaration_follows?
+			depth       = 0
+			prev_ident  = false # the previous depth-1 token was a non-reserved identifier
+			saw_content = false
+			j           = i + 1 # the `[`
+
+			while (tok = input[j])
+				v          = tok.value
+				is_newline = tok.type == :delimiter && NEWLINES.include?(v)
+
+				if ['(', '[', '{'].include? v
+					depth += 1
+					prev_ident = false
+				elsif [')', ']', '}'].include? v
+					depth -= 1
+					return !saw_content if depth.zero? # empty `[]` -> enum; one plain expr -> subscript
+					prev_ident = false
+				elsif depth == 1 && !is_newline
+					ident = %i[identifier Identifier IDENTIFIER].include?(tok.type) && !tok.reserved
+
+					return true if v == ',' || v == ':=' || v == '='
+					return true if prev_ident && (v == ':' || ident)  # `NAME:` annotation, or `NAME NAME` -- two members
+					return true if ident && input[j + 1]&.value == '[' # nested `NAME [ ... ]`
+
+					saw_content = true
+					prev_ident  = ident
+				end
+
+				j += 1
+			end
+
+			false # ran off the end -- malformed, let the normal path raise
 		end
 
 		def parse_func precedence = STARTING_PRECEDENCE
@@ -472,7 +540,6 @@ module Backend
 
 					# note; something in the if/else below depends on param.name being present
 					param.name = param.lexeme
-					@declared_identifiers << param.name.value if param.name
 
 					if curr?('...') and eat('...') # f (x...; ...) -- same as f (x: Arguments; ...)
 						param.variadic = true
@@ -846,8 +913,6 @@ module Backend
 				expr.type = parse_struct # bare struct annotation, e.g. `thing: <String, Number>` -- sugar for `thing: Struct<String, Number>`
 			end
 
-			@declared_identifiers << expr.value if expr.type
-
 			expr.kind = Backend.type_of_identifier expr.value
 			copy_location expr, start
 		end
@@ -1069,8 +1134,6 @@ module Backend
 			nil_expr.privacy = Backend.privacy_of_ident 'nil'
 			expr.right       = nil_expr
 
-			@declared_identifiers << expr.left.value if expr.left.is_a?(Prog::Identifier_Expr)
-
 			copy_location expr, start
 		end
 
@@ -1086,7 +1149,7 @@ module Backend
 			elsif (curr?('(') || curr?(:identifier, '(') || curr?(:identifier, ':', '(') || curr?(SCOPE_KEYWORDS, '(') || curr?(SCOPE_KEYWORDS, '.', :identifier, '(') || curr?(SCOPE_KEYWORDS, '.', :identifier, ':', '(')) && func_declaration_follows? && (!member_rhs || curr?('('))
 				parse_func precedence
 
-			elsif curr?(TYPE_IDENTIFIER, '[') && !@declared_identifiers.include?(curr_lexeme.value)
+			elsif (curr?(TYPE_IDENTIFIER, '[') && bare_enum_declaration_follows?) || annotated_enum_declaration_follows?
 				parse_enum_expr
 
 			elsif curr?(TYPE_IDENTIFIER, '<') && (structured = try_parse_struct)
@@ -1326,10 +1389,6 @@ module Backend
 						end
 						expr.right    = expr.right.left if expr.right.is_a? Prog::Nil_Init_Expr
 						copy_location expr, left
-
-						if %w(:= =).include?(expr.operator.value) && expr.left.is_a?(Prog::Identifier_Expr)
-							@declared_identifiers << expr.left.value
-						end
 
 						if expr.left.is(Prog::Identifier_Expr) && expr.operator.value == '.' && expr.right.is(Prog::Number_Expr) && expr.right.type == :float
 							# @copypaste from above #parse_expression when :number.
