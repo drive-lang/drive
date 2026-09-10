@@ -38,7 +38,7 @@ A percent literal's items don't have to be identifiers -- bare numbers work as w
 
 ### Interpolating a Statement
 
-A `` `expr` `` item (see demos/statements.prog) is evaluated immediately, right where it sits, then folded through the same to_s + casing treatment as every other item -- not deferred the way a bare `` `expr` `` normally is elsewhere.
+A `` `expr` `` item (see examples/statements.prog) is evaluated immediately, right where it sits, then folded through the same to_s + casing treatment as every other item -- not deferred the way a bare `` `expr` `` normally is elsewhere.
 ###
 cool := 2342
 @assert %string(481516 `cool`) == ['481516', '2342'], 'a backtick item should be interpolated immediately'

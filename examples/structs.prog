@@ -2,7 +2,7 @@
 
 Sometimes you want to attach a small bundle of typed data to something without declaring a whole new Type for it. Structs are Backend's answer: `<...>` builds a small, runtime-inspectable value on the spot.
 
-This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see demos/tagged_types.prog for that.
+This file is about Structs as standalone values. Attaching a struct to a Type name instead (to create independent, tagged variants of that type) is a related but separate feature -- see examples/tagged_types.prog for that.
 ###
 pair := <String, Number>
 type_names := pair.@types.values.map((it;
@@ -143,7 +143,7 @@ Annotate a target with `: Type` and the extracted value has to match it:
 
 ### Destructuring straight into an existing member
 
-A target doesn't have to be a fresh local -- `thing.member` reassigns an existing member instead, same rules as writing `thing.member = value` directly: the member has to already exist, can't be a constant, and (if it has a locked type) the extracted value has to match it. See demos/members.prog for why the member has to already exist.
+A target doesn't have to be a fresh local -- `thing.member` reassigns an existing member instead, same rules as writing `thing.member = value` directly: the member has to already exist, can't be a constant, and (if it has a locked type) the extracted value has to match it. See examples/members.prog for why the member has to already exist.
 ###
 Point {
 	x, y,

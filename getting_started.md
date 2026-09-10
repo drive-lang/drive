@@ -6,7 +6,7 @@
 git clone https://github.com/drive-lang/drive.git
 cd drive
 bundle install
-bundle exec bin/prog demos/hello_world.prog -p # => Hello, Backend!
+bundle exec bin/prog examples/hello_world.prog -p # => Hello, Backend!
 ```
 
 ### Table of Contents
@@ -17,7 +17,7 @@ bundle exec bin/prog demos/hello_world.prog -p # => Hello, Backend!
 ### Project Structure
 
 - [`backend/readme`](backend/readme.md) details the architecture and contains instructions for running your own programs
-- [`demos`](demos) contains more useful code examples
+- [`examples`](examples) contains more useful code examples
 - [`frontend`](frontend) contains code for the Backend standard library
 - [`backend`](backend) contains code implementing Backend
     - [Lexer](backend/1_lexer/lexer.rb) – Source code to Lexemes

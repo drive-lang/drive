@@ -1,6 +1,6 @@
 ### Introduction
 
-`@` is the current scope's context (see demos/context.prog). Alongside its reflective vitals, the
+`@` is the current scope's context (see examples/context.prog). Alongside its reflective vitals, the
 context carries a set of callable members -- `@puts`, `@assert`, `@declare`, `@push_scope` /
 `@pop_scope`, `@sleep`, and a few more. `@word` is shorthand for `@.word`, so `@puts x` is a call
 to the `puts` member with `x` as its argument -- an ordinary expression, not a special form.
@@ -94,7 +94,7 @@ survivors += 3   # no camp. prefix needed -- camp IS the current scope now
 
 ### @sleep
 
-Pauses execution for the given number of seconds. Mostly useful for demos / throttling, not for
+Pauses execution for the given number of seconds. Mostly useful for examples / throttling, not for
 business logic, I hope.
 ###
 @sleep 0.1

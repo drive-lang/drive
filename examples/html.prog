@@ -27,7 +27,7 @@ Camp_Sign | Dom {
 
 ### html_* and css_* prefixes
 
-An `html_*` declaration becomes an HTML attribute (`html_class` -> `class`); a `css_*` declaration becomes an inline style property (`css_padding` -> `padding`). Both are just regular declarations underneath, readable like any other -- but they're only actually folded into attribute/style output by the server's own rendering pipeline when a `Dom` instance comes back from a route (see demos/web_servers.prog). Calling `.to_s()` directly, like above, ignores them entirely and only wraps `children` in the tag.
+An `html_*` declaration becomes an HTML attribute (`html_class` -> `class`); a `css_*` declaration becomes an inline style property (`css_padding` -> `padding`). Both are just regular declarations underneath, readable like any other -- but they're only actually folded into attribute/style output by the server's own rendering pipeline when a `Dom` instance comes back from a route (see examples/web_servers.prog). Calling `.to_s()` directly, like above, ignores them entirely and only wraps `children` in the tag.
 ###
 Card | Div {
 	css_padding := '1rem'
@@ -43,7 +43,7 @@ card := Card(P('Found supplies'))
 
 ### Setting attributes at construction
 
-A Dom element's constructor also accepts `html_*`, `css_*`, `onclick`, and `key` as named arguments (demos/named_arguments.prog) and sets them straight onto the instance -- no subclass and no separate assignment. Only those names are accepted, and only on Dom types; anything else raises `Prog::Unknown_Named_Argument`.
+A Dom element's constructor also accepts `html_*`, `css_*`, `onclick`, and `key` as named arguments (examples/named_arguments.prog) and sets them straight onto the instance -- no subclass and no separate assignment. Only those names are accepted, and only on Dom types; anything else raises `Prog::Unknown_Named_Argument`.
 ###
 tent := Div([P('Shelter')], html_class := 'tent', css_border := '1px solid')
 @assert tent.html_class == 'tent', 'a Dom constructor should accept html_* as a named argument'

@@ -175,7 +175,7 @@ tmp.y = 4
 
 ### The standard library works this way too
 
-`String` / `Array` / etc. are reachable through Global's own read-only splat, not declared on Global directly -- see demos/loading_code.prog. Reassigning a built-in name shadows it for the rest of the program without touching the real one; if the replacement still composes the original, every literal keeps working and picks up whatever else you added:
+`String` / `Array` / etc. are reachable through Global's own read-only splat, not declared on Global directly -- see examples/loading_code.prog. Reassigning a built-in name shadows it for the rest of the program without touching the real one; if the replacement still composes the original, every literal keeps working and picks up whatever else you added:
 ###
 Mine | Array { extra := true }
 Array = Mine

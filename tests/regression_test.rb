@@ -880,7 +880,7 @@ class Regression_Test < Base_Test
 	end
 
 	def test_compound_assignment_on_dot_member_target_regression
-		# `instance.member += value` used to silently no-op: #interp_compound_infix resolved its assignment target via #scope_for_identifier, which only understands plain Identifier_Exprs -- a dot-target fell through to `stack.last` and declared a bogus `nil`-named identifier there instead of touching the actual member. Found via demos/aoc/2015/3b.prog computing the wrong answer (Vec2 members mutated with `+=` inside nested if/elif never actually moved).
+		# `instance.member += value` used to silently no-op: #interp_compound_infix resolved its assignment target via #scope_for_identifier, which only understands plain Identifier_Exprs -- a dot-target fell through to `stack.last` and declared a bogus `nil`-named identifier there instead of touching the actual member. Found via examples/aoc/2015/3b.prog computing the wrong answer (Vec2 members mutated with `+=` inside nested if/elif never actually moved).
 		out = Backend.interp <<~CODE
 		    Vec2 {
 		        x,

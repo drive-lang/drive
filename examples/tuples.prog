@@ -58,7 +58,7 @@ end
 ### Destructuring -- the main event
 
 `(targets) := source` pulls a tuple apart positionally into fresh locals in one line. This is how
-you consume a function that returns several things. See demos/structs.prog for the full rules
+you consume a function that returns several things. See examples/structs.prog for the full rules
 (shared with Structs) -- the short version: extra values on the right are discarded, asking for
 more targets than there are values raises `Prog::Destructuring_Arity_Mismatch`.
 ###

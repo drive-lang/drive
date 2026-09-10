@@ -3,7 +3,7 @@
 [![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-2B7FFF)](https://justforfunnoreally.dev)
 ![Status of project Ruby tests](https://github.com/drive-lang/backend/actions/workflows/tests.yml/badge.svg)
 
-Learn about the language below, or [in the learn section](demos/readme.md), or *[click here to get started using it](getting_started.md)*.
+Learn about the language below, or [in the learn section](examples/readme.md), or *[click here to get started using it](getting_started.md)*.
 
 ---
 
@@ -763,7 +763,7 @@ cached()                   # 4
 cached()                   # 4 -- didn't run again
 ```
 
-See `demos/statements.prog` for the full picture, including `.use_caller_scope`.
+See `examples/statements.prog` for the full picture, including `.use_caller_scope`.
 
 ## Numbers
 

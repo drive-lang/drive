@@ -17,7 +17,7 @@ After following the instructions, how many lights are lit?
 
 @load 'frontend/file_system'
 
-INPUT := read_file_to_string('demos/aoc/2015/6a.txt').split("\n")
+INPUT := read_file_to_string('examples/aoc/2015/6a.txt').split("\n")
 
 Vec2 <x: Int, y: Int>
 Instruction <command: String, subcommand: String, from: Vec2, till: Vec2>

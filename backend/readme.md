@@ -1,6 +1,6 @@
 ### What's here?
 
-This [`drive`](.) folder contains the implementation of Backend in Ruby. Source code moves through five phases: **Lexer → Parser → Type Checker → Declarator → Interpreter.** The phases are numbered folders, in run order.
+This [`backend`](.) folder contains the implementation in Ruby. Source code moves through five phases: **Lexer → Parser → Type Checker → Declarator → Interpreter.** The phases are numbered folders, in run order.
 
 - **`backend.rb`**: the entry point. Requires everything in load order, then exposes the `Backend` module's convenience methods (`Backend.lex`, `Backend.parse`, `Backend.interp`, and their `_file` counterparts).
 - **`cli.rb`** / **`repl.rb`**: `Backend::CLI` (the `bin/prog` commands) and `Backend::REPL`.

@@ -1,7 +1,7 @@
 ###
 Reads a markdown task list and reports how many lines are still open (`+`) vs done (`-`).
 Run from the repo root:
-bin/prog demos/tasks/stats.prog
+bin/prog examples/tasks/stats.prog
 ###
 
 Task_List_Stats <name: String, open: Array, done: Array, open_percent: Flo, done_percent: Flo>
@@ -40,7 +40,7 @@ make_stats ( filepath: String -> Task_List_Stats;
 	)
 )
 
-files := ['demos/tasks/bugs.md' 'demos/tasks/design.md' 'demos/tasks/todos.md'] # note; optional commas
+files := ['examples/tasks/bugs.md' 'examples/tasks/design.md' 'examples/tasks/todos.md'] # note; optional commas
 for files
 	@puts make_stats(filepath := it).to_s(compact := false)
 end

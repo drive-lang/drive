@@ -1,6 +1,6 @@
 ### Introduction
 
-`name := value` at a call site binds by the callee's declared param *name*, not its position -- a separate mechanism from labels (demos/labeled_arguments.prog), which check a *position*'s declared label and never reorder anything. Named arguments genuinely reorder: any order you supply them in binds to the right param.
+`name := value` at a call site binds by the callee's declared param *name*, not its position -- a separate mechanism from labels (examples/labeled_arguments.prog), which check a *position*'s declared label and never reorder anything. Named arguments genuinely reorder: any order you supply them in binds to the right param.
 ###
 sub ( a, b;
 	a - b

@@ -55,7 +55,7 @@ loader()
 
 ### A tagged type can require a Statement
 
-`\<name: Statement>` (see demos/tagged_types.prog) makes a tagged type's shape say "this slot holds a deferred, callable expression," not a plain value.
+`\<name: Statement>` (see examples/tagged_types.prog) makes a tagged type's shape say "this slot holds a deferred, callable expression," not a plain value.
 ###
 Row\<id: Statement> {}
 

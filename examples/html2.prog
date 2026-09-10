@@ -1,6 +1,6 @@
 ### Introduction
 
-`backend/html2.prog` isn't loaded by default -- it needs an explicit `@load`. Same spirit as `backend/css.prog` (`demos/css.prog`): markup is one plain struct (`Element`), and a single `Html_Formatter_Visitor` walks whatever tree you built and turns it into an HTML string. This coexists with `backend/html.prog` (`demos/html.prog`) -- a Div/P/H1/... per-tag Type with `html_*`/`css_*` declarations -- rather than replacing it; this one only builds a string, it doesn't hook into the server's live-render pipeline.
+`backend/html2.prog` isn't loaded by default -- it needs an explicit `@load`. Same spirit as `backend/css.prog` (`examples/css.prog`): markup is one plain struct (`Element`), and a single `Html_Formatter_Visitor` walks whatever tree you built and turns it into an HTML string. This coexists with `backend/html.prog` (`examples/html.prog`) -- a Div/P/H1/... per-tag Type with `html_*`/`css_*` declarations -- rather than replacing it; this one only builds a string, it doesn't hook into the server's live-render pipeline.
 ###
 @load 'frontend/html2.prog'
 
@@ -34,7 +34,7 @@ labeled := h1('Do not drink the water', [Attribute('id', 'warning'), Attribute('
 
 ### css attaches a real Style_Rule tree, rendered as an embedded <style>
 
-The third constructor argument, `css`, takes any css.prog struct (`demos/css.prog`) -- not a Dictionary of inline properties. Wherever it's attached, the formatter renders it as one more child: an embedded `<style>` block, right there in the tree:
+The third constructor argument, `css`, takes any css.prog struct (`examples/css.prog`) -- not a Dictionary of inline properties. Wherever it's attached, the formatter renders it as one more child: an embedded `<style>` block, right there in the tree:
 ###
 @load 'frontend/css.prog'
 

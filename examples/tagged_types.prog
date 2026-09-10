@@ -1,6 +1,6 @@
 ### Introduction
 
-Put `\<...>` right after a Type name, instead of on its own, and you get something different from a plain Struct value: an independent variant of that type -- its own `new`, its own methods, completely separate from the bare type and from every other variant. This file assumes you already know what a Struct is -- see demos/structs.prog first if `<...>` alone is new to you.
+Put `\<...>` right after a Type name, instead of on its own, and you get something different from a plain Struct value: an independent variant of that type -- its own `new`, its own methods, completely separate from the bare type and from every other variant. This file assumes you already know what a Struct is -- see examples/structs.prog first if `<...>` alone is new to you.
 ###
 String\<Dictionary> { to_s (; "I'm a dict-tagged string" ) }
 String\<Number>     { to_s (; "I'm a number-tagged string" ) }

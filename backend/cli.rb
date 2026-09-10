@@ -29,9 +29,9 @@ module Backend
 		        -h | --help           Show help instructions
 
 		    EXAMPLES:
-		        prog demos/hello_world.prog -p
+		        prog examples/hello_world.prog -p
 		        prog lex "x = 5 + 3" -p
-		        prog parsef demos/hello_world.prog -p
+		        prog parsef examples/hello_world.prog -p
 		        prog interp "4815" -p
 		INST
 
