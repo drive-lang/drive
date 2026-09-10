@@ -385,57 +385,63 @@ module Backend
 			scope
 		end
 
-		def context_for scope
-			scope.context ||= begin
-				instance = Prog::Context.new scope
-				link_instance_to_type instance, 'Context'
-				# `Context` is always a stdlib global -- fall back to it directly, since `context_for` also
-				# runs mid dot-access resolution (`x.@`), when `stack` is narrowed to just the receiver and
-				# `find_in_stack` can't see it. Missing it there built a context with no data members.
-				decl           = find_in_stack('Context') || (global.has?('Context') ? global['Context'] : nil)
-				instance.types = decl.types if decl.respond_to?(:types) && decl.types
-				fill_context instance, scope, decl
-				instance
+		# The one shared Context -- built once, holds the `@` functions as callable stand-ins. Every
+		# `@func` / `x.@func` / `@.func` resolves through here (bound to a subject via #bind_context_func).
+		def shared_context
+			@shared_context ||= Prog::Context.new.tap do |ctx|
+				Prog::Context::FUNCTIONS.each { |fn| ctx.declare fn, synthesized_context_func(fn) }
 			end
 		end
 
-		def fill_context instance, scope, decl
-			data_members = (decl.respond_to?(:names) && decl.names&.compact || []) - Prog::Context::FUNCTIONS
-
-			set_of = ->(list) { finish_intrinsic_instance(Prog::Set.new.tap { |s| s.set.merge(list) }, 'Set') }
-			name   = scope.name.is_a?(Prog::Lexeme) ? scope.name.value : scope.name
-
-			# todo; This is a mess. Pick a better way to organize this.
-			# todo; Add these values to the Context
-			# - arguments  when function scope (given by user)
-			# - parameters when function scope (declared at function)
-
-			values = {
-				'name'                => name,
-				'display_name'        => (scope.display_name if scope.respond_to?(:display_name)) || name,
-				'composed_types'      => set_of.call(scope.respond_to?(:types) && scope.types ? scope.types.to_a : []),
-				'types'               => context_types_for(scope),
-				'type'                => context_type_for(scope),
-				'object_id'           => scope.object_id,
-				'size_in_bytes'       => ObjectSpace.memsize_of(scope),
-				'root_path'           => Backend::ROOT_PATH,
-				'static_declarations' => set_of.call(scope.respond_to?(:static_declarations) && scope.static_declarations ? scope.static_declarations.to_a : []),
-				'names'               => (wrap_prog_array(scope.names) if scope.is_a?(Prog::Struct)),
-				'type_names'          => (wrap_prog_array(scope.type_names) if scope.is_a?(Prog::Struct)),
-				'values'              => context_values_for(scope),
-				'members'             => (scope.members if scope.is_a?(Prog::Struct)),
-				'keys'                => (wrap_prog_array(scope.enum_keys) if scope.is_a?(Prog::Enum)),
-				'count'               => (scope.enum_keys.length if scope.is_a?(Prog::Enum)),
-				'parameters'          => (wrap_prog_array(scope.parameters) if scope.is_a?(Prog::Func)),
-				'arguments'           => (wrap_prog_array(scope.arguments) if scope.is_a?(Prog::Func)),
-				'func_signature'      => (scope.func_signature if scope.is_a?(Prog::Func)),
-			}
-
-			data_members.each { |member| instance.declare member, values[member] }
-			Prog::Context::FUNCTIONS.each do |fn|
-				result = synthesized_context_func(fn, instance)
-				instance.declare fn, result
+		# A transient Context, built only for a bare `@` (alone, or `@.foo`). Carries `scope` as the
+		# `subject` the vitals are computed against (#interp_at_word_on unwraps to it); type identity
+		# (`@ === Context`) comes from the stdlib `Context` declaration.
+		def context_for scope
+			return scope if scope.is_a?(Prog::Context)
+			ctx = Prog::Context.new scope
+			# `global` directly, not `link_instance_to_type` (which reads `stack.first`) -- `context_for`
+			# also runs mid `x.@` resolution, when the stack is narrowed to just the receiver.
+			decl = global.has?('Context') ? global['Context'] : nil
+			if decl
+				ctx.enclosing_scope = decl
+				ctx.types           = decl.types if decl.respond_to?(:types) && decl.types
 			end
+			ctx
+		end
+
+		# One `@` reflective vital, computed on demand against `scope`. Returns nil when the vital
+		# doesn't apply to this kind of scope (`@keys` off a non-Enum), same as the old filled struct.
+		def context_vital name, scope
+			set_of = ->(list) { finish_intrinsic_instance(Prog::Set.new.tap { |s| s.set.merge(list) }, 'Set') }
+			nm     = scope.name.is_a?(Prog::Lexeme) ? scope.name.value : scope.name
+
+			case name
+			when 'name'                then nm
+			when 'display_name'        then (scope.display_name if scope.respond_to?(:display_name)) || nm
+			when 'composed_types'      then set_of.call(scope.respond_to?(:types) && scope.types ? scope.types.to_a : [])
+			when 'types'               then context_types_for(scope)
+			when 'type'                then context_type_for(scope)
+			when 'object_id'           then scope.object_id
+			when 'size_in_bytes'       then ObjectSpace.memsize_of(scope)
+			when 'root_path'           then Backend::ROOT_PATH
+			when 'static_declarations' then set_of.call(scope.respond_to?(:static_declarations) && scope.static_declarations ? scope.static_declarations.to_a : [])
+			when 'names'               then (wrap_prog_array(scope.names) if scope.is_a?(Prog::Struct))
+			when 'type_names'          then (wrap_prog_array(scope.type_names) if scope.is_a?(Prog::Struct))
+			when 'values'              then context_values_for(scope)
+			when 'members'             then (scope.members if scope.is_a?(Prog::Struct))
+			when 'keys'                then (wrap_prog_array(scope.enum_keys) if scope.is_a?(Prog::Enum))
+			when 'count'               then (scope.enum_keys.length if scope.is_a?(Prog::Enum))
+			when 'parameters'          then (wrap_prog_array(scope.parameters) if scope.is_a?(Prog::Func))
+			when 'arguments'           then (wrap_prog_array(scope.arguments) if scope.is_a?(Prog::Func))
+			when 'func_signature'      then (scope.func_signature if scope.is_a?(Prog::Func))
+			end
+		end
+
+		# The shared function stand-in for `name`, bound to `subject` (the scope this `@` is "about" --
+		# `stack.last` for a bare `@func()`, the receiver for `x.@func()`). `to_s` is the only member
+		# that reads the subject; the bind is a cheap dup so the shared copy stays subject-free.
+		def bind_context_func name, subject
+			shared_context[name].dup.tap { |func| func.enclosing_scope = subject }
 		end
 
 		def context_types_for scope
@@ -455,14 +461,14 @@ module Backend
 			wrap_prog_array(scope.values) if scope.is_a?(Prog::Struct)
 		end
 
-		# A callable stand-in for a Context function member (`@puts`, `@push_scope`, ...)
-		def synthesized_context_func member, enclosing
+		# A callable stand-in for a Context function member (`@puts`, `@push_scope`, ...). Built once for
+		# #shared_context; #bind_context_func dups it and sets `enclosing_scope` to the call's subject.
+		def synthesized_context_func member
 			func                       = Prog::Func.new Prog::Lexeme.new(:identifier, member)
 			func.name                  = Prog::Lexeme.new :identifier, member
 			func.context_function_name = member
 			func.parameters            = []
 			func.expressions           = []
-			func.enclosing_scope       = enclosing
 			func.func_signature        = Prog::Func_Signature.new [], nil
 			func
 		end
@@ -1057,55 +1063,64 @@ module Backend
 			func
 		end
 
-		# `@word` / `x.@word` -- resolve `word` as a member of the scope's Context. A user-declared
-		# `@word` lives on the declaring Type's Context, so an instance falls through to its type's.
+		# Resolves one `@` member (`@name` / `x.@name` / `@.name`) against `scope`: a function stand-in
+		# (bound to `scope` as its subject), a reflective vital (computed now), or a user `@x` member
+		# declared on a Type. Raises Undeclared_Identifier for anything else -- the bare-`@word`
+		# candidates walk (#interp_identifier) relies on that to fall through to the next scope.
 		def interp_at_word_on scope, ident_expr
-			# `@.values` / `@.members` on a struct read straight off the (write-synced) struct rather
-			# than the Context, which snapshots its data members once on first `@` access.
-			if scope.is_a?(Prog::Struct) && %w(values members).include?(ident_expr.value)
-				live = ident_expr.value == 'members' ? scope.members : scope.values
+			scope = scope.subject || global if scope.is_a?(Prog::Context)
+			name  = ident_expr.value
+
+			# `@.values` / `@.members` on a struct read straight off the (write-synced) struct.
+			if scope.is_a?(Prog::Struct) && %w(values members).include?(name)
+				live = name == 'members' ? scope.members : scope.values
 				return live.is_a?(::Array) ? maybe_instance(live) : live
 			end
 
-			plain                  = ident_expr.dup
-			plain.prefixed_with_at = false
-			result                 = begin
-				interp_member_access context_for(scope), plain, exclude_global_scope: true
-			rescue Prog::Undeclared_Identifier
-				raise unless scope.is_a?(Prog::Instance) && scope.enclosing_scope.is_a?(Prog::Type)
-				interp_member_access context_for(scope.enclosing_scope), plain, exclude_global_scope: true
+			return bind_context_func(name, scope) if Prog::Context::FUNCTIONS.include?(name)
+
+			if Prog::Context::VITALS.include?(name)
+				value = context_vital name, scope
+				# Reflective collection proxies (`@.names`, `@.types`, ...) hand back a raw Ruby Array --
+				# link it so it behaves like any other Backend Array (its own `==`, method dispatch).
+				return value.is_a?(::Array) ? maybe_instance(value) : value
 			end
-			# Reflective collection proxies (`@.names`, `@.types`, ...) hand back a raw Ruby Array --
-			# link it so it behaves like any other Backend Array (its own `==`, method dispatch).
-			result.is_a?(::Array) ? maybe_instance(result) : result
+
+			owner = user_at_member_owner scope, name
+			return owner.at_members[name] if owner
+
+			raise Prog::Undeclared_Identifier.new(ident_expr)
+		end
+
+		# The Type carrying a user-declared `@x` member of this name (`Thing { @label := ... }`), reached
+		# either directly (`Thing.@label`) or through one of its instances (`Thing().@label`), else nil.
+		def user_at_member_owner scope, name
+			candidates = [scope, (scope.enclosing_scope if scope.is_a?(Prog::Instance))]
+			candidates.compact.find { |c| c.is_a?(Prog::Type) && c.at_members&.key?(name) }
 		end
 
 		# `@name: T` / `@name := v` / `@name: T = v` -- declares `name` onto the current Type's own
-		# Context (`@name` / `x.@name`), never as a plain `.` member. Type scope only; `expr` is the
+		# `at_members` (`@name` / `x.@name`), never as a plain `.` member. Type scope only; `expr` is the
 		# whole Infix_Expr, or the bare annotated Identifier_Expr for the no-value form.
 		def interp_context_declaration expr
 			left = expr.is_a?(Prog::Infix_Expr) ? expr.left : expr
 			name = left.value
+			type = stack.last
 
-			raise Prog::Context_Declaration_Outside_Type.new(expr) unless stack.last.instance_of?(Prog::Type)
-
+			raise Prog::Context_Declaration_Outside_Type.new(expr) unless type.instance_of?(Prog::Type)
 			raise Prog::Cannot_Override_Context_Member.new(expr) if context_builtin_member? name
 
-			id    = context_for stack.last
 			value = expr.is_a?(Prog::Infix_Expr) ? interpret(expr.right) : nil
-			id.declare name, value
+			(type.at_members ||= {})[name] = value
 			value
 		end
 
-		# A member the Context struct already provides -- a reflective vital (its own declared members)
-		# or a function (Context::FUNCTIONS). User `@x` declarations can't shadow these.
+		# A member `@` already provides -- a reflective vital or a function. User `@x` can't shadow these.
 		def context_builtin_member? name
-			return true if Prog::Context::FUNCTIONS.include? name
-			decl = find_in_stack 'Context'
-			decl.respond_to?(:names) && decl.names&.compact&.include?(name) || false
+			Prog::Context::FUNCTIONS.include?(name) || Prog::Context::VITALS.include?(name)
 		end
 
-		# `x.@word = v` / `x.@word := v` -- writes to x's Type's Context. The member must already be
+		# `x.@word = v` / `x.@word := v` -- writes to x's Type's `at_members`. The member must already be
 		# declared in the type body; a built-in accessor can't be shadowed.
 		def assign_context_member dot_expr, word_ident, value
 			receiver = maybe_instance interpret dot_expr.left
@@ -1113,11 +1128,9 @@ module Backend
 			name     = word_ident.value
 
 			raise Prog::Cannot_Override_Context_Member.new(dot_expr) if context_builtin_member? name
+			raise Prog::Cannot_Assign_Undeclared_Identifier.new(dot_expr) unless type.at_members&.key?(name)
 
-			id = context_for type
-			raise Prog::Cannot_Assign_Undeclared_Identifier.new(dot_expr) unless id.has?(name)
-
-			id.declare name, value
+			type.at_members[name] = value
 			value
 		end
 
@@ -1680,6 +1693,11 @@ module Backend
 			at_word  = expr.right if expr.right.is_a?(Prog::Identifier_Expr) && expr.right.prefixed_with_at
 			return interp_at_word_on(receiver, at_word) if at_word
 
+			# `@.word` -- a plain `.` off a bare `@`. Same as `@word` (the RHS just isn't at-flagged here).
+			if receiver.is_a?(Prog::Context) && expr.right.is_a?(Prog::Identifier_Expr) && !expr.right.scope_operator
+				return interp_at_word_on(receiver, expr.right)
+			end
+
 			case receiver
 			when Prog::Array, Prog::Tuple, Prog::Struct
 				# A Struct's own `.values` makes `.0`-style positional access work for it too, same as Array/Tuple.
@@ -1708,15 +1726,17 @@ module Backend
 
 		def stringify_for_display value, show_quotes: false, pretty_print: false
 			value = maybe_instance value
+
+			# `@` (a Context) -- for display (`@puts @`, `` `@` `` interpolation) render the whole struct
+			# rather than the terse `@<name>` form an explicit `@.to_s()` gives. Also covers a directly
+			# constructed `Context()` (a `Struct` composing `Context`) whose func-signature members would
+			# otherwise crash `Struct#to_s`.
+			if value.is_a?(Prog::Context) || (value.is_a?(Prog::Struct) && value.types&.include?('Context'))
+				return stringify_context(value, pretty_print: pretty_print)
+			end
+
 			# A bare Type's `to_s` (copied from its own body) assumes real instance context and crashes if called directly on the Type itself, so only attempt it on a genuine Instance.
 			return value unless value.is_a? Prog::Instance
-
-			# `@` (a Context) synthesizes its own `to_s` to the terse `@<name>` form -- but for display
-			# (`@puts @`, `` `@` `` interpolation) show the whole filled struct instead. An explicit
-			# `@.to_s()` call still goes through the synthesized stand-in. Also covers a directly
-			# constructed `Context()` / bare `Context` reference (a `Struct` composing `Context`, not the
-			# `Prog::Context` Ruby class) -- its func-signature members would otherwise crash `Struct#to_s`.
-			return stringify_context(value, pretty_print: pretty_print) if value.is_a?(Prog::Context) || (value.is_a?(Prog::Struct) && value.types&.include?('Context'))
 
 			method_name       = show_quotes && value.is_a?(Prog::String) ? 'to_string' : 'to_s'
 			to_s_ident        = Prog::Identifier_Expr.new
@@ -1737,28 +1757,37 @@ module Backend
 		end
 
 		# Renders a Context (`@`) the same shape every other struct prints as -- `Context <name: Type =
-		# value, ...>`. Walks the `Context` struct declaration's own member list (backend/context.prog), so
-		# only real declared members show -- not the extra short-alias function stand-ins `#fill_context`
-		# also puts on the instance (`add_readable`, `readable`, ...). Data members print their filled
-		# value (or `name: Type` when nil); function members print their `( -> ...;)` signature.
+		# value, ...>`. Member names/types come from the `Context` struct declaration (frontend/context.prog);
+		# a vital's value is computed against the Context's own `subject`, a function member prints just its
+		# `name: signature`. User `@x` members on the subject's Type trail the built-ins.
 		def stringify_context context, pretty_print: false
 			decl  = (global.has?('Context') ? global['Context'] : nil)
-			names = decl.respond_to?(:names) && decl.names ? decl.names : context.declarations.keys
+			names = decl.respond_to?(:names) && decl.names&.compact&.any? ? decl.names.compact : Prog::Context::MEMBERS.keys
+
+			# `@` -- vitals computed against the Context's own subject. A directly-constructed `Context()`
+			# is a plain Struct instead: read its own member values.
+			subject   = context.is_a?(Prog::Context) ? (context.subject || global) : nil
+			value_for = ->(name) do
+				next context.declarations[name] unless subject
+				context_vital(name, subject) if Prog::Context::VITALS.include?(name)
+			end
 
 			pairs = names.each_with_index.map do |name, i|
-				type = (decl.type_names[i] if decl.respond_to?(:type_names)) ||
-				       (decl.type_objects[i]&.to_s if decl.respond_to?(:type_objects))
-				val  = context.declarations[name]
+				type = (decl.type_names[i] if decl.respond_to?(:type_names) && decl.type_names) ||
+				       (decl.type_objects[i]&.to_s if decl.respond_to?(:type_objects) && decl.type_objects)
+				val  = value_for.call(name)
 
-				# A function member -- either the synthesized `@`-dispatch stand-in, or (on a directly
-				# constructed `Context()`) the real `Struct#to_s` copied onto it. Neither has a
-				# displayable value; show just `name: signature`.
-				if val.is_a?(Prog::Func) || val.nil?
+				if val.nil? || val.is_a?(Prog::Func)
 					type ? "#{name}: #{type}" : "#{name}: Any"
 				else
 					shown = stringify_for_display(val, show_quotes: true)
 					type ? "#{name}: #{type} = #{shown}" : "#{name} := #{shown}"
 				end
+			end
+
+			if subject
+				owner = subject.is_a?(Prog::Instance) ? subject.enclosing_scope : subject
+				owner.at_members&.each { |k, v| pairs << "#{k} := #{stringify_for_display(v, show_quotes: true)}" } if owner.is_a?(Prog::Type)
 			end
 
 			"#{context.name} <#{pairs.join(', ')}>"
@@ -3758,11 +3787,11 @@ module Backend
 			result
 		end
 
-		# Calling a synthesized Context function stand-in (see #synthesized_context_func). `func` carries
-		# the member name and `enclosing_scope` (the Context). Stack functions (`@push_scope`, `@load`,
-		# ...) run right here in the caller's frame -- nothing was pushed -- so `stack.last` is the real
-		# caller scope, and they read raw arg exprs (`@push_scope` needs a bare identifier). The rest go
-		# through #interp_intrinsic with their args evaluated.
+		# Calling an `@` function stand-in (see #synthesized_context_func / #bind_context_func). `func`
+		# carries the member name and `enclosing_scope` (the bound subject). Stack functions (`@push_scope`,
+		# `@load`, ...) run right here in the caller's frame -- nothing was pushed -- so `stack.last` is the
+		# real caller scope, and they read raw arg exprs (`@push_scope` needs a bare identifier). The rest
+		# go through #interp_intrinsic with their args evaluated (only `to_s` reads the subject).
 		def interp_context_function func, call_expr
 			word      = func.context_function_name
 			arg_exprs = call_expr.arguments || []

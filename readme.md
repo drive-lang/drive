@@ -864,7 +864,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 
 ## The Context (`@`)
 
-`@` is the current scope's *context* — a struct the interpreter fills with facts about wherever it's written, plus a set of built-in functions. Every scope has one: Global, a Type, an instance, a function body. There's no separate "directive" concept — `@word` is just `@.word`.
+`@` is the current scope's *context* — reflective facts about wherever it's written, plus a set of built-in functions. Every scope has one: Global, a Type, an instance, a function body. The functions live on one shared context; the facts are computed on demand against the scope you reach `@` from. There's no separate "directive" concept — `@word` is just `@.word`.
 
 ```prog
 @ === Context      # true
@@ -876,7 +876,7 @@ File_System.write_string_to_file('./out.txt', 'Hello!')
 
 ### Reflective vitals
 
-Read-only facts about the scope, snapshotted the first time `@` is reached (a struct's `@.values` / `@.members` are the exception — they always reflect its current member values, even after a `.member = …` write):
+Read-only facts about the scope, computed live on every access — read `@.name` again after a retag and it reflects the change:
 
 ```prog
 Flying { airborne := true }
@@ -1474,12 +1474,21 @@ Task_Type [
 	ARCHIVED := 'archived'     # self-declared value, no annotation
 ]
 
-Task_Type.TODO      # :TODO
-Task_Type.keys      # [TODO, BUG, DONE, CANCELLED, ARCHIVED]
-Task_Type.count     # 5
+Task_Type.TODO      # :TODO         -- a member value is a plain `.` access
+Task_Type.@keys     # [TODO, BUG, DONE, CANCELLED, ARCHIVED]   -- reflective data is `@`-only
+Task_Type.@count    # 5
 ```
 
-Enums are syntactically present but not finalized: each member's `: Type` annotation is parsed and stored, but not enforced — nothing raises if a value doesn't match its declared type. The older forced-type spelling (`TYPE_IDENT :: Type { ... }`) no longer exists. Don't rely on Enum type-checking yet.
+Self-declaring, like `Type { }` and a named `func (;)` — no `:=`. `Name [ ... ]` is an enum when the brackets hold a comma, two-plus items, a member form, or nothing; a lone bare item (`Name [ ONE ]`) reads as an ordinary subscript instead. Force a one-option enum with a trailing comma or an annotation:
+
+```prog
+Suit [ HEARTS DIAMONDS CLUBS SPADES ]   # space-separated is fine
+Solo [ ONLY, ]                          # trailing comma -- a one-option enum
+Level: Enum\Int [ LOW, HIGH ]           # annotated: always an enum; Int is the backing type
+Level: Int [ LOW, HIGH ]                # same -- the backing type on its own, no `Enum\`
+```
+
+Enums are syntactically present but not finalized: each member's `: Type` annotation and the backing type are parsed and stored, but not enforced — nothing raises if a value doesn't match. The older forced-type spelling (`TYPE_IDENT :: Type { ... }`) no longer exists. Don't rely on Enum type-checking yet.
 
 ## Shorthand Nil-Initialization
 

@@ -1,4 +1,6 @@
-# The `@` expression resolves to an instance of Context.
+# The `@` expression resolves to a Context. This declaration is the human-readable mirror of
+# Prog::Context::MEMBERS -- it carries the docs and drives the `@` display. The functions live on
+# one shared Context; the vitals are computed on demand against whatever scope `@` is reached from.
 
 Context <
 	name: String                        # the scope's own name (nil for an anonymous scope)
@@ -26,7 +28,7 @@ Context <
 	keys: Array\String                  # member names
 	count: Int                          # member count
 
-	#- Functions (the interpreter binds an `@ruby` reference for each)
+	#- Functions (each is a bodiless callable stand-in on the shared Context)
 	to_s: (-> String;)                  # "@<name>" display
 	puts: (Args -> Args;)               # prints each arg; passthrough (1 -> arg, 0 -> nil, N -> array)
 	sleep: (Number;)                    # blocks for `seconds`

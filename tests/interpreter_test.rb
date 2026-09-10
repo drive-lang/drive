@@ -2531,15 +2531,45 @@ class Interpreter_Test < Base_Test
 		assert_equal "at #{Backend::ROOT_PATH}", Backend.interp('"at `@root_path`"')
 	end
 
-	# `@` is a struct (backend/context.prog) the interpreter fills -- reflective vitals as computed
-	# values, the function members (`to_s`/`puts`/...) as synthesized callable stand-ins.
-	def test_context_is_a_filled_struct
+	# `@` resolves to a Context -- reflective vitals computed on demand, the functions (`to_s`/`puts`/...)
+	# as shared callable stand-ins.
+	def test_context_resolves_to_a_context
 		assert_kind_of Prog::Context, Backend.interp('@')
 		assert_equal '@Global', Backend.interp('@.to_s()')
 		assert_equal 'Point', Backend.interp("Point { x, }\nPoint.@name")
 		assert_equal '@Point', Backend.interp("Point { x, }\nPoint().@to_s()")
-		# a function member is callable; a data member resolves to its value
-		assert_equal 'hi', Backend.interp("shout := @puts\nshout('hi')")
+		# a function member is callable; a vital resolves to its value
+		capture_stdout { assert_equal 'hi', Backend.interp("shout := @puts\nshout('hi')") }
+	end
+
+	# `@` alone (and a bare `@` reached off a receiver) carries the `Context` type identity.
+	def test_bare_context_has_type_identity
+		assert_equal true, Backend.interp('@ === Context')
+		assert_equal true, Backend.interp("D { n := 1 }\nD.@ === Context")
+	end
+
+	# `@foo` is exactly `@.foo` -- the prefix form and the dotted form reach the same member.
+	def test_at_word_and_at_dot_word_are_the_same
+		assert_equal true, Backend.interp("@name == @.name")
+		assert_equal Backend::ROOT_PATH, Backend.interp('@root_path')
+		assert_equal Backend::ROOT_PATH, Backend.interp('@.root_path')
+	end
+
+	# A function stand-in captured deep in a call still works when invoked from anywhere else.
+	def test_a_context_function_can_be_captured_out_of_its_scope
+		out = capture_stdout do
+			assert_equal 'deep', Backend.interp(<<~CODE)
+			    grab (; @puts )
+			    p := grab()
+			    p('deep')
+			CODE
+		end
+		assert_equal "'deep'\n", out
+	end
+
+	# A vital is computed against whatever scope the `@` is reached from -- two instances give two ids.
+	def test_a_vital_is_per_subject
+		assert_equal true, Backend.interp("Two { x, }\nTwo().@object_id != Two().@object_id")
 	end
 
 	# `@.type` / `@.types` work on any value, not just a Type/Instance (plain `.type`/`.types` stays
@@ -2640,6 +2670,17 @@ class Interpreter_Test < Base_Test
 		assert_raises Prog::Undeclared_Identifier do
 			Backend.interp "Thing { @label := \"w\" }\nThing.label"
 		end
+	end
+
+	# A user `@x` member is stored on the declaring Type's `at_members` Hash, not its `@declarations`
+	# (so it can never collide with a plain member) -- and `at_members` stays nil for a type with none.
+	def test_context_member_is_stored_on_at_members
+		i = Backend::Interpreter.new
+		i.run "Plain { x := 1 }\nTagged { @meta := 9 }"
+
+		assert_nil i.global['Plain'].at_members
+		assert_equal({ 'meta' => 9 }, i.global['Tagged'].at_members)
+		refute i.global['Tagged'].declarations.key?('meta')
 	end
 
 	def test_multiple_unpacks
