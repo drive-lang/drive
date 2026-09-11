@@ -3,7 +3,7 @@
 [![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-2B7FFF)](https://justforfunnoreally.dev)
 ![Status of project Ruby tests](https://github.com/drive-lang/drive-lang/actions/workflows/tests.yml/badge.svg)
 
-![The icon I use for .prog files](icon@2x.svg)
+![The icon I use for .prog files](assets/icon@2x.svg)
 
 Learn about the language below, or [in the learn section](examples/readme.md), or *[click here to get started using it](getting_started.md)*.
 
