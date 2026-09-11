@@ -1263,12 +1263,31 @@ class Structs_Test < Base_Test
 		assert_equal [true, 'Both'], out.values
 	end
 
-	def test_struct_composition_operand_that_is_not_a_struct_raises
+	# A Type operand is now accepted in struct composition too -- Struct and Type are meant to
+	# interoperate here. Its whole current `.declarations` comes in flat/as-is (not walked
+	# recursively), methods included -- a pulled-in method is just another declared member, still
+	# callable normally.
+	def test_struct_composition_accepts_a_type_operand
+		out = Backend.interp <<~CODE
+		    Abc <abc: Int>
+		    Real_Type {
+		    	x := 1
+		    	greet (; 'hi' )
+		    }
+		    Both | Abc | Real_Type <>
+		    b := Both(1)
+		    (b.abc, b.x, b.greet())
+		CODE
+		assert_equal [1, 1, 'hi'], out.values
+	end
+
+	# Something that's neither a Struct nor a Type (a plain value) still raises.
+	def test_struct_composition_operand_that_is_neither_a_struct_nor_a_type_raises
 		assert_raises Prog::Invalid_Composition_With_A_Non_Struct_type do
 			Backend.interp <<~CODE
 			    Abc <abc: Int>
-			    Real_Type {}
-			    Bad | Abc | Real_Type <>
+			    five := 5
+			    Bad | Abc | five <>
 			CODE
 		end
 	end
@@ -1358,5 +1377,199 @@ class Structs_Test < Base_Test
 		assert_raises Prog::Type_Contract_Violation do
 			Backend.interp "x := 1, x = nil\\<reason := 'Broken'>"
 		end
+	end
+
+	# A Type can compose directly with a bare, anonymous struct literal (no name, no variable in
+	# between) -- its named members come in like any other composition operand, but since it's data,
+	# not a type identity, it must never contribute to `@composed_types`.
+	def test_type_composes_with_an_anonymous_struct_literal
+		out = Backend.interp <<~CODE
+		    Type | <x: Int := 5> {}
+		    t := Type()
+		    (t.x, t.@composed_types.include?('Struct'))
+		CODE
+		assert_equal [5, false], out.values
+	end
+
+	# A *named* struct is closer to a real type identity -- composing with one (held in a variable;
+	# a named struct literal directly in a composition chain is a separate, unsupported ambiguity --
+	# see #parse_composition_expr) does contribute to `@composed_types`, own name included, same as
+	# composing with a real Type would.
+	def test_type_composes_with_a_named_struct_and_its_name_is_included_in_composed_types
+		out = Backend.interp <<~CODE
+		    Named <x: Int := 5>
+		    p := Named<x := 5>
+		    Type2 | p {}
+		    t := Type2()
+		    (t.x, t.@composed_types.include?('Struct'), t.@composed_types.include?('Named'))
+		CODE
+		assert_equal [5, true, true], out.values
+	end
+
+	# `~` with an anonymous struct operand still removes by name only, same as any other `~` operand
+	# (see the leftmost-wins/removal rules), and still leaves `@composed_types` untouched by the
+	# struct side of the subtraction.
+	def test_removal_composition_with_anonymous_struct_operand
+		out = Backend.interp <<~CODE
+		    A { z := 3, w := 4 }
+		    B | A ~ <z: Int> {}
+		    b := B()
+		    (b.w, b.@composed_types.include?('Struct'))
+		CODE
+		assert_equal [4, false], out.values
+
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp <<~CODE
+			    A { z := 3, w := 4 }
+			    B | A ~ <z: Int> {}
+			    B().z
+			CODE
+		end
+	end
+
+	# Regression: a composed operand shaped like `Name<...>` right at the end of a chain is ambiguous
+	# with the chain's own trailing struct-body sugar (`A | B | C <extra: String>`) -- treating it as
+	# a composition *operand* instead used to swallow that trailing `<...>` whole, silently turning
+	# the entire declaration into an anonymous_composition *value* instead of declaring `Css` at all.
+	def test_trailing_struct_body_after_a_chain_is_not_swallowed_as_a_named_operand_regression
+		out = Backend.interp <<~CODE
+		    Abc <abc: Int>
+		    Def <def: String>
+		    Both | Abc | Def <>
+		    b := Both(1, 'hi')
+		    (b.abc, b.def)
+		CODE
+		assert_equal [1, 'hi'], out.values
+	end
+
+	# --- Type/Struct set-math interop: the remaining operators and forms, both directions ---
+
+	def test_type_intersection_with_an_anonymous_struct_operand
+		out = Backend.interp <<~CODE
+		    A { x := 1, y := 2 }
+		    p := <x := 99, z := 3>
+		    Combined | A & p {}
+		    c := Combined()
+		    (c.x, c.@composed_types.include?('Struct'))
+		CODE
+		assert_equal [1, false], out.values # shared name's *value* comes from the left/curr_scope side, not the struct's
+
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp <<~CODE
+			    A { x := 1, y := 2 }
+			    p := <x := 99, z := 3>
+			    Combined | A & p {}
+			    Combined().y
+			CODE
+		end
+	end
+
+	def test_type_symmetric_difference_with_an_anonymous_struct_operand
+		out = Backend.interp <<~CODE
+		    A { x := 1, y := 2 }
+		    p := <x := 99, z := 3>
+		    Combined | A ^ p {}
+		    c := Combined()
+		    (c.y, c.z, c.@composed_types.include?('Struct'))
+		CODE
+		assert_equal [2, 3, false], out.values # y (unique to A) and z (unique to p) survive; shared x is dropped from both
+
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp <<~CODE
+			    A { x := 1, y := 2 }
+			    p := <x := 99, z := 3>
+			    Combined | A ^ p {}
+			    Combined().x
+			CODE
+		end
+	end
+
+	def test_type_removal_with_a_named_struct_operand
+		out = Backend.interp <<~CODE
+		    Named <y: Int := 6>
+		    p := Named<y := 6>
+		    A { x := 1, y := 2 }
+		    Combined | A ~ p {}
+		    Combined().x
+		CODE
+		assert_equal 1, out
+
+		assert_raises Prog::Undeclared_Identifier do
+			Backend.interp <<~CODE
+			    Named <y: Int := 6>
+			    p := Named<y := 6>
+			    A { x := 1, y := 2 }
+			    Combined | A ~ p {}
+			    Combined().y
+			CODE
+		end
+	end
+
+	def test_struct_composition_removal_with_a_type_operand
+		out = Backend.interp <<~CODE
+		    Abc <a: Int, b: Int>
+		    T { b := 99, c := 3 }
+		    R | Abc ~ T <>
+		    r := R(1)
+		    (R.@names, r.a)
+		CODE
+		assert_equal ['a'], out.values.first.values
+		assert_equal 1, out.values.last
+	end
+
+	def test_struct_composition_intersection_with_a_type_operand
+		out = Backend.interp <<~CODE
+		    Abc <a: Int, b: Int>
+		    T { b := 99, c := 3 }
+		    R | Abc & T <>
+		    r := R(7)
+		    (R.@names, r.b)
+		CODE
+		# `&` only filters accumulated members by shared *name* -- the surviving value still comes from
+		# the left/accumulated side (Abc's own `b`), never overwritten by T's.
+		assert_equal ['b'], out.values.first.values
+		assert_equal 7, out.values.last
+	end
+
+	def test_struct_composition_symmetric_difference_with_a_type_operand
+		out = Backend.interp <<~CODE
+		    Abc <a: Int, b: Int>
+		    T { b := 99, c := 3 }
+		    R | Abc ^ T <>
+		    R.@names
+		CODE
+		assert_equal %w(a c), out.values # shared b dropped from both; a (Abc-only) and c (T-only, pulled in) survive
+	end
+
+	# A struct can compose with a *constructed instance*, not just a bare Type -- Instance < Type, so
+	# this reaches the same declarations-based path, but pulls in real instance state rather than a
+	# type's own zero-arg declarations.
+	def test_struct_composition_with_a_constructed_instance
+		out = Backend.interp <<~CODE
+		    T {
+		    	val,
+		    	Self ( v; self.val = v )
+		    }
+		    t := T(42)
+		    Abc <a: Int>
+		    R | Abc | t <>
+		    r := R(1)
+		    r.val
+		CODE
+		assert_equal 42, out
+	end
+
+	# A Type declaration nested inside another declaration's value comes through as its own value,
+	# untouched -- struct composition with a Type only ever takes one flat pass over `.declarations`.
+	def test_struct_composition_with_a_type_does_not_recurse_into_nested_values
+		out = Backend.interp <<~CODE
+		    Inner { val := 42 }
+		    T { inner := Inner() }
+		    Abc <a: Int>
+		    Both | Abc | T <>
+		    b := Both(1)
+		    b.inner.val
+		CODE
+		assert_equal 42, out
 	end
 end

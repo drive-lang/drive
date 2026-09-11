@@ -1,7 +1,9 @@
 ![Version](https://img.shields.io/badge/version-0.0.0-2B7FFF.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-2B7FFF.svg)
 [![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-2B7FFF)](https://justforfunnoreally.dev)
-![Status of project Ruby tests](https://github.com/drive-lang/backend/actions/workflows/tests.yml/badge.svg)
+![Status of project Ruby tests](https://github.com/drive-lang/drive-lang/actions/workflows/tests.yml/badge.svg)
+
+![The icon I use for .prog files](icon@2x.svg)
 
 Learn about the language below, or [in the learn section](examples/readme.md), or *[click here to get started using it](getting_started.md)*.
 

@@ -739,14 +739,15 @@ module Backend
 			#   Abc<4815>()
 			#
 			# Then this is a reference to an existing type (optionally tagged), not a declaration. `it.expressions` stays nil here so callers (like #interp_type) can tell this apart from a real, even if empty, `{}` body. Whatever follows (like a trailing `(...)` call) is picked up in #complete_expression, same as any other primary expression.
-			unless curr?('{') || curr?(TYPE_COMPOSITION_OPERATORS, ANY_IDENTIFIER)
+			# A composed operand can be a struct literal too (`Type | <x: Int> {}`), not just a type name.
+			unless curr?('{') || curr?(TYPE_COMPOSITION_OPERATORS, ANY_IDENTIFIER) || curr?(TYPE_COMPOSITION_OPERATORS, '<')
 				return copy_location it, start
 			end
 
 			it.expressions = []
 
 			until curr? '{'
-				break unless curr?(TYPE_COMPOSITION_OPERATORS, ANY_IDENTIFIER)
+				break unless curr?(TYPE_COMPOSITION_OPERATORS, ANY_IDENTIFIER) || curr?(TYPE_COMPOSITION_OPERATORS, '<')
 				it.expressions << parse_composition_expr
 			end
 
@@ -809,7 +810,7 @@ module Backend
 			start         = curr_lexeme
 			expr          = Prog::Composition_Expr.new
 			expr.operator = eat(:operator)
-			ident         = parse_identifier_expr
+			ident         = curr?('<') ? parse_struct : parse_identifier_expr
 
 			while curr?('.') && peek.is(:Identifier)
 				dot_op         = eat('.')

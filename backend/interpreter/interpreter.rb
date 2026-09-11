@@ -3428,8 +3428,10 @@ module Backend
 				curr_scope.static_declarations ||= ::Set.new
 				curr_scope.static_declarations.merge right.static_declarations
 
-				curr_scope.types ||= ::Set.new
-				curr_scope.types.merge right.types
+				unless right.is_a?(Prog::Struct) && right.name.nil?
+					curr_scope.types ||= ::Set.new
+					curr_scope.types.merge right.types
+				end
 			when '~'
 				# Removal of Prog::Type
 
@@ -3496,9 +3498,17 @@ module Backend
 
 			expr.expressions.each do |composition_expr|
 				operand = interpret composition_expr.identifier
-				raise Prog::Invalid_Composition_With_A_Non_Struct_type.new(expr) unless operand.is_a? Prog::Struct
 
-				operand_members = operand.names.each_index.map { |i| [operand.names[i], operand.type_names[i], operand.type_objects[i], operand.values[i]] }
+				operand_members = if operand.is_a? Prog::Struct
+					operand.names.each_index.map { |i| [operand.names[i], operand.type_names[i], operand.type_objects[i], operand.values[i]] }
+				elsif operand.is_a? Prog::Type
+					operand.declarations.map do |name, value|
+						type_name = inferred_type_name value
+						[name, type_name, find_in_stack(type_name), value]
+					end
+				else
+					raise Prog::Invalid_Composition_With_A_Non_Struct_type.new(expr)
+				end
 
 				case composition_expr.operator.value
 				when '|'
