@@ -201,9 +201,9 @@ module Backend
 			filepath.insert(-1, '.prog') unless filepath.end_with? '.prog' # note; I feel like this isn't the smartestest way to achieve this.
 
 			resolved_path = if filepath.start_with? 'backend/'
-				File.join ROOT_PATH, filepath
+				::File.join ROOT_PATH, filepath
 			else
-				File.expand_path filepath
+				::File.expand_path filepath
 			end
 
 			# This filepath may have been loaded in the given scope already. We don't want to double load it -- return the same result it produced the first time instead of re-running it (or, without this, silently returning nil).
@@ -213,7 +213,7 @@ module Backend
 			already_type_checked = self.class.type_checked_filepaths[resolved_path]
 
 			unless cached_expressions
-				code = File.read resolved_path
+				code = ::File.read resolved_path
 				register_source resolved_path, code
 				@lexer.source_file = resolved_path
 				@lexer.input       = code
@@ -260,7 +260,7 @@ module Backend
 		end
 
 		def register_source filepath, source_code
-			resolved = filepath ? File.expand_path(filepath) : '<inline>'
+			resolved = filepath ? ::File.expand_path(filepath) : '<inline>'
 
 			self.class.cached_source_by_filename[resolved] = source_code.lines.map(&:chomp)
 			@current_source_file                           = resolved
@@ -638,7 +638,7 @@ module Backend
 				handle_request server, req, res
 			end
 
-			# Live reload event stream (see backend/5_interpreter/live_reload.js). Mounted only under Hot_Reloader,
+			# Live reload event stream (see backend/interpreter/live_reload.js). Mounted only under Hot_Reloader,
 			# and separately from the Backend routing path -- a Backend route handler resolves to a finished
 			# String body, but this needs to hold the connection open and stream, which means raw WEBrick
 			# response access.
@@ -806,14 +806,14 @@ module Backend
 					if response.body.to_s =~ /<html|<body|<head/i
 						response.body.prepend "<!DOCTYPE html>"
 
-						dom_js              = self.class.cached_asset_source_by_path['backend/5_interpreter/dom.js'] ||= File.read('backend/5_interpreter/dom.js')
+						dom_js              = self.class.cached_asset_source_by_path['backend/interpreter/dom.js'] ||= ::File.read('backend/interpreter/dom.js')
 						script_tag          = "<script>#{dom_js}</script>"
-						view_transition_css = self.class.cached_asset_source_by_path['backend/5_interpreter/view_transition.css'] ||= File.read('backend/5_interpreter/view_transition.css')
+						view_transition_css = self.class.cached_asset_source_by_path['backend/interpreter/view_transition.css'] ||= ::File.read('backend/interpreter/view_transition.css')
 						view_transition_tag = "<style>#{view_transition_css}</style>"
 
 						# Only present under Hot_Reloader -- pairs with the /_backend/live-reload endpoint.
 						live_reload_tag = if live_reload
-							lr_js = self.class.cached_asset_source_by_path['backend/5_interpreter/live_reload.js'] ||= File.read('backend/5_interpreter/live_reload.js')
+							lr_js = self.class.cached_asset_source_by_path['backend/interpreter/live_reload.js'] ||= ::File.read('backend/interpreter/live_reload.js')
 							"<script>#{lr_js}</script>"
 						else
 							''

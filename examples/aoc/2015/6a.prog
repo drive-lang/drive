@@ -15,7 +15,7 @@ For example:
 After following the instructions, how many lights are lit?
 ###
 
-@load 'frontend/file_system'
+@load 'frontend/File'
 
 INPUT := read_file_to_string('examples/aoc/2015/6a.txt').split("\n")
 

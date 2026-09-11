@@ -27,9 +27,9 @@ module Backend
 			filepath = filepath.dup
 			filepath << '.prog' unless filepath.end_with? '.prog'
 			if filepath.start_with? 'backend/'
-				File.join Backend::ROOT_PATH, filepath
+				::File.join Backend::ROOT_PATH, filepath
 			else
-				File.expand_path filepath
+				::File.expand_path filepath
 			end
 		end
 
@@ -121,7 +121,7 @@ module Backend
 			return cached if cached
 
 			expressions = Backend::Interpreter.cached_expressions_by_filepath[filepath] ||
-			              Parser.new(Lexer.new(File.read(filepath)).output).output
+			              Parser.new(Lexer.new(::File.read(filepath)).output).output
 
 			self.class.currently_loading_filepaths << filepath
 			declared = Declarator.new(expressions).output

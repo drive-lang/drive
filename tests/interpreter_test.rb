@@ -2733,7 +2733,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_reading_files
-		out = Backend.interp "File_System.read_file_to_string('tests/fixtures/hello_read.txt')"
+		out = Backend.interp "File.read_file_to_string('tests/fixtures/hello_read.txt')"
 		assert_equal "Hello, Read!\n", out.value # note: There is a newline at the end of the file, so it has to be included here
 	end
 

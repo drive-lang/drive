@@ -1,0 +1,33 @@
+Directory {
+	path: String
+
+	Self ( path: String;
+		self.path = path
+	)
+
+	Self.pwd  (-> Directory; Directory(cwd()) )
+	Self.home (-> Directory; Directory(home_path()) )
+
+	Self.cwd       (-> String; @ruby )
+	Self.home_path (-> String; @ruby )
+
+	exists?  (-> Bool;   @ruby )   # this path exists and is a directory
+	empty?   (-> Bool;   @ruby )
+	name     (-> String; @ruby )   # the last path segment
+
+	entries  (-> Array; @ruby )   # every entry name, "." and ".." included
+	names    (-> Array; @ruby )   # child names, without "." / ".."
+	children (-> Array; @ruby )   # full paths of every child
+	subdirs  (-> Array; @ruby )   # full paths of the child directories
+	files    (-> Array; @ruby )   # full paths of the child regular files
+
+	size (-> Number; @ruby )      # recursive total bytes under this directory
+
+	is_dir?  ( at: String -> Bool;   @ruby )
+	is_file? ( at: String -> Bool;   @ruby )
+	size_of  ( at: String -> Number; @ruby )   # bytes of a file, or recursive total of a directory
+
+	to_s (-> String; @ruby )
+}
+
+Dir := Directory

@@ -855,14 +855,23 @@ xs[..-1]     # [10, 20, 30, 40, 50]   -1 is the last index
 "abcdef"[0..<2]   # 'ab'
 ```
 
-## File I/O
+## File & Dir
 
 ```prog
-@load 'frontend/file_system.prog'
+content := File.read('./file.txt')
+File.write_string_to_file('./out.txt', 'Hello!')
+File.list_directory('./src')          # sorted child names
 
-content := File_System.read('./file.txt')
-File_System.write_string_to_file('./out.txt', 'Hello!')
+d := Dir('./src')
+d.children()     # full paths of every child
+d.subdirs()      # child directories, as paths
+d.files()        # child files, as paths
+d.size()         # recursive total bytes
+d.size_of(path)  # one file's bytes, or one dir's recursive total
+Dir.pwd()        # -> Dir
 ```
+
+Both are always loaded — no `@load`.
 
 ## The Context (`@`)
 

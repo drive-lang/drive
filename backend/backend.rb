@@ -29,7 +29,8 @@ require_relative 'proxies/range'
 require_relative 'proxies/set'
 require_relative 'proxies/dictionary'
 require_relative 'proxies/number'
-require_relative 'proxies/file_system'
+require_relative 'proxies/file'
+require_relative 'proxies/directory'
 require_relative 'proxies/temporal'
 require_relative 'proxies/struct'
 require_relative 'proxies/context'
@@ -39,21 +40,20 @@ require_relative 'proxies/member'
 require_relative 'proxies/statement'
 require_relative 'proxies/enum'
 
-# The pipeline, in run order: 1_lexer -> 2_parser -> 3_type_checker -> 4_declarator -> 5_interpreter.
-require_relative '1_lexer/lexer'
-require_relative '2_parser/parser'
-require_relative '3_type_checker/type_checker'
-require_relative '4_declarator/declarator'
-require_relative '5_interpreter/dom_renderer'
-require_relative '5_interpreter/interpreter'
-require_relative '5_interpreter/hot_reloader'
+require_relative 'lexer/lexer'
+require_relative 'parser/parser'
+require_relative 'type_checker/type_checker'
+require_relative 'declarator/declarator'
+require_relative 'interpreter/dom_renderer'
+require_relative 'interpreter/interpreter'
+require_relative 'interpreter/hot_reloader'
 
 require_relative 'repl'
 require_relative 'cli'
 
 module Backend
-	ROOT_PATH             = File.expand_path('../', __dir__)
-	STANDARD_LIBRARY_PATH = File.join(ROOT_PATH, 'frontend', 'global.prog')
+	ROOT_PATH             = ::File.expand_path('../', __dir__)
+	STANDARD_LIBRARY_PATH = ::File.join(ROOT_PATH, 'frontend', 'global.prog')
 
 	extend Helpers
 
@@ -64,7 +64,7 @@ module Backend
 	end
 
 	def self.interp_file filepath, load_standard_library: true
-		source_code                       = File.read filepath
+		source_code                       = ::File.read filepath
 		interpreter                       = Interpreter.new
 		interpreter.load_standard_library = load_standard_library
 		interpreter.register_source filepath, source_code
@@ -76,7 +76,7 @@ module Backend
 	end
 
 	def self.parse_file filepath
-		Parser.new(Lexer.new(File.read(filepath)).output).output
+		Parser.new(Lexer.new(::File.read(filepath)).output).output
 	end
 
 	def self.lex source_code
@@ -84,7 +84,7 @@ module Backend
 	end
 
 	def self.lex_file filepath
-		Lexer.new(File.read(filepath)).output
+		Lexer.new(::File.read(filepath)).output
 	end
 
 	def self.declare source_code
@@ -96,7 +96,7 @@ module Backend
 	end
 
 	def self.type_check_file filepath
-		self.type_check File.read(filepath)
+		self.type_check ::File.read(filepath)
 	end
 
 	def self.type_check source

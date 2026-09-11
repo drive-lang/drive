@@ -30,7 +30,7 @@ input_to_array_of_sides ( input;
 )
 
 total := 0
-input := File_System.read('examples/aoc/2015/2.txt')
+input := File.read('examples/aoc/2015/2.txt')
 for input.split("\n")
 	sides := input_to_array_of_sides(it)
 	total += smallest_perimeter(sides)

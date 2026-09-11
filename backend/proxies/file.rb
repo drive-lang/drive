@@ -1,5 +1,5 @@
 module Prog
-	class File_System < Instance
+	class File < Instance
 		def proxy_read_file_to_string filepath
 			Prog::String.new ::File.read(filepath)
 		end

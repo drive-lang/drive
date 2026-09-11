@@ -4,7 +4,7 @@ This [`backend`](.) folder contains the implementation in Ruby. Source code move
 
 - **`backend.rb`**: the entry point. Requires everything in load order, then exposes the `Backend` module's convenience methods (`Backend.lex`, `Backend.parse`, `Backend.interp`, and their `_file` counterparts).
 - **`cli.rb`** / **`repl.rb`**: `Backend::CLI` (the `bin/prog` commands) and `Backend::REPL`.
-- **`1_lexer/`** … **`5_interpreter/`**: one folder per pipeline phase. `5_interpreter/` also holds the scope hierarchy (`scopes.rb`: Global, Type, Instance, Func, Route, …), the error classes, the DOM renderer, the hot reloader, and the browser assets — everything the executor needs at runtime.
+- **`lexer/`** … **`interpreter/`**: one folder per pipeline phase. `interpreter/` also holds the scope hierarchy (`scopes.rb`: Global, Type, Instance, Func, Route, …), the error classes, the DOM renderer, the hot reloader, and the browser assets — everything the executor needs at runtime.
 - **`proxies/`**: the Ruby class behind a built-in `.prog` type (`proxies/array.rb` ↔ `backend/array.prog`), which `@ruby` proxy methods delegate into.
 - **`shared/`**: constants, mixins, and helpers pulled in across phases (`constants.rb`, `helpers.rb`, `ascii.rb`, `ruby_proxies.rb`, `error_formatter.rb`, `documenter.rb`, …).
 

@@ -18,7 +18,7 @@
 + Syntax for readonly
 + Composition in type annotations: `x: Array|Set` (value's `.types` must `=>=` `[Array, Set]`, `.type` is the leftmost operand). Does not parse today; net-new parser surface at every `: Type` site (`parse_identifier_expr`, `parse_func` params, signature literals). A bare composition still can't be instantiated (`Array|Set()`) — name it first — this is annotation-only.
 + Data from each previous pipeline phase should never be prog. You start with a Lexeme. An Expression is one or more lexems, so it should store them all. And a Runtime type is made of an expression and should store that expression. I should always know every single lexeme involved, if at least to be able to calculate the span of the expression.
-+ `backend/5_interpreter/view_transition.css` is still empty (`::view-transition-old(root)`/`::view-transition-new(root)` hold no rules) — it's spliced into every matching response but does nothing yet, so pages get the browser's default cross-fade. Plan: pull a small set of real view-transition CSS examples from online collections and build a few named presets from them, likely via a `Css` type (wrapping a `Fence`) with a custom `+` operator overload for layering presets — tested and confirmed a composition-based (`|`) accumulator approach doesn't work for this, since it silently drops the losing side's whole body, not just its value.
++ `backend/interpreter/view_transition.css` is still empty (`::view-transition-old(root)`/`::view-transition-new(root)` hold no rules) — it's spliced into every matching response but does nothing yet, so pages get the browser's default cross-fade. Plan: pull a small set of real view-transition CSS examples from online collections and build a few named presets from them, likely via a `Css` type (wrapping a `Fence`) with a custom `+` operator overload for layering presets — tested and confirmed a composition-based (`|`) accumulator approach doesn't work for this, since it silently drops the losing side's whole body, not just its value.
 + Arithmetic operations on a struct should attempt to find the arithmetic operator between positions 0 and 0 of the two operand structs. If the operator is found, then it just works. `<a: Int> + <b: Int> = <(a+b): Int>`
 + A `confirm()`-style native dialog option for onclick handlers (blocking OS-native yes/no, like `alert()`/`window.confirm()`) — needs new client-side JS in `dom.js`, since it's synchronous/browser-native, not a DOM element the swap runtime can just render.
 + A real hover-triggered Popover — the Popover API only opens on click or a direct JS call, never on hover alone. `html_title` (native tooltip) already covers plain hover hints with zero new code; a hover-triggered popover would need new client-side JS.
@@ -67,9 +67,9 @@
 + Add jsonb-like column support to databases.
 + No JSON encode/decode exposed to Backend: `require 'json'` only used internally, for example when parsing POST bodies (`interpreter.rb`).
 + No outbound HTTP client: Backend can serve requests but can't make them.
-+ No `ENV`/config access: only I/O primitive is `File_System`.
++ No `ENV`/config access: only I/O primitive is `File`.
 + No in-Backend testing facility: Minitest only tests the interpreter itself. Backend has an `@assert` command taking condition and message.
-+ Stride overlap for `for x by n,overlap`: `getting_started.md` documents `for x reject by 2,1` / `for x each by 3,1` style overlapping chunks, but the parser doesn't support the second stride argument yet (`backend/2_parser/parser.rb`: "Currently `stride` doesn't support option to overlap elements"). This was meant to be implemented, not just aspirational docs: needs the parser to accept `by <stride>,<overlap>` and the interpreter's chunking (`each_slice` today) to respect the overlap instead of using non-overlapping slices.
++ Stride overlap for `for x by n,overlap`: `getting_started.md` documents `for x reject by 2,1` / `for x each by 3,1` style overlapping chunks, but the parser doesn't support the second stride argument yet (`backend/parser/parser.rb`: "Currently `stride` doesn't support option to overlap elements"). This was meant to be implemented, not just aspirational docs: needs the parser to accept `by <stride>,<overlap>` and the interpreter's chunking (`each_slice` today) to respect the overlap instead of using non-overlapping slices.
 + `help {expr;}` or `@help` that accepts any expression and returns information about the Type, primitive, function, etc. Literally any expression should be able to be described given its AST. You even have access to the live values so the information can be dynamic to reflect what the user is actually asking about.
 + Improve error messaging. `backend/shared/error_formatter.rb` doesn't display source code properly for some expressions. They have to override `#detail_message`.
 + Some kind of `to_s;` and `inspect;` equivalents for printing objects
@@ -80,14 +80,14 @@
 + Add a builtin debugger, `@debug` maybe. It should stop execution and let you step through, and treat the current place as a repl that you can do whatever in. My hunch is a separate Interpreter#output, like #debug_output that is capable of interrupting the stream of expressions being interpreted. `@debug when_condition_true` would be neat too.
 + When the only argument to a function call is a function like `map({it; ...})`, let user just splat it like `map(it; ...)` and I even like how Swift (I think) let's you pass it as a trailing block after the call itself like `map() {it; ... }`.
 - Validate whether the precedence is even used when declaring an operator. Yes, it is.
-- `backend/5_interpreter/interpreter.rb`: array `<<` is special-cased in the interpreter instead of being a real operator declaration on `Array`; revisit once operator declarations exist.
+- `backend/interpreter/interpreter.rb`: array `<<` is special-cased in the interpreter instead of being a real operator declaration on `Array`; revisit once operator declarations exist.
 - Add Type set comparison operators
 - Function signature literals (`Type{Param;}` as a value/alias, `name: Type{Param;}` self-declaring): `Prog::Func_Signature`, with `Invalid_Func_Signature` raised for malformed ones.
 - Return-type annotations on real functions: `name: Type {}` prefix and `{params -> Type; ...}` inline (works for anonymous functions too): plus runtime enforcement (`Type_Contract_Violation` if the actual return value doesn't match).
 - Structural signature matching: reassigning a signature-aliased identifier now checks a real function's actual param/return types against the alias, not just nominal string equality.
-- Replace all `# todo: Proper error` placeholders scattered through `backend/5_interpreter/interpreter.rb`: real error types needed instead of generic ones. And add tests. A few of the errors are unreachable because of other guards, but the ones that are have a test now.
-- `backend/1_lexer/lexer.rb`: Add operator symbol exclusion list `' " { } ( ) [ ]` to contants.rb.
-- `backend/5_interpreter/interpreter.rb`: sibling scopes are assumed read-only; assumption was never actually double-checked.
+- Replace all `# todo: Proper error` placeholders scattered through `backend/interpreter/interpreter.rb`: real error types needed instead of generic ones. And add tests. A few of the errors are unreachable because of other guards, but the ones that are have a test now.
+- `backend/lexer/lexer.rb`: Add operator symbol exclusion list `' " { } ( ) [ ]` to contants.rb.
+- `backend/interpreter/interpreter.rb`: sibling scopes are assumed read-only; assumption was never actually double-checked.
 - Add :func_signature attr to Prog::Func, and it should be an Prog::Func_Signature instance
 - Structs on types. `Array<Type>`, `Dictionary<Type,Type>`
 - Structured-type declarations (`String<Dictionary> {}`, `String<Number> {}`, ...)

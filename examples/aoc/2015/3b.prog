@@ -24,7 +24,7 @@ Vec2 {
 	)
 }
 
-input := File_System.read('examples/aoc/2015/3.txt')
+input := File.read('examples/aoc/2015/3.txt')
 
 # "x.y": num_presents
 visited := {}

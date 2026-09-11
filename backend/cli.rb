@@ -88,7 +88,7 @@ module Backend
 			end
 		rescue Errno::ENOENT => e
 			# The missing file might be the one the CLI was told to run, or one the program itself
-			# tried to open (File_System.read, @load). Errno::ENOENT names the real path in its
+			# tried to open (File.read, @load). Errno::ENOENT names the real path in its
 			# message ("... - <path>"); fall back to the CLI argument only if that isn't there.
 			missing = e.message.include?(' - ') ? e.message.split(' - ').last : (@arg || @command)
 			$stderr.puts "Could not find file `#{missing}`"

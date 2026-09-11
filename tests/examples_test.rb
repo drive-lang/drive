@@ -8,8 +8,8 @@ require_relative 'base_test'
 # rather than one test looping over all of them, so a failure names exactly which file broke
 # instead of stopping at the first one.
 class Examples_Test < Base_Test
-	Dir.glob(File.join(__dir__, '../examples/*.prog')).sort.each do |filepath|
-		name = File.basename(filepath, '.prog')
+	::Dir.glob(::File.join(__dir__, '../examples/*.prog')).sort.each do |filepath|
+		name = ::File.basename(filepath, '.prog')
 
 		define_method "test_#{name}" do
 			refute_raises do

@@ -20,10 +20,10 @@ bundle exec bin/prog examples/hello_world.prog -p # => Hello, Backend!
 - [`examples`](examples) contains more useful code examples
 - [`frontend`](frontend) contains code for the Backend standard library
 - [`backend`](backend) contains code implementing Backend
-    - [Lexer](backend/1_lexer/lexer.rb) – Source code to Lexemes
-    - [Parser](backend/2_parser/parser.rb) – Lexemes to Expressions
-    - [Type_Checker](backend/3_type_checker/type_checker.rb) – Basic type annotation checking
-    - [Interpreter](backend/5_interpreter/interpreter.rb) – Entry point; `run(source)` lexes, parses, and executes
+    - [Lexer](backend/lexer/lexer.rb) – Source code to Lexemes
+    - [Parser](backend/parser/parser.rb) – Lexemes to Expressions
+    - [Type_Checker](backend/type_checker/type_checker.rb) – Basic type annotation checking
+    - [Interpreter](backend/interpreter/interpreter.rb) – Entry point; `run(source)` lexes, parses, and executes
 
 ### Extending the Language
 
@@ -31,13 +31,13 @@ Pipeline: **Lexer → Parser → Type_Checker → Interpreter**. Methods: `lex_*
 
 #### Adding a new construct
 
-1. **Lex it** — [`lexer.rb`](backend/1_lexer/lexer.rb)`#output` is one big `if/elsif` dispatching on the current char(s). Add a branch (or a `lex_*` helper called from one) that sets `token.type`/`token.value`.
+1. **Lex it** — [`lexer.rb`](backend/lexer/lexer.rb)`#output` is one big `if/elsif` dispatching on the current char(s). Add a branch (or a `lex_*` helper called from one) that sets `token.type`/`token.value`.
    1. `l0`/`c0`/`l1`/`c1`/`source_file` are set automatically around every branch — you don't touch them here.
    2. Add any new symbols/keywords to the relevant list in [`constants.rb`](backend/shared/constants.rb) (`RESERVED`, `PERCENT_LITERALS`, an operator list, etc.) so they're recognized/reserved.
 2. **Add an AST node** — a new `Prog::Foo_Expr < Expression` in [`expressions.rb`](backend/proxies/expressions.rb). Only add `attr_accessor`s for what's structurally new; `value`/`type`/`l0..c1`/`source_file` are inherited.
-3. **Parse it** — add a branch to `Parser#begin_expression` (prefix position) or `#complete_expression` (infix/postfix position) in [`parser.rb`](backend/2_parser/parser.rb), dispatching on `curr?`/`peek`, calling a new `parse_foo_expr`. Build the `Foo_Expr`, set its location (see below), return it.
-4. **Type-check it (optional)** — only if it introduces a new literal type or call shape worth statically checking. Extend `infer_type`/`check` in [`type_checker.rb`](backend/3_type_checker/type_checker.rb). Most constructs skip this — the static checker only handles literal type mismatches.
-5. **Interpret it** — add a case to `Interpreter#interpret`'s dispatch and a new `interp_foo` in [`interpreter.rb`](backend/5_interpreter/interpreter.rb) that walks the `Foo_Expr` and produces a runtime value (an `Prog::*` instance, a Ruby primitive, `nil`, etc.).
+3. **Parse it** — add a branch to `Parser#begin_expression` (prefix position) or `#complete_expression` (infix/postfix position) in [`parser.rb`](backend/parser/parser.rb), dispatching on `curr?`/`peek`, calling a new `parse_foo_expr`. Build the `Foo_Expr`, set its location (see below), return it.
+4. **Type-check it (optional)** — only if it introduces a new literal type or call shape worth statically checking. Extend `infer_type`/`check` in [`type_checker.rb`](backend/type_checker/type_checker.rb). Most constructs skip this — the static checker only handles literal type mismatches.
+5. **Interpret it** — add a case to `Interpreter#interpret`'s dispatch and a new `interp_foo` in [`interpreter.rb`](backend/interpreter/interpreter.rb) that walks the `Foo_Expr` and produces a runtime value (an `Prog::*` instance, a Ruby primitive, `nil`, etc.).
 6. **Test it** — `lexer_test.rb` → `parser_test.rb` → `interpreter_test.rb`/`pipeline_test.rb`, matching the phase you touched.
 
 Worked examples: percent literals (`#parse_percent_literal_expr`/`#interp_percent_literal`), Statement (`#parse_statement_expr`/`#interp_statement`).
@@ -84,12 +84,12 @@ Two files, independently optional — pure-Backend types skip #2, rare Ruby-only
 |---|---|
 | Tokens, reserved words, operator lists, precedence | [`backend/shared/constants.rb`](backend/shared/constants.rb) |
 | Identifier casing rules (`type_identifier?`, etc.) | [`backend/shared/helpers.rb`](backend/shared/helpers.rb) |
-| Lexemes → tokens | [`backend/1_lexer/lexer.rb`](backend/1_lexer/lexer.rb), [`lexeme.rb`](backend/proxies/lexeme.rb) |
+| Lexemes → tokens | [`backend/lexer/lexer.rb`](backend/lexer/lexer.rb), [`lexeme.rb`](backend/proxies/lexeme.rb) |
 | AST node classes | [`backend/proxies/expressions.rb`](backend/proxies/expressions.rb) |
-| Tokens → AST | [`backend/2_parser/parser.rb`](backend/2_parser/parser.rb) |
-| Static literal type checks | [`backend/3_type_checker/type_checker.rb`](backend/3_type_checker/type_checker.rb) |
+| Tokens → AST | [`backend/parser/parser.rb`](backend/parser/parser.rb) |
+| Static literal type checks | [`backend/type_checker/type_checker.rb`](backend/type_checker/type_checker.rb) |
 | Scope hierarchy (`Global`/`Type`/`Instance`/`Func`/...) | [`backend/proxies/scopes.rb`](backend/proxies/scopes.rb) |
-| AST → execution | [`backend/5_interpreter/interpreter.rb`](backend/5_interpreter/interpreter.rb) |
+| AST → execution | [`backend/interpreter/interpreter.rb`](backend/interpreter/interpreter.rb) |
 | Runtime errors | [`backend/proxies/errors.rb`](backend/proxies/errors.rb) |
 | Ruby-backed built-in types | [`backend/proxies/`](proxies) |
 | `proxy`/`proxy_delegate` helpers | [`backend/shared/ruby_proxies.rb`](backend/shared/ruby_proxies.rb) |

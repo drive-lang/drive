@@ -1124,16 +1124,42 @@ Time.now().epoch()   # Unix seconds (Time only)
 - Proxy bodies: `frontend/date.prog`, `frontend/time.prog`, `frontend/date_time.prog`. Ruby classes and the shared `Temporal` mixin: `frontend/proxies/temporal.rb`. Tests: `tests/temporal_test.rb`.
 - These are the types a `Date` / `Time` / `Date_Time` table column maps to — a value read back from such a column comes out as the matching wrapper, linked to its global type via `Table#linked_temporal` (`table.rb`).
 
-### File_System (File I/O)
+### File (File I/O)
 
 Static methods for reading and writing files:
 
 ```prog
-content := File_System.read('./path/to/file.txt')  # Read file contents as string
-File_System.write_string_to_file('./path/to/file.txt', 'Hello, World!')  # Write string to file
+content := File.read('./path/to/file.txt')               # read file contents as a string
+File.write_string_to_file('./path/to/file.txt', 'Hi')    # write a string to a file
+File.list_directory('./some/dir')                        # sorted Array of child names
 ```
 
-Defined in: `backend/file_system.prog`, implemented in `scopes.rb` as `Prog::File_System`
+`frontend/file.prog` declares `File | File_System {}` — the Ruby class is `Prog::File_System`
+(`backend/proxies/file.rb`), *not* `Prog::File`, so bare `File` inside `module Prog` / `module Backend`
+stays Ruby's `::File` (the interpreter uses it everywhere). Same trick for `Dir` below. `find_ruby_class_for_type`
+walks composed types, so `File`'s `[File, File_System]` set resolves to `Prog::File_System`.
+
+### Dir (directories)
+
+`Dir(path)` is a directory value — the building blocks for walking a tree (a treemap, `du`, ...).
+`frontend/dir.prog` declares `Dir | Directory {}`; the Ruby class is `Prog::Directory` (`backend/proxies/dir.rb`).
+
+```prog
+d := Dir('./src')
+d.name()          # 'src'      -- last path segment
+d.exists?()       # true       -- exists and is a directory
+d.children()      # full paths of every child
+d.subdirs()       # full paths of the child directories
+d.files()         # full paths of the child regular files
+d.size()          # recursive total bytes under the directory
+d.size_of(path)   # bytes of one file, or the recursive total of one dir
+d.is_dir?(path)   d.is_file?(path)
+Dir.pwd()   Dir.home()   # -> Dir
+```
+
+Scalars come back as `Prog::String` / raw numbers, list methods as a linked `Prog::Array` of path
+strings (not `Dir` instances — recurse with `Dir(it)`). Symlinks are not descended for `size`.
+Tests: `tests/dir_test.rb`, `tests/file_test.rb`.
 
 ## Loop Control Flow
 

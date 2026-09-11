@@ -13,7 +13,7 @@ Your puzzle answer was 1795.
 
 floor := 0
 index := 0
-input := File_System.read('examples/aoc/2015/1.txt')
+input := File.read('examples/aoc/2015/1.txt')
 for input
 	if it == "("
 		floor += 1

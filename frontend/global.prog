@@ -1,6 +1,7 @@
 @load 'frontend/any'
 @load 'frontend/nil'
-@load 'frontend/file_system'
+@load 'frontend/file'
+@load 'frontend/directory'
 @load 'frontend/date'
 @load 'frontend/time'
 @load 'frontend/date_time'

@@ -7,7 +7,7 @@ bin/prog examples/tasks/stats.prog
 Task_List_Stats <name: String, open: Array, done: Array, open_percent: Flo, done_percent: Flo>
 
 make_stats ( filepath: String -> Task_List_Stats;
-	content := File_System.read(filepath)
+	content := File.read(filepath)
 	lines := content.split("\n")
 
 	open := []
