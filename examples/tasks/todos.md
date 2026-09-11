@@ -1,3 +1,4 @@
++ Write an Ast walker that identifies functions that are contained, and ones that make calls elsewhere. 
 + Rename extension from .prog to .code because .code is NOT taken!
 + Struct should be an actual struct behind the scenes.
 + Try to distill constructs to even simpler shapes. I kinda want features to just click together. Need a webpage? Just @load html, or eventually I'll write premade templates you can just swap in and out. An example came to mind, a scope contains one or more statements, we can generalize scopes to be made up of a body (`{`...`}`), and callable scopes to generalize with a colon (`{`...`;`...`}`)

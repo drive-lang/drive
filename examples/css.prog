@@ -4,7 +4,10 @@
 ###
 @load 'frontend/css.prog'
 
-rule := Style_Rule(['.box'], [Property('color', 'red'), Property('padding', '8px')])
+rule := Style_Rule(%string(.box), [ # %string() array shorthand splits by whitespaces to produce ['.box']
+	Property('color', 'red')
+	Property('padding', '8px')
+])
 css   := Css_Formatter_Visitor().format(rule)
 
 @assert css == ".box {\n    color: red;\n    padding: 8px;\n}", 'format should pretty-print a rule with one declaration per line'
@@ -50,7 +53,7 @@ sheet := Stylesheet([Style_Rule(['.a'], [Property('color', 'red')]), Style_Rule(
 
 A separate visitor walks the same kind of tree looking for problems instead of formatting it: duplicate properties, hardcoded vendor prefixes, and redundant zero-units (`0px` where `0` would do). `.lint` resets its own warnings list at the start of every call, so one instance can be reused across trees:
 ###
-flagged := Style_Rule(['.box'], [
+flagged := Style_Rule(%string(.box), [
 	Property('color', 'red'),
 	Property('color', 'blue'),
 	Property('-webkit-transform', 'none'),
