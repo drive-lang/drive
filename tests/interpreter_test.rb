@@ -235,7 +235,7 @@ class Interpreter_Test < Base_Test
 	# Prog::Range is now an Instance wrapping a Ruby ::Range (`.range`), not a ::Range subclass -- so
 	# the raw-Range comparison is against `out.range`; `out.include?` still works via Enumerable.
 	def test_inclusive_range
-		out = Backend.interp '4...42'
+		out = Backend.interp '4..42'
 		assert_instance_of Prog::Range, out
 		assert_equal 4..42, out.range
 		assert out.include? 4
@@ -262,7 +262,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_left_and_right_exclusive_range
-		out = Backend.interp '4>.<42'
+		out = Backend.interp '4>..<42'
 		assert_instance_of Prog::Range, out
 		assert_equal 5...42, out.range
 		refute out.include? 4
@@ -272,7 +272,7 @@ class Interpreter_Test < Base_Test
 	end
 
 	def test_empty_left_and_right_exclusive_range
-		out = Backend.interp '0>.<0'
+		out = Backend.interp '0>..<0'
 		assert_equal 1...0, out.range
 		refute out.include? -1
 		refute out.include? 0
@@ -493,51 +493,51 @@ class Interpreter_Test < Base_Test
 
 	# Prog::Array had no `[]=` of its own, so `a[i] = value` fell through to the generic declarations-hash write every other Scope uses, silently declaring a bogus member instead of writing into `.values`.
 	# A Prog::Range subscript slices an Array -- each of the four range operators keeps its own
-	# inclusive/exclusive end behavior (`...` inclusive, `..<` exclusive end, `>..` exclusive start).
+	# inclusive/exclusive end behavior (`..` inclusive, `..<` exclusive end, `>..` exclusive start).
 	def test_array_range_subscript
-		assert_equal [20, 30, 40], Backend.interp('[10, 20, 30, 40, 50][1...3]').values
+		assert_equal [20, 30, 40], Backend.interp('[10, 20, 30, 40, 50][1..3]').values
 		assert_equal [20, 30],     Backend.interp('[10, 20, 30, 40, 50][1..<3]').values
 		assert_equal [30, 40],     Backend.interp('[10, 20, 30, 40, 50][1>..3]').values
-		assert_equal [30],         Backend.interp('[10, 20, 30, 40, 50][1>.<3]').values
+		assert_equal [30],         Backend.interp('[10, 20, 30, 40, 50][1>..<3]').values
 
 		# the result is a real, linked Array -- methods chain off it
-		assert_equal [21, 31, 41], Backend.interp('[10, 20, 30, 40, 50][1...3].map((x; x + 1))').values
+		assert_equal [21, 31, 41], Backend.interp('[10, 20, 30, 40, 50][1..3].map((x; x + 1))').values
 
 		# a range held in a variable works too
-		assert_equal [20, 30, 40], Backend.interp("r := 1...3\n[10, 20, 30, 40, 50][r]").values
+		assert_equal [20, 30, 40], Backend.interp("r := 1..3\n[10, 20, 30, 40, 50][r]").values
 
 		# an out-of-bounds start yields nil, same as Ruby
-		assert_nil Backend.interp('[1, 2, 3][5...9]')
+		assert_nil Backend.interp('[1, 2, 3][5..9]')
 	end
 
-	# `xs[2...]` -- an endless range (the operator with nothing after it): from the start index to the end.
+	# `xs[2..]` -- an endless range (the operator with nothing after it): from the start index to the end.
 	def test_endless_range_subscript
-		assert_equal [30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][2...]').values
+		assert_equal [30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][2..]').values
 		assert_equal [40, 50],     Backend.interp('[10, 20, 30, 40, 50][2>..]').values # exclusive start
-		assert_equal 'world',      Backend.interp('"hello world"[6...]')
-		assert_equal 5,            Backend.interp('[1, 2, 3, 4, 5][0...].length()')
-		assert_equal [3, 4, 5],    Backend.interp("r := 2...\n[1, 2, 3, 4, 5][r]").values
-		assert_nil Backend.interp('[1, 2, 3][10...]')
+		assert_equal 'world',      Backend.interp('"hello world"[6..]')
+		assert_equal 5,            Backend.interp('[1, 2, 3, 4, 5][0..].length()')
+		assert_equal [3, 4, 5],    Backend.interp("r := 2..\n[1, 2, 3, 4, 5][r]").values
+		assert_nil Backend.interp('[1, 2, 3][10..]')
 	end
 
-	# `xs[...3]` -- a beginless range (the operator with no left operand): from the start up to the end
-	# index. Negative end indices count from the end (`...-1` is the whole thing, `...-2` all but last).
+	# `xs[..3]` -- a beginless range (the operator with no left operand): from the start up to the end
+	# index. Negative end indices count from the end (`..-1` is the whole thing, `..-2` all but last).
 	def test_beginless_range_subscript
-		assert_equal [10, 20, 30],         Backend.interp('[10, 20, 30, 40, 50][...2]').values
+		assert_equal [10, 20, 30],         Backend.interp('[10, 20, 30, 40, 50][..2]').values
 		assert_equal [10, 20],             Backend.interp('[10, 20, 30, 40, 50][..<2]').values # exclusive end
-		assert_equal [10, 20, 30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][...-1]').values
-		assert_equal [10, 20, 30, 40],     Backend.interp('[10, 20, 30, 40, 50][...-2]').values
+		assert_equal [10, 20, 30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][..-1]').values
+		assert_equal [10, 20, 30, 40],     Backend.interp('[10, 20, 30, 40, 50][..-2]').values
 		assert_equal [10, 20, 30, 40],     Backend.interp('[10, 20, 30, 40, 50][..<-1]').values
-		assert_equal 'hello worl',         Backend.interp('"hello world"[...-2]')
+		assert_equal 'hello worl',         Backend.interp('"hello world"[..-2]')
 
-		# `...` glued to a following `-` used to lex as one bogus `...-` token
-		assert_equal [20, 30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][1...-1]').values
+		# a range operator glued to a following `-` must not lex as one token (`..` then prefix `-`)
+		assert_equal [20, 30, 40, 50], Backend.interp('[10, 20, 30, 40, 50][1..-1]').values
 	end
 
 	def test_string_range_subscript
-		assert_equal 'bcd', Backend.interp('"abcdef"[1...3]')  # inclusive
+		assert_equal 'bcd', Backend.interp('"abcdef"[1..3]')  # inclusive
 		assert_equal 'bc',  Backend.interp('"abcdef"[1..<3]')  # exclusive end
-		assert_equal 'WORLD', Backend.interp('"hello world"[6...11].upcase()')
+		assert_equal 'WORLD', Backend.interp('"hello world"[6..11].upcase()')
 	end
 
 	def test_array_subscript_assignment_mutates_in_place
@@ -1710,11 +1710,11 @@ class Interpreter_Test < Base_Test
 		two := []
 		three := []
 
-		for 1...5
+		for 1..5
 			zero << it
 		end
 
-		for 1>.<5
+		for 1>..<5
 			one << it
 		end
 
@@ -1790,12 +1790,12 @@ class Interpreter_Test < Base_Test
 		out = Backend.interp "
 		result := []
 
-		for 0...10
+		for 0..10
 			skip if it == 4
 
 			if it % 2 == 0
 				result << 'START `it`'
-				for 0...10
+				for 0..10
 					result << it
 					stop if it == 2
 				end
@@ -2531,7 +2531,7 @@ class Interpreter_Test < Base_Test
 		assert_equal "at #{Backend::ROOT_PATH}", Backend.interp('"at `@root_path`"')
 	end
 
-	# `@` resolves to a Context -- reflective vitals computed on demand, the functions (`to_s`/`puts`/...)
+	# `@` resolves to a Context -- reflective vitals computed on demand, the functions (`to_s`/`puts`/..)
 	# as shared callable stand-ins.
 	def test_context_resolves_to_a_context
 		assert_kind_of Prog::Context, Backend.interp('@')
@@ -2578,7 +2578,7 @@ class Interpreter_Test < Base_Test
 		assert_equal 'Array',   Backend.interp('[1, 2, 3].@type')
 		assert_equal 'Integer', Backend.interp('4.@type')
 		assert_equal 'String',  Backend.interp('"hi".@type')
-		assert_equal 'Range',   Backend.interp('(1...5).@type')
+		assert_equal 'Range',   Backend.interp('(1..5).@type')
 		assert_equal 'Nil',     Backend.interp('nil.@type')          # #maybe_instance's nil now goes through #adopt_type
 		assert Backend.interp("4.@types.include?('Number')")
 	end
@@ -2833,7 +2833,7 @@ class Interpreter_Test < Base_Test
 		assert_match 'String', err.message
 	end
 
-	# `x: Number = 'oops'` (a literal RHS) is caught statically before the interpreter ever runs (see type_checker_test.rb) -- these cover the gap that leaves open: a *non-literal* RHS (an identifier, a function, ...) whose actual value mismatches the annotation on the very first, self-declaring assignment. The static checker silently skips non-literal RHS entirely, so this has to be caught dynamically in #interp_infix_assignment, the same place reassignment already is.
+	# `x: Number = 'oops'` (a literal RHS) is caught statically before the interpreter ever runs (see type_checker_test.rb) -- these cover the gap that leaves open: a *non-literal* RHS (an identifier, a function, ..) whose actual value mismatches the annotation on the very first, self-declaring assignment. The static checker silently skips non-literal RHS entirely, so this has to be caught dynamically in #interp_infix_assignment, the same place reassignment already is.
 	def test_first_assignment_type_contract_with_non_literal_rhs
 		# Plain nominal annotation.
 		err = assert_raises Prog::Type_Contract_Violation do
@@ -3281,7 +3281,7 @@ class Interpreter_Test < Base_Test
 		out = Backend.interp '(Number -> String;)'
 		assert_kind_of Prog::Func_Signature, out
 
-		# `name: (...)` with no return type is still a signature (the colon form opts in) -- a bare
+		# `name: (..)` with no return type is still a signature (the colon form opts in) -- a bare
 		# `foo (;)` without the colon stays a real empty function.
 		out = Backend.interp 'takes_a_number: (Number;)'
 		assert_kind_of Prog::Func_Signature, out

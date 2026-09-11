@@ -179,11 +179,11 @@ class Lexer_Test < Base_Test
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Backend.lex '1...2'
+		out = Backend.lex '1..2'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Backend.lex '3.0...4.0'
+		out = Backend.lex '3.0..4.0'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
@@ -195,15 +195,21 @@ class Lexer_Test < Base_Test
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
 
-		out = Backend.lex '7>.<8'
+		out = Backend.lex '7>..<8'
 		assert_equal %I(number operator number), out.map(&:type)
 		assert_equal 3, out.count
+
+		# `..` (range) and `...` (variadic) are distinct tokens -- `..` no longer swallows a third dot.
+		assert_equal %w(1 .. 5),   Backend.lex('1..5').map(&:value)
+		assert_equal %w(x ...),    Backend.lex('x...').map(&:value)
+		assert_equal %w(1 ..< 5),  Backend.lex('1..<5').map(&:value)
+		assert_equal %w(1 >..< 5), Backend.lex('1>..<5').map(&:value)
 
 		out = Backend.lex 'a, B, 5, "cool"'
 		assert_equal %I(identifier delimiter IDENTIFIER delimiter number delimiter string), out.map(&:type)
 		assert_equal 7, out.count
 
-		out = Backend.lex '1...2, 3..<4, 5>..6, 7>.<8'
+		out = Backend.lex '1..2, 3..<4, 5>..6, 7>..<8'
 		assert_equal %I(number operator number delimiter number operator number delimiter number operator number delimiter number operator number), out.map(&:type)
 		assert_equal 15, out.count
 

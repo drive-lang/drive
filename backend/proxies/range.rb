@@ -34,7 +34,7 @@ module Prog
 		end
 
 		def proxy_to_s
-			"#{@range.begin}#{@range.exclude_end? ? '..<' : '...'}#{@range.end}"
+			"#{@range.begin}#{@range.exclude_end? ? '..<' : '..'}#{@range.end}"
 		end
 		alias to_s proxy_to_s
 

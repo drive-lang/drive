@@ -20,7 +20,7 @@ module Prog
 	FENCE_CHARS                       = '```'
 	PREFIX                            = %w(! - + ~ not return)
 	INFIX                             = %w( + - ^ * ** / % ~ == === =!= =>= =<= =/= ? . .? = := : ||= &&= **= <<= >>= += -= *= |= /= %= &= ^= =~ !~ && || & | << >>
- ... >.. ..< >.< != <= >= < > <=> < > and or )
+ .. >.. ..< >..< != <= >= < > <=> < > and or )
 	POSTFIX                           = %w() # note: ; can never be a postfix, it's reserved
 	CIRCUMFIX                         = %w( \( [ { | )
 	CIRCUMFIX_GROUPINGS               = { '(' => '()', '{' => '{}', '[' => '[]', '|' => '||' }
@@ -29,7 +29,7 @@ module Prog
 	COMPARISON_OPERATORS              = %w(<=> == === =!= =>= =<= =/= != <= >= < > =~ !~)
 	ANY_WILDCARD_COMPARISON_OPERATORS = %w(== != === =!= =>= =<= =/=)
 	INFIX_ARITHMETIC_OPERATORS        = %w(+ - * ** / % << >> ^ & |)
-	RANGE_OPERATORS                   = %w(... ..< >.. >.<)
+	RANGE_OPERATORS                   = %w(.. ..< >.. >..<)
 	SELF_KEYWORDS                     = %w(self Self)          # instance / type scope -- context-restricted
 	SCOPE_KEYWORDS                    = %w(self Self Global)   # every bare scope keyword you can dot into
 	DOT_ACCESS_OPERATORS              = %w(. .?)
@@ -56,7 +56,7 @@ module Prog
 		= := ||= &&= **= <<= >>= += -= *= |= /= %= &= ^=
 		== != <= >= < > === =!= =/= =<= =>=
 		! ? ?? !! && || & | << >>
-		... >.. ..< >.< <=>
+		.. ... >.. ..< >..< <=>
 		``` # \
 		@
 
@@ -129,7 +129,7 @@ module Prog
 		              '**=' => 90,
 
 		              # Ranges
-		              '...' => 80, '..<' => 80, '>..' => 80, '>.<' => 80,
+		              '..' => 80, '..<' => 80, '>..' => 80, '>..<' => 80,
 
 		              # Keywords
 		              'return' => 70,

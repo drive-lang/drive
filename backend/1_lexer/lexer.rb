@@ -229,16 +229,22 @@ module Backend
 		def lex_operator
 			# note; Operators cannot start with or end with: ' " { } ( ) [ ] and that is a strict rule.
 			it = ::String.new
+			# `..` is a prefix of `..<`/`...` and `>..` of `>..<`, so match longest, not first.
+			range_like = Prog::RANGE_OPERATORS + ['...']
 			while chars? && symbol?
-				# Don't append `.` onto a trailing `>` unless it's forming a genuine range operator (`>..`, `>.<`). Otherwise `Type<Struct>.member` would lex `>.` as one bogus operator token, swallowing the `>` that's supposed to close the struct's member list on its own.
-
-				break if it == '>' && curr == '.' && !%w(. <).include?(peek)
+				# Keep `Type<Struct>.member` from lexing `>.` as one token and eating the closing `>`.
+				break if it == '>' && curr == '.' && peek != '.'
 				break if it == Prog::TAG_OPERATOR && curr == '<'
 				break if it == Prog::CONTEXT_OPERATOR && curr == '.'
 				break if it == '<' && curr == '>'
 
 				it << eat
-				break if Prog::RANGE_OPERATORS.include? it
+
+				if range_like.include? it
+					next if range_like.any? { |op| op.length > it.length && op.start_with?(it) && op[it.length] == curr }
+					break
+				end
+
 				break if Prog::ILLEGAL_OPERATOR_CHARS.include? it
 				break if Prog::ILLEGAL_OPERATOR_CHARS.include? curr
 			end

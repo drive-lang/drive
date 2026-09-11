@@ -744,7 +744,7 @@ Only when the receiver is a **member access, call result, or subscript** — `xs
 
 ## Variadic Parameters
 
-`f (x...;)` — `x...` is sugar for `x: Arguments` (`Arguments | Array {}` in `backend/array.prog`; `Args` is an alias). Binds `x` to an `Arguments` instance (a `Prog::Array` linked to the `Arguments` type, so `x === Arguments` and every Array method works) holding the positional argument tail — empty if none. Only in a param list (`...` is the range operator everywhere else); `Param_Expr#variadic`, `#wrap_arguments_array`.
+`f (x...;)` — `x...` is sugar for `x: Arguments` (`Arguments | Array {}` in `backend/array.prog`; `Args` is an alias). Binds `x` to an `Arguments` instance (a `Prog::Array` linked to the `Arguments` type, so `x === Arguments` and every Array method works) holding the positional argument tail — empty if none. `...` is a dedicated lexer token (distinct from the range base `..`) and only carries meaning in a param list; `Param_Expr#variadic`, `#wrap_arguments_array`.
 
 ```prog
 sum ( nums...; acc := 0  for nums  acc += it  end  acc )
@@ -917,22 +917,24 @@ double ( n; n * 2 )
 
 ## Ranges
 
-Four range operators, all built on the same `...`/`..<`/`>..`/`>.<` family (`RANGE_OPERATORS` in `constants.rb`, handled by `#interp_range_infix` in `interpreter.rb`, dispatched from `#interp_infix`):
+Four range operators, all derived from the base `..` (`RANGE_OPERATORS = %w(.. ..< >.. >..<)` in `constants.rb`, handled by `#interp_range_infix` in `interpreter.rb`, dispatched from `#interp_infix`). `...` is **not** a range operator — it's reserved for the variadic-param sugar (see Variadic Parameters).
 
 ```prog
-1...5  # inclusive:         1, 2, 3, 4, 5
+1..5   # inclusive:         1, 2, 3, 4, 5
 1..<5  # exclusive end:     1, 2, 3, 4
 1>..5  # exclusive start:      2, 3, 4, 5
-1>.<5  # exclusive both:       2, 3, 4
+1>..<5 # exclusive both:       2, 3, 4
 ```
 
-`..<` trims the end, `>..`/`>.<` bump the start by 1. `#interp_range_infix` builds a `::Range` (`::Range.new(from, to, exclude_end)`, `from` being `start` or `start + 1`) and wraps it: `finish_intrinsic_instance Prog::Range.new(that), 'Range'`.
+`..<` trims the end, `>..`/`>..<` bump the start by 1. `#interp_range_infix` builds a `::Range` (`::Range.new(from, to, exclude_end)`, `from` being `start` or `start + 1`) and wraps it: `finish_intrinsic_instance Prog::Range.new(that), 'Range'`.
 
-**Endless / beginless.** A range operator with no operand on one side is open-ended: `2...` (nil end, `expr.right` nil — parsed in `#complete_expression`) or `...3` / `..<-1` (nil start, `expr.left` nil — parsed in `#begin_expression`, `...`/`..<` only). `#interp_range_infix` reads a nil side as a nil `::Range` endpoint. Iterating (`for`, `.to_a`) an endless one loops forever; slicing is fine. The lexer treats a range operator as terminal (`break if RANGE_OPERATORS.include? it` in `#lex_operator`) so `xs[...-1]` lexes `...` then a prefix `-`, not one glued `...-`.
+**Lexing.** `..` is a prefix of both `..<` and `...`, and `>..` of `>..<` — so `#lex_operator` can't stop at the first range-op match. It builds the operator char by char and, whenever the accumulated string is a range op (or `...`), keeps going only while a *longer* range op / `...` could still match the next char, else breaks (`range_like` local). The `>`-guard (`break if it == '>' && curr == '.' && peek != '.'`) still keeps `Type<Struct>.member` from lexing `>.` as a bogus token.
 
-`Prog::Range` is an ordinary Instance (`backend/proxies/range.rb`, `backend/range.prog`), not a `::Range` subclass — it wraps the real `::Range` in `.range` and has full type identity (`(1...5) === Range`), a `: Range` contract, and its own methods. Every Backend range is numeric and only ever built by these four operators (there's no `Range(...)` literal). See the Range entry under Built-in Types below.
+**Endless / beginless.** A range operator with no operand on one side is open-ended: `2..` (nil end, `expr.right` nil — parsed in `#complete_expression`) or `..3` / `..<-1` (nil start, `expr.left` nil — parsed in `#begin_expression`, `..`/`..<` only). `#interp_range_infix` reads a nil side as a nil `::Range` endpoint. Iterating (`for`, `.to_a`) an endless one loops forever; slicing is fine. `xs[..-1]` lexes `..` then a prefix `-`, never one glued token.
 
-**As a subscript** — `arr[1...3]` / `"abc"[0..<2]` slices an Array or String. `#interp_subscript` unwraps the `Prog::Range` to its `.range` before indexing; the sliced Array result is re-linked (`#wrap_prog_array`), an out-of-bounds start yields `nil` (Ruby semantics). Each operator keeps its own end/start behavior, so `xs[1...3]` (inclusive) is one element longer than `xs[1..<3]`. Endless (`xs[2...]`) and beginless (`xs[...3]`, `xs[...-1]` for the whole array) work; negative endpoints count from the end. A `Dictionary` range key isn't meaningful and isn't special-cased.
+`Prog::Range` is an ordinary Instance (`backend/proxies/range.rb`, `backend/range.prog`), not a `::Range` subclass — it wraps the real `::Range` in `.range` and has full type identity (`(1..5) === Range`), a `: Range` contract, and its own methods. Its `to_s` renders `1..5` (inclusive) / `1..<5` (exclusive end) — it can't tell `>..` from `..` since the start bump is already baked into `.range`. Every Backend range is numeric and only ever built by these four operators (there's no `Range(...)` literal). See the Range entry under Built-in Types below.
+
+**As a subscript** — `arr[1..3]` / `"abc"[0..<2]` slices an Array or String. `#interp_subscript` unwraps the `Prog::Range` to its `.range` before indexing; the sliced Array result is re-linked (`#wrap_prog_array`), an out-of-bounds start yields `nil` (Ruby semantics). Each operator keeps its own end/start behavior, so `xs[1..3]` (inclusive) is one element longer than `xs[1..<3]`. Endless (`xs[2..]`) and beginless (`xs[..3]`, `xs[..-1]` for the whole array) work; negative endpoints count from the end. A `Dictionary` range key isn't meaningful and isn't special-cased.
 
 ## Built-in Types and Intrinsic Methods
 
@@ -1020,7 +1022,7 @@ dict.count()       # 3
 
 ### Set
 
-An unordered collection of unique items, backed by a Ruby `::Set` in `Prog::Set#@set` (`backend/proxies/set.rb`, `backend/set.prog`). No literal syntax — build one with `Set()` / `Set([1, 2, 3])` / `Set(1...5)` / `Set(other_set)`. Loaded by `backend/global.prog` (no `@load` needed).
+An unordered collection of unique items, backed by a Ruby `::Set` in `Prog::Set#@set` (`backend/proxies/set.rb`, `backend/set.prog`). No literal syntax — build one with `Set()` / `Set([1, 2, 3])` / `Set(1..5)` / `Set(other_set)`. Loaded by `backend/global.prog` (no `@load` needed).
 
 ```prog
 s := Set([1, 2, 2, 3])   # {1, 2, 3} -- dedups
@@ -1046,7 +1048,7 @@ Set([1, 2, 3]) ^ Set([2, 3, 4]) # symmetric    -> Set{1, 4}
 A numeric range (`backend/proxies/range.rb`, `backend/range.prog`), `Prog::Range < Instance` wrapping a Ruby `::Range` in `.range`. Only ever built by the four range operators (see Ranges above) — no `Range(...)` literal.
 
 ```prog
-r := 1...5
+r := 1..5
 r === Range        # true -- real type identity
 r.start()          # 1
 r.finish()         # 5
@@ -1055,14 +1057,14 @@ r.include?(3)      # true
 r.to_a()           # [1, 2, 3, 4, 5]
 r.sum()            # 15
 r.map(n; n * n)    # [1, 4, 9, 16, 25]
-x: Range = 1...5   # contract holds
+x: Range = 1..5    # contract holds
 
-for 1...5          # iterates via `collection.range` (#interp_for_loop)
+for 1..5           # iterates via `collection.range` (#interp_for_loop)
     @puts it
 end
 ```
 
-- **Proxies** (`@ruby`): `start`, `finish`, `excludes_end?`, `length`/`count`/`size`, `include?` (→ `::Range#cover?`; `covers?` is a prog-level alias), `min`, `max`, `sum`, `values`/`to_a` (→ Array), `to_s` (`"1...5"` / `"1..<5"`).
+- **Proxies** (`@ruby`): `start`, `finish`, `excludes_end?`, `length`/`count`/`size`, `include?` (→ `::Range#cover?`; `covers?` is a prog-level alias), `min`, `max`, `sum`, `values`/`to_a` (→ Array), `to_s` (`"1..5"` / `"1..<5"`).
 - **HOF** (in Backend, iterating `for self`): `each` (returns self), `map`/`filter`/`select` (→ Array), `reduce`/`accumulate`, `find`, `any?`, `all?`; `empty?`.
 - `Prog::Range` `include ::Enumerable` (via `def each`), so Ruby-side consumers (`#interp_for_loop`, `#interp_each_loop`, `Prog::Set#to_ruby_set`) and the tests' plain `range.include?(n)` / `range.to_a` keep working.
 - `#interp_range_infix` links the range via `finish_intrinsic_instance`; `#maybe_instance` has a `when Prog::Range` re-link branch (mirrors Set).

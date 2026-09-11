@@ -224,36 +224,36 @@ class ProxiesTest < Base_Test
 	# Range is an Instance wrapping a Ruby ::Range now (not a ::Range subclass) -- it has real Backend
 	# methods, type identity, and satisfies a `: Range` contract, none of which worked before.
 	def test_range_proxies
-		assert_equal 2, Backend.interp("(2...4).start()")
-		assert_equal 4, Backend.interp("(2...4).finish()")
+		assert_equal 2, Backend.interp("(2..4).start()")
+		assert_equal 4, Backend.interp("(2..4).finish()")
 		assert_equal 3, Backend.interp("(2>..4).start()") # `>..` bumps the start
 		assert Backend.interp("(1..<5).excludes_end?()")
-		refute Backend.interp("(1...5).excludes_end?()")
+		refute Backend.interp("(1..5).excludes_end?()")
 
-		assert_equal 5, Backend.interp("(1...5).length()")
-		assert_equal 0, Backend.interp("(0>.<0).length()")
-		assert Backend.interp("(0>.<0).empty?()")
+		assert_equal 5, Backend.interp("(1..5).length()")
+		assert_equal 0, Backend.interp("(0>..<0).length()")
+		assert Backend.interp("(0>..<0).empty?()")
 
-		assert Backend.interp("(1...5).include?(3)")
-		refute Backend.interp("(1...5).include?(9)")
+		assert Backend.interp("(1..5).include?(3)")
+		refute Backend.interp("(1..5).include?(9)")
 
-		assert_equal [1, 2, 3, 4, 5], Backend.interp("(1...5).to_a()").values
-		assert_equal 15, Backend.interp("(1...5).sum()")
-		assert_equal 1, Backend.interp("(1...5).min()")
-		assert_equal 5, Backend.interp("(1...5).max()")
+		assert_equal [1, 2, 3, 4, 5], Backend.interp("(1..5).to_a()").values
+		assert_equal 15, Backend.interp("(1..5).sum()")
+		assert_equal 1, Backend.interp("(1..5).min()")
+		assert_equal 5, Backend.interp("(1..5).max()")
 		assert_equal '1..<5', Backend.interp("(1..<5).to_s()")
 
 		# prog-level higher-order methods iterate the range directly (`for self`)
-		assert_equal [1, 4, 9], Backend.interp("(1...3).map((n; n * n))").values
-		assert_equal [2, 4], Backend.interp("(1...5).filter((n; n % 2 == 0))").values
-		assert_equal 15, Backend.interp("(1...5).reduce(0, (acc, n; acc + n))")
-		assert Backend.interp("(1...5).any?((n; n == 3))")
-		refute Backend.interp("(1...5).all?((n; n > 3))")
+		assert_equal [1, 4, 9], Backend.interp("(1..3).map((n; n * n))").values
+		assert_equal [2, 4], Backend.interp("(1..5).filter((n; n % 2 == 0))").values
+		assert_equal 15, Backend.interp("(1..5).reduce(0, (acc, n; acc + n))")
+		assert Backend.interp("(1..5).any?((n; n == 3))")
+		refute Backend.interp("(1..5).all?((n; n > 3))")
 
 		# type identity + contract, both broken while it was a ::Range subclass
-		assert Backend.interp("(1...5) === Range")
-		assert Backend.interp("(1...5) =>= Range")
-		assert_equal 5, Backend.interp("x: Range = 1...5\nx.length()")
+		assert Backend.interp("(1..5) === Range")
+		assert Backend.interp("(1..5) =>= Range")
+		assert_equal 5, Backend.interp("x: Range = 1..5\nx.length()")
 	end
 
 	# Set has no literal syntax and no Ruby-stdlib behavior worth re-verifying here -- these cover
@@ -263,7 +263,7 @@ class ProxiesTest < Base_Test
 	def test_set_proxies
 		# construction dedups; values() is an Array snapshot
 		assert_equal [1, 2, 3], Backend.interp("Set([1, 2, 2, 3, 1]).values()").values
-		assert_equal [1, 2, 3], Backend.interp("Set(1...3).values()").values
+		assert_equal [1, 2, 3], Backend.interp("Set(1..3).values()").values
 		assert_equal [1, 2], Backend.interp("Set(Set([1, 2, 2])).values()").values
 
 		assert_equal 3, Backend.interp("Set([1, 2, 3]).length()")

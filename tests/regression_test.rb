@@ -388,8 +388,25 @@ class Regression_Test < Base_Test
 	end
 
 	def test_ranges_with_expression
-		assert_instance_of Prog::Range, Backend.interp("x:=1, 0...x")
-		assert_instance_of Prog::Range, Backend.interp("x:=1, y:=2, 0...(x + y)")
+		assert_instance_of Prog::Range, Backend.interp("x:=1, 0..x")
+		assert_instance_of Prog::Range, Backend.interp("x:=1, y:=2, 0..(x + y)")
+	end
+
+	# The base range operator moved from `...` to `..` so `...` is free for variadic params. Both must
+	# coexist in one program with no ambiguity: `..` is a range, `...` is the argument tail.
+	def test_two_dot_range_and_three_dot_variadic_coexist
+		out = Backend.interp <<~CODE
+		    total ( nums...;
+		    	acc := 0
+		    	for nums  acc += it  end
+		    	acc
+		    )
+		    total(1, 2, 3) + (10..12).sum()
+		CODE
+		assert_equal 39, out  # 6 + 33
+
+		assert_equal [2, 3, 4], Backend.interp('(1>..<5).to_a()').values
+		assert_equal '1..5',    Backend.interp('(1..5).to_s()')
 	end
 
 	# Regression: types loaded via `variable = @load 'file.prog'` were missing enclosing_scope in interp_type
@@ -576,7 +593,7 @@ class Regression_Test < Base_Test
 		assert_nil Backend.interp 'Array().?missing'
 		assert_nil Backend.interp '[].?missing'
 		assert_nil Backend.interp '{}.?missing'
-		assert_nil Backend.interp '(1...5).?missing'
+		assert_nil Backend.interp '(1..5).?missing'
 		assert_nil Backend.interp 'Array.?uniq'
 
 		# Real member access must still work, and plain `.` must still raise.
@@ -586,12 +603,12 @@ class Regression_Test < Base_Test
 	end
 
 	def test_range_dot_access_raises_for_undeclared_members_regression
-		assert_raises(Prog::Undeclared_Identifier) { Backend.interp '(1...5).missing' }
+		assert_raises(Prog::Undeclared_Identifier) { Backend.interp '(1..5).missing' }
 
 		# `.each` must still work through the normal (non-fallback) path.
 		out = Backend.interp '
 			sum := 0
-			for (1...3)
+			for (1..3)
 				sum += it
 			end
 			sum

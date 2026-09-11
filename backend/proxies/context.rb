@@ -1,21 +1,14 @@
 require 'objspace'
 
 module Prog
-	# `@` resolves to a Context. There is one shared Context (Interpreter#shared_context) holding the
-	# `@` *functions* as real callable stand-ins -- built once, referenced everywhere. Its reflective
-	# *vitals* (`@name`, `@types`, ...) are never stored: they're computed on demand against whatever
-	# scope the `@` is reached from (Interpreter#context_vital). A transient Context is built only for a
-	# bare `@` (alone, or `@.foo`), carrying that scope as its `subject`.
-	#
-	# Still an Instance (not a bare Scope) so `@ === Context` and `x.@` keep their type identity.
+	# `@` resolves to a Context. Functions live on one shared Context (Interpreter#shared_context);
+	# vitals are computed on demand (Interpreter#context_vital), never stored. A transient Context with
+	# a `subject` is built only for a bare `@` / `@.foo`. Stays an Instance so `@ === Context` holds.
 	class Context < Instance
 		attr_accessor :subject
 
-		# The single source of truth for every `@` member. `frontend/context.prog` is the human-readable
-		# mirror -- its member list is asserted to match MEMBERS.keys (tests/context_test.rb).
-		#   {}                 -- a reflective vital (computed on demand, never stored)
-		#   { fn: :intrinsic } -- a function dispatched via Interpreter#interp_intrinsic
-		#   { fn: :stack }     -- a function that runs in the caller's frame (#interp_context_stack_function)
+		# Source of truth for every `@` member; `frontend/context.prog` mirrors it (tests/context_test.rb).
+		#   {} vital  |  { fn: :intrinsic } #interp_intrinsic  |  { fn: :stack } caller's-frame dispatch
 		MEMBERS = {
 			'name'          => {}, 'display_name' => {}, 'composed_types'      => {},
 			'types'         => {}, 'type'         => {}, 'object_id'           => {},

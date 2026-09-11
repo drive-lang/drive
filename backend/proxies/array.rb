@@ -21,6 +21,7 @@ module Prog
 		proxy :join
 		proxy :empty?
 		proxy :index
+		proxy :reduce
 
 		def proxy_Self *args
 			# `Array(1, 2, 3)` -> those elements; `Array([1, 2, 3])` / `Array(other)` -> a lone

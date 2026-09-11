@@ -348,23 +348,14 @@ module Backend
 			copy_location it, start
 		end
 
-		# TYPE_IDENT [                       -- bare form
-		# TYPE_IDENT: Enum [                 -- annotated (any item count, see #annotated_enum_declaration_follows?)
-		# TYPE_IDENT: Enum\Backing_Type [    -- annotated with a backing/value type
-		#
-		#   TYPE_IDENT              # gets its own unique value
-		#   TYPE_IDENT,             # with comma
-		#   TYPE_IDENT: TYPE_IDENT
-		#   TYPE_IDENT := EXPR
-		#   TYPE_IDENT: TYPE_IDENT = EXPR
-		# ]
+		# TYPE_IDENT [ ... ]  /  TYPE_IDENT: Enum[\Backing] [ ... ]  /  TYPE_IDENT: Backing [ ... ]
+		#   member forms: TYPE_IDENT | TYPE_IDENT, | TYPE_IDENT: TYPE_IDENT | TYPE_IDENT := EXPR | TYPE_IDENT: TYPE_IDENT = EXPR
 		def parse_enum_expr
 			expr             = Prog::Enum_Expr.new
 			expr.expressions = []
 			expr.name        = eat TYPE_IDENTIFIER
 
-			# Optional annotation. `: Enum` / `: Enum\Backing_Type`, or the backing type on its own
-			# (`: Int`). Either way the backing type rides on `expr.type`, the slot #build_enum reads for `@.type`.
+			# `: Enum` / `: Enum\Backing` / `: Backing` -- the backing type lands on `expr.type`.
 			if curr? ':'
 				eat ':'
 				base = eat TYPE_IDENTIFIER
@@ -374,7 +365,7 @@ module Backend
 						expr.type = parse_identifier_expr
 					end
 				else
-					expr.type = Prog::Identifier_Expr.new base # the annotation itself is the backing type
+					expr.type = Prog::Identifier_Expr.new base
 				end
 			end
 
@@ -429,30 +420,25 @@ module Backend
 			expr
 		end
 
-		# `NAME: <Type> [ ... ]` -- an explicit enum annotation: `NAME: Enum [ ... ]`, `NAME: Enum\Backing [ ... ]`,
-		# or the backing type on its own (`NAME: Int [ ... ]`). Always an enum, whatever the item count, so it's
-		# the way to write a one-option enum that the bare form would otherwise read as a subscript. Safe to
-		# claim broadly: a `Capitalized: Type` expression is never subscripted (capitalized names are types).
+		# `NAME: Enum [`, `NAME: Enum\Backing [`, or `NAME: Backing [` -- always an enum. Safe to claim
+		# any `Capitalized: Type [` broadly, since a `Capitalized: Type` expression is never subscripted.
 		def annotated_enum_declaration_follows?
 			return false unless curr?(TYPE_IDENTIFIER, ':')
 			base = peek 2
 			return false unless base && TYPE_IDENTIFIER.include?(base.type)
 
 			ahead = 3
-			ahead += 2 if base.value == 'Enum' && peek(ahead)&.value == TAG_OPERATOR # skip `\` and the backing type
+			ahead += 2 if base.value == 'Enum' && peek(ahead)&.value == TAG_OPERATOR
 			peek(ahead)&.value == '['
 		end
 
-		# `curr` is a TYPE_IDENTIFIER and `peek` is `[`. It's an enum unless the brackets hold exactly one
-		# plain expression -- that lone case is an ordinary subscript (`Config[key]`). Anything that can't be
-		# a single subscript index marks it as an enum: an empty body, a `,`, a `:=`/`=`/`NAME:` member form,
-		# a nested `NAME [`, or two-plus items (whitespace-, newline-, or comma-separated). A single bare option
-		# (`My_Enum [ One ]`) reads as a subscript -- write `My_Enum [ One, ]` or annotate it.
+		# `curr` is a TYPE_IDENTIFIER, `peek` is `[`. An enum unless the brackets hold exactly one plain
+		# expression -- that lone case is an ordinary subscript (`Config[key]`).
 		def bare_enum_declaration_follows?
 			depth       = 0
-			prev_ident  = false # the previous depth-1 token was a non-reserved identifier
+			prev_ident  = false
 			saw_content = false
-			j           = i + 1 # the `[`
+			j           = i + 1
 
 			while (tok = input[j])
 				v          = tok.value
@@ -469,8 +455,8 @@ module Backend
 					ident = %i[identifier Identifier IDENTIFIER].include?(tok.type) && !tok.reserved
 
 					return true if v == ',' || v == ':=' || v == '='
-					return true if prev_ident && (v == ':' || ident)  # `NAME:` annotation, or `NAME NAME` -- two members
-					return true if ident && input[j + 1]&.value == '[' # nested `NAME [ ... ]`
+					return true if prev_ident && (v == ':' || ident)  # `NAME:` annotation, or two members
+					return true if ident && input[j + 1]&.value == '[' # nested `NAME [`
 
 					saw_content = true
 					prev_ident  = ident
@@ -479,7 +465,7 @@ module Backend
 				j += 1
 			end
 
-			false # ran off the end -- malformed, let the normal path raise
+			false
 		end
 
 		def parse_func precedence = STARTING_PRECEDENCE
@@ -1077,7 +1063,7 @@ module Backend
 				it.left     = left_side_expr
 				it.operator = eat
 
-				# [2...], an endless range: the operator with nothing after it
+				# [2..], an endless range: the operator with nothing after it
 				if !lexemes? || (curr?(:delimiter) && ["]", ")", "}", ",", ";", "\n", "\r"].include?(curr_lexeme.value))
 					it.right = nil
 				else
@@ -1187,7 +1173,7 @@ module Backend
 			elsif curr? '`'
 				parse_statement_expr
 
-			elsif curr?(%w(... ..<)) && curr?(:operator)
+			elsif curr?(%w(.. ..<)) && curr?(:operator)
 				parse_beginless_range_expr
 
 			elsif curr? :operator

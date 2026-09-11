@@ -21,10 +21,10 @@ For example:
 # OK aabcdaa (aa at positions 0 and 5)
 two_pairs? ( input;
 	chars := input.chars()
-	for 0...(chars.length() - 2)
+	for 0..(chars.length() - 2)
 		pair := "`chars[at]``chars[at + 1]`"
 		# Look for same pair starting at position at+2 or later (non-overlapping)
-		for (at + 2)...(chars.length() - 2)
+		for (at + 2)..(chars.length() - 2)
 			if "`chars[it]``chars[it + 1]`" == pair
 				return true
 			end
@@ -35,7 +35,7 @@ two_pairs? ( input;
 
 repeat_with_gap? ( input;
 	chars := input.chars()
-	for 0...(chars.length() - 3)  # Need at least 3 chars from current position
+	for 0..(chars.length() - 3)  # Need at least 3 chars from current position
 		if chars[at] == chars[at + 2]
 			return true
 		end

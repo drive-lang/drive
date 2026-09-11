@@ -1,7 +1,7 @@
 Range {
 	# A numeric range, backed by a Ruby Range (src/external/ruby/range.rb). Built with the range
-	# operators, never a literal -- `1...5` (inclusive), `1..<5` (exclusive end), `1>..5` (exclusive
-	# start), `1>.<5` (exclusive both).
+	# operators, never a literal -- `1..5` (inclusive), `1..<5` (exclusive end), `1>..5` (exclusive
+	# start), `1>..<5` (exclusive both). All derive from the base `..`.
 
 	# --- bounds ---
 	start (-> Number; @ruby )

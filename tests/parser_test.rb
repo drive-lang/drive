@@ -220,18 +220,18 @@ class Parser_Test < Base_Test
 	end
 
 	def test_ranges
-		out = Backend.parse '1...2'
+		out = Backend.parse '1..2'
 		assert_kind_of Prog::Infix_Expr, out.first
 		assert_kind_of Prog::Number_Expr, out.first.left
-		assert_equal '...', out.first.operator.value
+		assert_equal '..', out.first.operator.value
 		assert_kind_of Prog::Number_Expr, out.first.right
 		assert_equal 1, out.first.left.value
 		assert_equal 2, out.first.right.value
 
-		out = Backend.parse '3.0...4.0'
+		out = Backend.parse '3.0..4.0'
 		assert_kind_of Prog::Number_Expr, out.first.left
 		assert_kind_of Prog::Infix_Expr, out.first
-		assert_equal '...', out.first.operator.value
+		assert_equal '..', out.first.operator.value
 		assert_kind_of Prog::Number_Expr, out.first.right
 		assert_equal 3.0, out.first.left.value
 		assert_equal 4.0, out.first.right.value
@@ -252,21 +252,37 @@ class Parser_Test < Base_Test
 		assert_equal 5, out.first.left.value
 		assert_equal 6, out.first.right.value
 
-		out = Backend.parse '7>.<8'
+		out = Backend.parse '7>..<8'
 		assert_kind_of Prog::Number_Expr, out.first.left
 		assert_kind_of Prog::Infix_Expr, out.first
-		assert_equal '>.<', out.first.operator.value
+		assert_equal '>..<', out.first.operator.value
 		assert_kind_of Prog::Number_Expr, out.first.right
 		assert_equal 7, out.first.left.value
 		assert_equal 8, out.first.right.value
 
-		out = Backend.parse '1...2, 3..<4, 5>..6, 7>.<8'
+		out = Backend.parse '1..2, 3..<4, 5>..6, 7>..<8'
 		assert_equal 4, out.count
 		out.each do
 			assert_kind_of Prog::Infix_Expr, it
 			assert_kind_of Prog::Number_Expr, it.left
 			assert_kind_of Prog::Number_Expr, it.right
 		end
+	end
+
+	# `...` is no longer a range operator -- it's reserved for the variadic param sugar. `..` is the base.
+	def test_triple_dot_is_variadic_only_not_a_range
+		refute_includes Prog::RANGE_OPERATORS, '...'
+		assert_includes Prog::RANGE_OPERATORS, '..'
+
+		# `f (x...; ...)` still parses as a variadic function
+		out = Backend.parse 'f (x...; x)'
+		assert_kind_of Prog::Func_Expr, out.first
+		assert out.first.parameters.first.variadic
+
+		# endless / beginless ranges use the two-dot base now
+		assert_equal '..',  Backend.parse('2..').first.operator.value
+		assert_equal '..',  Backend.parse('..3').first.operator.value
+		assert_equal '..<', Backend.parse('..<3').first.operator.value
 	end
 
 	def test_comma_separated_expressions

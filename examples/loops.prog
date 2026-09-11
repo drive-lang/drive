@@ -15,7 +15,7 @@ end
 A range is just another iterable -- `for` walks it the same way it walks an array:
 ###
 days_stranded := 0
-for 1...5
+for 1..5
 	days_stranded = it
 end
 @assert days_stranded == 5, 'range iteration should end on the last value'

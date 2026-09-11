@@ -124,7 +124,7 @@ fizz_buzz ( n;
     end
 )
 
-for 1...15
+for 1..15
     @puts fizz_buzz(it)
 end
 ```
@@ -463,7 +463,7 @@ for [1, 2, 3]
     @puts at      # Current index
 end
 
-for 1...5
+for 1..5
     @puts it      # 1, 2, 3, 4, 5
 end
 
@@ -808,18 +808,20 @@ Date.parse('2020-01-01') < Date.parse('2021-01-01')   # true -- all of < > <= >=
 
 ## Ranges
 
-1. `...` inclusive range
+Base is two dots `..`; the others add a `<` or `>` to trim an end. (`...` is not a range operator — it's the variadic-param sugar.)
+
+1. `..` inclusive range
 2. `..<` exclusive end
 3. `>..` exclusive start
-4. `>.<` exclusive both
+4. `>..<` exclusive both
 
 ```prog
-1...5   #   1, 2, 3, 4, 5    (inclusive)
+1..5    #   1, 2, 3, 4, 5    (inclusive)
 1..<5   #   1, 2, 3, 4       (exclusive end)
 1>..5   #      2, 3, 4, 5    (exclusive start)
-1>.<5   #      2, 3, 4       (exclusive both)
+1>..<5  #      2, 3, 4       (exclusive both)
 
-for 1...10
+for 1..10
     @puts it
 end
 ```
@@ -827,7 +829,7 @@ end
 A range is a real value with its own methods:
 
 ```prog
-r := 1...5
+r := 1..5
 r.start()          # 1
 r.finish()         # 5
 r.length()         # 5
@@ -837,19 +839,19 @@ r.sum()            # 15
 r.map(n; n * n)             # [1, 4, 9, 16, 25]
 r.filter(n; n % 2 == 0)     # [2, 4]
 
-x: Range = 1...5   # a `: Range` contract holds
-1...5 === Range    # true
+x: Range = 1..5    # a `: Range` contract holds
+1..5 === Range     # true
 ```
 
-A range also works as an Array or String subscript — each operator keeps its own end/start rule, so `[1...3]` is one element longer than `[1..<3]`. Endless and beginless forms slice too; a negative endpoint counts from the end:
+A range also works as an Array or String subscript — each operator keeps its own end/start rule, so `[1..3]` is one element longer than `[1..<3]`. Endless and beginless forms slice too; a negative endpoint counts from the end:
 
 ```prog
 xs := [10, 20, 30, 40, 50]
-xs[1...3]    # [20, 30, 40]      inclusive
+xs[1..3]     # [20, 30, 40]      inclusive
 xs[1..<3]    # [20, 30]          exclusive end
-xs[2...]     # [30, 40, 50]      endless
-xs[...3]     # [10, 20, 30, 40]  beginless
-xs[...-1]    # [10, 20, 30, 40, 50]   -1 is the last index
+xs[2..]      # [30, 40, 50]      endless
+xs[..3]      # [10, 20, 30, 40]  beginless
+xs[..-1]     # [10, 20, 30, 40, 50]   -1 is the last index
 "abcdef"[0..<2]   # 'ab'
 ```
 

@@ -62,9 +62,9 @@ instructions.each(@splatr inst: Instruction;
 	@assert toggle or inst.command == 'turn', "idk this command: `inst.command`"
 	@assert toggle or on or inst.subcommand == 'off', "idk this subcommand: `inst.subcommand`"
 
-	for inst.from.y...inst.till.y
+	for inst.from.y..inst.till.y
 		row := it * GRID_SIZE
-		for inst.from.x...inst.till.x
+		for inst.from.x..inst.till.x
 			i := row + it
 			if toggle
 				grid[i] = !grid[i]
