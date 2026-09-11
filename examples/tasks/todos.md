@@ -1,3 +1,5 @@
++ Raylib speedrun
++ Write Rope data structure for fun
 + Write an Ast walker that identifies functions that are contained, and ones that make calls elsewhere. 
 + Rename extension from .prog to .code because .code is NOT taken!
 + Struct should be an actual struct behind the scenes.
