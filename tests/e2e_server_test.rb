@@ -230,7 +230,7 @@ class E2E_Server_Test < Minitest::Test
 	end
 
 	# `response.redirect` was completely unreachable: Response is a plain Scope, not a Prog::Instance,
-	# and #build_CODE_response pokes `declarations` directly rather than running the Type's own body
+	# and #build_prog_response pokes `declarations` directly rather than running the Type's own body
 	# on it, so `redirect` (declared in backend/server.prog's `Response {}`) never got copied onto the
 	# instance -- and the Instance-fallback lookup that would normally rescue that is gated on
 	# `is_a?(Prog::Instance)`, so it never fired either. Every call raised `Undeclared_Identifier:

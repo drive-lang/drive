@@ -114,14 +114,32 @@ module Backend
 			return nil unless expr.left.respond_to?(:type) && expr.left.type
 			return nil if expr.left.type.is_a? Prog::Struct_Expr # structural annotations aren't checked statically
 
-			declared = expr.left.type.value # e.g. "String"
-			declare_member expr.left.value, declared
+			declared = annotation_type_names expr.left.type # e.g. ["String"], or ["Int", "Nil"] for `x: Int | Nil`
+			declare_member expr.left.value, declared.first
 			inferred = infer_type expr.right # e.g. "Integer" or nil
 
 			return nil if inferred.nil?
-			return nil if types_compatible? declared, inferred
+			return nil if declared.any? { |name| types_compatible? name, inferred }
 
-			Type_Mismatch.new expr, declared, inferred
+			Type_Mismatch.new expr, declared.join(' | '), inferred
+		end
+
+		# The alternative type name(s) an annotation names -- a plain `x: Int` is just `[expr.value]`; a
+		# composition chain in the annotation position (`x: Int | Nil`) parses to an anonymous_composition
+		# Type_Expr (same as a func's own `-> Type` return-type annotation) -- walk its leading name plus
+		# each `|`/`&`/`~`/`^` operand's name. Mirrors Interpreter#annotation_type_names (runtime side).
+		def annotation_type_names type_expr
+			return [] unless type_expr
+			return [type_expr.value] unless type_expr.is_a?(Prog::Type_Expr) && type_expr.anonymous_composition
+
+			names = [type_expr.name]
+			type_expr.expressions.each do |composition|
+				next unless composition.is_a? Prog::Composition_Expr
+
+				operand = composition.identifier
+				names << (operand.is_a?(Prog::Type_Expr) ? operand.name : operand.value)
+			end
+			names.compact
 		end
 
 		# `x := Type(...)` / `x := Type<Struct>(...)`.
@@ -168,12 +186,12 @@ module Backend
 			return nil unless expr.type && expr.default
 			return nil if expr.variadic # `x: Args` is a variadic marker, not a real element type
 			return nil if expr.type.is_a? Prog::Struct_Expr # structural annotations aren't checked statically
-			declared = expr.type.value
+			declared = annotation_type_names expr.type
 			inferred = infer_type expr.default
 			return nil if inferred.nil?
-			return nil if types_compatible? declared, inferred
+			return nil if declared.any? { |name| types_compatible? name, inferred }
 
-			Type_Mismatch.new expr, declared, inferred
+			Type_Mismatch.new expr, declared.join(' | '), inferred
 		end
 
 		# `nil` means there is no error with the expression. The pattern for most of the cases is just: recurse into child expressions and collect errors.

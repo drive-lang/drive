@@ -6,15 +6,15 @@ require_relative 'base_test'
 # The two drift apart the moment someone adds a member to one and forgets the other -- exactly the
 # bug that shipped `splatr`/`splatw` half-wired. Keep them locked together.
 class Context_Test < Base_Test
-	def context_CODE_member_names
+	def context_prog_member_names
 		path   = File.join(Backend::ROOT_PATH, 'frontend', 'context.prog')
 		struct = Backend.parse_file(path).find { |expr| expr.is_a?(Prog::Struct_Expr) }
 		refute_nil struct, 'expected a `Context <...>` struct declaration in backend/context.prog'
 		struct.names.compact
 	end
 
-	def test_context_CODE_lists_exactly_the_members_in_the_constant
-		assert_equal Prog::Context::MEMBERS.keys.sort, context_CODE_member_names.sort
+	def test_context_prog_lists_exactly_the_members_in_the_constant
+		assert_equal Prog::Context::MEMBERS.keys.sort, context_prog_member_names.sort
 	end
 
 	def test_derived_lists_are_consistent

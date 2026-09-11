@@ -351,6 +351,43 @@ Layout | Dom { render (; Html([Body("Hello")]) ) }
 
 (`Table` used to be composed too — `Post | Table { Self.database := Global.db }` — but the ORM moved to plain `Database` instance methods; see Database and ORM below.)
 
+### Composing with a Struct value
+
+Not a deliberate feature — no special-casing anywhere for it — but it works and is worth knowing about: `Prog::Struct < Instance < Type < Scope` (`backend/proxies/struct.rb`, `backend/proxies/scopes.rb`), and `interp_composition`'s only requirement of its right-hand operand is `is_a? Prog::Scope`, so a struct value satisfies it like any Type would. A named struct member really is an ordinary `declare`d entry (`Struct#initialize` calls `declare name, values[i], type_names[i]` for each named member), so `|`/`~`/`&`/`^` see it as just another set of declarations to merge:
+
+```prog
+p := <a := 5, b := 'x'>
+
+Combined | p {
+	foo (; a )
+}
+
+c := Combined()
+c.a       # 5
+c.b       # 'x'
+c.foo()   # 5
+```
+
+- An **unnamed** struct member never transfers — `Struct#initialize` only declares members that have a name, so `Combined | <String, Number> {}` composes in nothing
+- A struct declared with no values (`Point <a: Number, b: String>`, no `:=`) composes fine too, but every member comes through `nil`
+- No `Self`-collision case here, since structs have no constructor — ordinary member-name collision rules (leftmost composed-in source wins, own `{}` body always wins over composition — see below) still apply
+
+### `|` and the leftmost-wins rule (including `Self`)
+
+`interp_composition`'s `|` case only fills in a key the accumulating scope doesn't already have (`curr_scope[key] = ... unless curr_scope.has?(key)`, `backend/interpreter/interpreter.rb`), and a composition chain (`A | B | C { }`) applies strictly left-to-right — so **the leftmost operand that declares a given name wins**, for any conflicting member, `Self` included:
+
+```prog
+A { Self (; self.label := 'A' ) }
+B { Self (; self.label := 'B' ) }
+
+Combined | A | B {}
+Combined().label   # 'A' -- A's Self ran, not B's; A comes first in the chain
+```
+
+The type's own literal `{ }` body always wins over anything pulled in by composition, regardless of chain position — the composition steps (`| A`, `| B`, ...) are applied first (they're written before the `{`), and the body's own declarations are interpreted last, unconditionally overwriting whatever composition brought in. So an explicit `Self (;)` (or any other member) in the type's own body always beats a composed-in one from any operand.
+
+`~` (difference) explicitly protects `Self` from removal even if the right-hand operand also declares one (`# Maybe I'll have other keys to protect in the future.`) — `&`/`^` have no such protection and can drop `Self` like any other non-shared/shared key. `interp_struct_composition` (the sibling that composes *structs* via `Both | Abc | Def <extra: String>`) mirrors the same leftmost-wins rule for `|`, matched by member name — see "Composing with a Struct value" above; struct composition has no `Self` at all, so there's nothing to protect on the `~` side.
+
 ### Alias vs. subtype
 
 Two ways to give a type a second name, with different type-identity behavior (see Type Comparison Operators):

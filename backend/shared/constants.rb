@@ -67,7 +67,7 @@ module Prog
 		true false nil
 		skip stop
 		self Self Global
-		for
+		for when
 	)
 
 	PRECEDENCES = {

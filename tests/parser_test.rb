@@ -822,6 +822,21 @@ class Parser_Test < Base_Test
 		assert_kind_of Prog::Func_Expr, out.first
 	end
 
+	# Regression: a signature-literal's own param slot could itself be a bare, unnamed nested
+	# signature literal (`(Any, (Any,Any;) -> Any;)`) -- used to crash with a raw Ruby RuntimeError
+	# ("unexpected '(' in function parameter list") because only a single bare TYPE_IDENTIFIER token
+	# was recognized as a nameless param type, never a nested `(...)`.
+	def test_signature_literal_with_nested_bare_signature_param_regression
+		out = Backend.parse 'watch: (Any, (Any,Any;) -> Any;)'
+		assert_kind_of Prog::Func_Signature_Expr, out.first
+		assert_equal 2, out.first.params.length
+		assert_equal 'Any', out.first.params.first.type.value
+		# No name/colon/`->` of its own, so this nested one stays a plain Func_Expr rather than being
+		# repackaged into its own Func_Signature_Expr -- same rule the top-level form follows.
+		assert_kind_of Prog::Func_Expr, out.first.params[1].type
+		assert_equal 2, out.first.params[1].type.parameters.length
+	end
+
 	def test_double_less_than_is_operator
 		out = Backend.parse '<<'
 		assert_kind_of Prog::Operator_Expr, out.first

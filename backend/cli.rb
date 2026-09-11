@@ -76,11 +76,11 @@ module Backend
 			when 'interp'
 				run_source @arg
 			when 'interpf'
-				run_source File.read(@arg), file: @arg
+				run_source ::File.read(@arg), file: @arg
 			when 'interp-nostd'
 				run_source @arg, load_standard_library: false
 			when 'interpf-nostd'
-				run_source File.read(@arg), file: @arg, load_standard_library: false
+				run_source ::File.read(@arg), file: @arg, load_standard_library: false
 			when 'run'
 				hot_reload @arg
 			else
@@ -88,7 +88,7 @@ module Backend
 			end
 		rescue Errno::ENOENT => e
 			# The missing file might be the one the CLI was told to run, or one the program itself
-			# tried to open (File.read, @load). Errno::ENOENT names the real path in its
+			# tried to open (::File.read, @load). Errno::ENOENT names the real path in its
 			# message ("... - <path>"); fall back to the CLI argument only if that isn't there.
 			missing = e.message.include?(' - ') ? e.message.split(' - ').last : (@arg || @command)
 			$stderr.puts "Could not find file `#{missing}`"

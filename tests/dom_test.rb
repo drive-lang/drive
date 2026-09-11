@@ -15,8 +15,8 @@ class Dom_Test < Base_Test
 		route             = Prog::Route.new
 		route.handler     = interp.dom_onclick_function_handlers.fetch(token)[:handler]
 		route.param_names = []
-		req = interp.build_CODE_request "/onclick/#{token}", 'post', {}, {}, {}, {}
-		res = interp.build_CODE_response Struct.new(:status, :body).new
+		req = interp.build_prog_request "/onclick/#{token}", 'post', {}, {}, {}, {}
+		res = interp.build_prog_response Struct.new(:status, :body).new
 		interp.interp_route_body route, req, res
 	end
 

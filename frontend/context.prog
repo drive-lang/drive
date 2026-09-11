@@ -46,4 +46,9 @@ Context <
 	splat: (Any;)                       # unpack a scope's members into lookup, also as a write target
 	splatr: (Any;)                      # ... read-only
 	unsplat: (Any;)                     # remove a splatted scope from lookup
+	watch: (Any, Assignee_Assigned;)
+	watch_recursive: (Any, Assignee_Assigned;)
 >
+
+# The function signature for the second argument to @watch
+Assignee_Assigned := (Any, Any -> Any;)

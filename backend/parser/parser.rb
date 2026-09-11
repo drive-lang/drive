@@ -494,13 +494,13 @@ module Backend
 
 				if curr? '->' and eat '->'
 					# A function (named or anonymous) declaring its own return type inline, at the end of its param list: `(a: Number -> Number; ... )`. Distinct from `identifier: Type (...)`, which is a signature reference/alias, not an implementation declaring its own type.
-					func.type = eat(:Identifier)
+					func.type = begin_expression
 					next
 				end
 
 				param = Prog::Param_Expr.new
 
-				if curr? Prog::CONTEXT_OPERATOR
+				if curr? Prog::CONTEXT_OPERATOR # @
 					identifier = parse_identifier_expr
 					case identifier&.value
 					when 'splatr'
@@ -513,9 +513,12 @@ module Backend
 				end
 
 				if curr? TYPE_IDENTIFIER
-					# Bare type, no name — a real function param always starts with a lowercase identifier, so a bare Capitalized token here can only mean this is a signature-literal's param list, e.g. `(Number, Number -> Number;)`.
 					param.type   = eat
 					param.lexeme = param.type
+				elsif curr? '('
+					nested_start = curr_lexeme
+					param.type   = parse_func
+					param.lexeme = param.type.lexeme || nested_start
 				else
 					if curr? :identifier, :identifier
 						param.label  = eat :identifier
@@ -534,7 +537,7 @@ module Backend
 
 					if curr?(':', TYPE_IDENTIFIER)
 						eat ':'
-						param.type     = parse_identifier_expr # picks up a trailing `\<...>`/`\Name` itself (readable as param.type.tag), see #parse_identifier_expr
+						param.type     = begin_expression # picks up a trailing `\<...>`/`\Name` itself (readable as param.type.tag), see #parse_identifier_expr
 						param.variadic = true if %w(Arguments Args).include? param.type&.value
 					elsif curr?(':', '<')
 						eat ':'
@@ -577,9 +580,6 @@ module Backend
 			has_real_body = func.expressions.any?
 
 			if (func.type || signature_colon) && !has_real_body
-				untyped_param = func.parameters.find { |param| param.type.nil? }
-				raise Prog::Invalid_Func_Signature.new(untyped_param.name) if untyped_param
-
 				sig        = Prog::Func_Signature_Expr.new
 				sig.name   = func.name
 				sig.type   = func.type
@@ -877,14 +877,18 @@ module Backend
 			expr.privacy = Backend.privacy_of_ident expr.value
 
 			# A type reference can carry its own trailing tag. A named reference recurses, so `Abc\Cd\Ef` nests as `.tag.tag`. note; A recursive call here never goes through #parse_type_decl so it's handled directly.
-			if TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, '<')
+			# `nil` is a reserved lowercase keyword, not a TYPE_IDENTIFIER, but it's tagged the same way
+			# (`nil\<reason: Any>`, `nil\Error(...)`) -- sugar for tagging the real `Nil` type; see
+			# #interp_identifier's 'nil' branch, which desugars into an ordinary Nil\<...> reference.
+			taggable = TYPE_IDENTIFIER.include?(expr.lexeme.type) || expr.value == 'nil'
+			if taggable && curr?(TAG_OPERATOR, '<')
 				eat TAG_OPERATOR
 				expr.tag      = parse_struct
 				expr.tag.name = expr.value if expr.tag
-			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && curr?(TAG_OPERATOR, TYPE_IDENTIFIER)
+			elsif taggable && curr?(TAG_OPERATOR, TYPE_IDENTIFIER)
 				eat TAG_OPERATOR
 				expr.tag = parse_identifier_expr # named reference, e.g. `Abc\Task_Schema`
-			elsif TYPE_IDENTIFIER.include?(expr.lexeme.type) && integer_tag_next?
+			elsif taggable && integer_tag_next?
 				eat TAG_OPERATOR
 				expr.tag      = integer_tag_struct_expr # version tag, e.g. `Primary_Key\123`
 				expr.tag.name = expr.value
@@ -892,7 +896,7 @@ module Backend
 
 			if curr?(':', TYPE_IDENTIFIER)
 				eat ':'
-				expr.type = parse_identifier_expr
+				expr.type = curr?(TYPE_IDENTIFIER, TYPE_COMPOSITION_OPERATORS) ? parse_type_decl : parse_identifier_expr
 				expr.tag  = expr.type.tag
 			elsif curr?(':', '<')
 				eat ':'

@@ -1,11 +1,4 @@
-@load 'frontend/struct'
-
 # This is the type of the `nil` you see throughout code.
 Nil {
 	to_s (; 'nil' )
 }
-
-Error := Struct # Build your own error with just a Struct
-
-# Use a tagged nil to represent both nil and errors.
-Nil\Error {}

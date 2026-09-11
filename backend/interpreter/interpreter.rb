@@ -412,24 +412,24 @@ module Backend
 			nm     = scope.name.is_a?(Prog::Lexeme) ? scope.name.value : scope.name
 
 			case name
-			when 'name'                then nm
-			when 'display_name'        then (scope.display_name if scope.respond_to?(:display_name)) || nm
-			when 'composed_types'      then set_of.call(scope.respond_to?(:types) && scope.types ? scope.types.to_a : [])
-			when 'types'               then context_types_for(scope)
-			when 'type'                then context_type_for(scope)
-			when 'object_id'           then scope.object_id
-			when 'size_in_bytes'       then ObjectSpace.memsize_of(scope)
-			when 'root_path'           then Backend::ROOT_PATH
+			when 'name' then nm
+			when 'display_name' then (scope.display_name if scope.respond_to?(:display_name)) || nm
+			when 'composed_types' then set_of.call(scope.respond_to?(:types) && scope.types ? scope.types.to_a : [])
+			when 'types' then context_types_for(scope)
+			when 'type' then context_type_for(scope)
+			when 'object_id' then scope.object_id
+			when 'size_in_bytes' then ObjectSpace.memsize_of(scope)
+			when 'root_path' then Backend::ROOT_PATH
 			when 'static_declarations' then set_of.call(scope.respond_to?(:static_declarations) && scope.static_declarations ? scope.static_declarations.to_a : [])
-			when 'names'               then (wrap_prog_array(scope.names) if scope.is_a?(Prog::Struct))
-			when 'type_names'          then (wrap_prog_array(scope.type_names) if scope.is_a?(Prog::Struct))
-			when 'values'              then context_values_for(scope)
-			when 'members'             then (scope.members if scope.is_a?(Prog::Struct))
-			when 'keys'                then (wrap_prog_array(scope.enum_keys) if scope.is_a?(Prog::Enum))
-			when 'count'               then (scope.enum_keys.length if scope.is_a?(Prog::Enum))
-			when 'parameters'          then (wrap_prog_array(scope.parameters) if scope.is_a?(Prog::Func))
-			when 'arguments'           then (wrap_prog_array(scope.arguments) if scope.is_a?(Prog::Func))
-			when 'func_signature'      then (scope.func_signature if scope.is_a?(Prog::Func))
+			when 'names' then (wrap_prog_array(scope.names) if scope.is_a?(Prog::Struct))
+			when 'type_names' then (wrap_prog_array(scope.type_names) if scope.is_a?(Prog::Struct))
+			when 'values' then context_values_for(scope)
+			when 'members' then (scope.members if scope.is_a?(Prog::Struct))
+			when 'keys' then (wrap_prog_array(scope.enum_keys) if scope.is_a?(Prog::Enum))
+			when 'count' then (scope.enum_keys.length if scope.is_a?(Prog::Enum))
+			when 'parameters' then (wrap_prog_array(scope.parameters) if scope.is_a?(Prog::Func))
+			when 'arguments' then (wrap_prog_array(scope.arguments) if scope.is_a?(Prog::Func))
+			when 'func_signature' then (scope.func_signature if scope.is_a?(Prog::Func))
 			end
 		end
 
@@ -564,7 +564,11 @@ module Backend
 		# Does `value` satisfy a `: Type` contract named `expected`? Compositional (`=>=`-style): an
 		# `Integer` satisfies `: Number`, a `Fence` satisfies `: String`. `Any` matches anything, and
 		# `nil` -- the universal unset value every typed slot starts as -- satisfies any contract.
+		# `expected` may also be an ::Array of alternative names (`x: Int | Nil` -- see
+		# #annotation_type_names) -- satisfying any *one* of them is enough (OR, not composition's
+		# usual is-both merge: nothing is literally both an Int and a Nil at once).
 		def type_contract_satisfied? value, expected
+			return expected.any? { |name| type_contract_satisfied? value, name } if expected.is_a? ::Array
 			return true if expected.nil? || expected == 'Any'
 			return true if value.nil? || value.is_a?(Prog::Nil)
 			return true if type_name_to_string(value) == expected
@@ -577,6 +581,41 @@ module Backend
 			# that type does (same `=>=` check the `===` operators use).
 			expected_types = composed_types_by_name expected
 			expected_types.any? && expected_types.subset?(value_types)
+		end
+
+		# The alternative type name(s) named by an annotation node. A plain annotation (`x: Int`) is
+		# just `[expr.value]`; a composition chain in the annotation position (`x: Int | Nil`) parses to
+		# an anonymous_composition Type_Expr (see #parse_type_decl/#parse_func's own `-> Type` return-type
+		# parsing, which this mirrors) -- walk its own leading name plus each `|`/`&`/`~`/`^` operand's
+		# name. Union semantics only (OR) -- see #type_contract_satisfied?.
+		def annotation_type_names type_expr
+			return [] unless type_expr
+			return [type_expr.value] unless type_expr.is_a?(Prog::Type_Expr) && type_expr.anonymous_composition
+
+			names = [type_expr.name]
+			type_expr.expressions.each do |composition|
+				next unless composition.is_a? Prog::Composition_Expr
+
+				operand = composition.identifier
+				names << (operand.is_a?(Prog::Type_Expr) ? operand.name : operand.value)
+			end
+			names.compact
+		end
+
+		# Same as #annotation_type_names, but collapses back down to a plain String (or nil) when
+		# there's no real union -- the overwhelmingly common case, and every existing single-type call
+		# site (return_type, type_by_identifier storage, ...) expects exactly that shape, not a
+		# one-element ::Array.
+		def annotation_type_name type_expr
+			names = annotation_type_names type_expr
+			names.length <= 1 ? names.first : names
+		end
+
+		# Readable "Int | Nil" rendering of whatever #annotation_type_names / a stored type_by_identifier
+		# entry produced, for error messages (Type_Contract_Violation#contract just interpolates this
+		# directly, so an ::Array there would otherwise print as a raw Ruby inspect string).
+		def type_contract_display type
+			type.is_a?(::Array) ? type.join(' | ') : type
 		end
 
 		def composed_types_for value
@@ -612,8 +651,38 @@ module Backend
 
 		# @param expr [Prog::Func_Signature_Expr]
 		def build_func_signature expr
-			param_types = expr.params.map { |param| param.type&.value }
-			Prog::Func_Signature.new param_types, expr.type&.value
+			param_types = expr.params.map do |param|
+				describe_param_type param
+			end
+			Prog::Func_Signature.new param_types, annotation_type_name(expr.type)
+		end
+
+		# A param's own type slot in a signature-literal's param list can itself be a nested,
+		# unnamed signature -- either func-signature-shaped (`callable: (Number -> Number;)`, parsed to
+		# a real Func_Signature_Expr) or a bare params-only one with no `->`/colon of its own (the
+		# second param of `(Any, (Any,Any;) -> Any;)`, still a plain Func_Expr since nothing marked it
+		# as a signature at parse time -- see #parse_func). Either way, recurse into a real nested
+		# Prog::Func_Signature so `#to_s`'s `param_types.join(',')` renders it back out instead of
+		# silently dropping it (Array#join calls `.to_s` on a non-String element automatically).
+		# @param [Prog::Param_Expr] param_expr
+		def describe_param_type param_expr
+			case param_expr.type
+			when Prog::Func_Signature_Expr
+				build_func_signature param_expr.type
+			when Prog::Func_Expr
+				Prog::Func_Signature.new param_expr.type.parameters.map { |p| describe_param_type p }, nil
+			when nil
+				# No `: Type` annotation at all -- fall back to the param's own declared name, so two
+				# functions of the same arity but different (untyped) param names still show up as
+				# visibly distinct signatures (`(a,b;)` vs `(b,c;)`) instead of both collapsing to the
+				# same blank `(,;)`. Nothing here makes them dispatch differently at a call site -- that
+				# still has to be settled by the caller naming its arguments (`f(a := 1, b := 2)`,
+				# matched by declared param name, not position) whenever two same-arity declarations of
+				# the same name would otherwise be ambiguous.
+				param_expr.name&.value
+			else
+				param_expr.type.value
+			end
 		end
 
 		# Readable description of a value's shape for Type_Contract_Violation messages — a func-like value's param/return types if it has them, otherwise its plain type name.
@@ -748,8 +817,8 @@ module Backend
 						route.handler     = entry[:handler]
 						route.param_names = []
 
-						req = build_CODE_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
-						res = build_CODE_response response
+						req = build_prog_request path_string, http_method, body_hash, parse_query_string(query_string), {}, headers_hash
+						res = build_prog_response response
 
 						interp_route_body route, req, res
 
@@ -762,10 +831,10 @@ module Backend
 							new_html = render_dom_to_html component
 							html_id  = component.declarations['html_id']
 
-							response.status              = 200
-							response['Content-Type']     = 'text/html'
+							response.status                 = 200
+							response['Content-Type']        = 'text/html'
 							response['X-Backend-Target-Id'] = html_id if html_id
-							response.body                = new_html
+							response.body                   = new_html
 							return
 						end
 					rescue => e
@@ -793,10 +862,10 @@ module Backend
 				url_params   = extract_url_params path_parts, route_function
 				query_params = parse_query_string query_string
 
-				req = build_CODE_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+				req = build_prog_request path_string, http_method, body_hash, query_params, url_params, headers_hash
 
 				begin
-					res    = build_CODE_response response
+					res    = build_prog_response response
 					result = interp_route_body route_function, req, res, url_params, server_instance: server
 
 					response.status = res.declarations['status']
@@ -917,7 +986,7 @@ module Backend
 			query_params
 		end
 
-		def build_CODE_request path_string, http_method, body_hash, query_params, url_params, headers_hash
+		def build_prog_request path_string, http_method, body_hash, query_params, url_params, headers_hash
 			req          = Prog::Request.new
 			body_dict    = Prog::Dictionary.new body_hash
 			query_dict   = Prog::Dictionary.new query_params
@@ -938,7 +1007,7 @@ module Backend
 			req
 		end
 
-		def build_CODE_response webrick_response
+		def build_prog_response webrick_response
 			res                                  = Prog::Response.new
 			res.webrick_response                 = webrick_response
 			res.declarations['webrick_response'] = webrick_response
@@ -1098,7 +1167,7 @@ module Backend
 			raise Prog::Context_Declaration_Outside_Type.new(expr) unless type.instance_of?(Prog::Type)
 			raise Prog::Cannot_Override_Context_Member.new(expr) if context_builtin_member? name
 
-			value = expr.is_a?(Prog::Infix_Expr) ? interpret(expr.right) : nil
+			value                          = expr.is_a?(Prog::Infix_Expr) ? interpret(expr.right) : nil
 			(type.at_members ||= {})[name] = value
 			value
 		end
@@ -1157,7 +1226,15 @@ module Backend
 
 			scope = case expr.value
 			when 'nil'
-				return nil
+				return nil unless expr.tag
+
+				# `nil\<...>`/`nil\Error(...)` tags the real `Nil` type -- desugar to an ordinary Nil\<...>
+				# reference and reuse #interp_type's own machinery (auto-declaring a variant, chained
+				# tags, etc.) instead of duplicating any of it here.
+				nil_reference      = Prog::Type_Expr.new 'Nil'
+				nil_reference.name = 'Nil'
+				nil_reference.tag  = expr.tag
+				return interp_type nil_reference
 			when 'true'
 				# todo; return Prog::Bool.truthy
 				return true
@@ -1419,8 +1496,12 @@ module Backend
 					elsif expr.left.type.is_a? Prog::Struct_Expr
 						# A bare struct annotation (`x: <String, Number>`) is structural, not nominal -- not enforced here.
 						assignment_scope.type_by_identifier[expr.left.value]
+					elsif expr.left.type
+						# `x: Int | Nil` -- every alternative name, not just the leading one (see
+						# #annotation_type_name); a plain single-type annotation still comes back a String.
+						annotation_type_name expr.left.type
 					else
-						expr.left.type&.value || assignment_scope.type_by_identifier[expr.left.value]
+						assignment_scope.type_by_identifier[expr.left.value]
 					end
 					type      = type.name if type.is_a?(Prog::Type)
 					signature = resolve_func_signature type
@@ -1431,7 +1512,7 @@ module Backend
 						end
 					else
 						if type && !type_contract_satisfied?(right_value, type)
-							raise Prog::Type_Contract_Violation.new(expr, type, inferred_type_name(right_value))
+							raise Prog::Type_Contract_Violation.new(expr, type_contract_display(type), inferred_type_name(right_value))
 						end
 					end
 				end
@@ -1443,7 +1524,7 @@ module Backend
 			end
 
 			if expr.left.is_a?(Prog::Identifier_Expr) && expr.left.type && !expr.left.type.is_a?(Prog::Struct_Expr)
-				assignment_scope.type_by_identifier[expr.left.value] = expr.left.type.value
+				assignment_scope.type_by_identifier[expr.left.value] = annotation_type_name(expr.left.type)
 			elsif expr.left.is_a? Prog::Func_Signature_Expr
 				# Recorded so future reassignments (which are plain Identifier_Exprs with no annotation of their own) still resolve back to this signature to check against.
 				assignment_scope.type_by_identifier[expr.left.value] = build_func_signature expr.left
@@ -1555,9 +1636,9 @@ module Backend
 
 		def declare_destructuring_local expr, target, value
 			if target.type && !target.type.is_a?(Prog::Struct_Expr)
-				expected = target.type.value
+				expected = annotation_type_name target.type
 				unless type_contract_satisfied? value, expected
-					raise Prog::Type_Contract_Violation.new(expr, expected, inferred_type_name(value))
+					raise Prog::Type_Contract_Violation.new(expr, type_contract_display(expected), inferred_type_name(value))
 				end
 			end
 
@@ -2143,9 +2224,9 @@ module Backend
 			start  = nil if expr.left.nil?
 
 			from, to, exclude_end = case expr.operator.value
-			when '..'   then [start, finish, false]
-			when '..<'  then [start, finish, true]
-			when '>..'  then [start + 1, finish, false]
+			when '..' then [start, finish, false]
+			when '..<' then [start, finish, true]
+			when '>..' then [start + 1, finish, false]
 			when '>..<' then [start + 1, finish, true]
 			end
 
@@ -2839,9 +2920,9 @@ module Backend
 			func.parameters      = expr.parameters
 			func.func_expr       = expr
 			param_types          = expr.parameters.map do |p|
-				p.type&.value
+				describe_param_type p
 			end
-			func.func_signature  = Prog::Func_Signature.new(param_types, expr.type&.value)
+			func.func_signature  = Prog::Func_Signature.new(param_types, annotation_type_name(expr.type))
 
 			if func.name&.value
 				stack.last.declare func.name.value, func
@@ -3006,7 +3087,7 @@ module Backend
 				# wildcard) and an exact name match before this compositional check.
 				actual_type = type_name_to_string return_value
 				unless type_contract_satisfied?(return_value, func.func_signature.return_type)
-					raise Prog::Type_Contract_Violation.new(expr, func.func_signature.return_type, actual_type)
+					raise Prog::Type_Contract_Violation.new(expr, type_contract_display(func.func_signature.return_type), actual_type)
 				end
 			end
 
@@ -3339,6 +3420,8 @@ module Backend
 				# Union with Prog::Type
 
 				right.declarations.each do |key, value|
+					initter         = curr_scope.has? 'Self'
+
 					curr_scope[key] = dup_composed_value(value) unless curr_scope.has?(key)
 				end
 
@@ -3543,7 +3626,6 @@ module Backend
 				# todo; assert that this function takes an Int
 				raise "Cannot iterate something that doesn't respond to next(Int->Any;)\n#{for_loop_expr.inspect}" unless collection.is_a?(Prog::Instance) && collection.has?('next')
 
-
 				next_function = collection.get('next') # The actual signature of this functin is next(Int->Any;)
 				begin
 					scope = Scope.new('for_loop')
@@ -3555,7 +3637,7 @@ module Backend
 					# call.arguments = [iteration]
 					# result_of_next = interpret next_function # I need the Func_Expr
 					for_loop_body_result = catch :stop do
-						iteration            = 0
+						iteration = 0
 						while true
 							call   = Prog::Call_Expr.new
 							result = interp_func_body next_function, call, arg_values: [iteration]
@@ -3729,6 +3811,11 @@ module Backend
 				raise Prog::Invalid_Server_Argument.new(at) unless server.is_a? Prog::Instance
 				stop_server server
 				server
+
+				# name, args, at = nil, receiver = nil
+			when 'watch'
+				# register arg1 as the assignment type to watch
+			when 'watch_recursive'
 			end
 		end
 

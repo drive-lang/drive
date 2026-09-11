@@ -156,4 +156,27 @@ class Type_Checker_Test < Base_Test
 		# todo: This test should fail
 		refute_type_error { Backend.type_check "name: String = nil\nname = 1234" }
 	end
+
+	# --- Union annotations (`x: A | B`) ---
+
+	def test_union_annotation_with_literal_matching_first_alternative
+		refute_type_error { Backend.type_check 'x: Number | Symbol = 42' }
+	end
+
+	def test_union_annotation_with_literal_matching_second_alternative
+		refute_type_error { Backend.type_check 'x: Number | Symbol = :ok' }
+	end
+
+	def test_union_annotation_with_literal_matching_neither_alternative
+		assert_type_error { Backend.type_check "x: Number | Symbol = 'oops'" }
+	end
+
+	def test_union_param_default_matching_either_alternative
+		refute_type_error { Backend.type_check 'f ( a: Number | Symbol := 42; a )' }
+		refute_type_error { Backend.type_check 'f ( a: Number | Symbol := :ok; a )' }
+	end
+
+	def test_union_param_default_matching_neither_alternative
+		assert_type_error { Backend.type_check "f ( a: Number | Symbol := 'oops'; a )" }
+	end
 end

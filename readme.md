@@ -377,6 +377,35 @@ values.each(( it;
 doubled  # [2, 4, 6]
 ```
 
+A [struct](#structs) value works as a composition operand too — its named members compose in as ordinary members:
+
+```prog
+p := <a := 5, b := 'x'>
+
+Combined | p {
+    foo (; a )
+}
+
+c := Combined()
+c.a       # 5
+c.b       # 'x'
+c.foo()   # 5
+```
+
+(An unnamed struct member — `<String, Number>` — has no name to compose in under, so it doesn't transfer.)
+
+In a chain, the *leftmost* operand that declares a given member wins a name collision — including `Self`, the constructor:
+
+```prog
+A { Self (; self.label := 'A' ) }
+B { Self (; self.label := 'B' ) }
+
+Combined | A | B {}
+Combined().label   # 'A' -- A's Self ran, not B's; A comes first in the chain
+```
+
+A type's own `{}` body always wins over anything pulled in by composition, no matter where in the chain — so an explicit `Self (;)` in the body itself beats every composed-in one.
+
 ### Alias vs. subtype
 
 There are two ways to give a type a second name, and they behave differently under the [type comparison operators](#comparison):

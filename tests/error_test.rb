@@ -167,8 +167,8 @@ class Error_Test < Base_Test
 		interpreter.run code
 		route = interpreter.route_functions_by_route_name.values.first
 
-		req = interpreter.build_CODE_request '/users', 'get', {}, {}, {}, {}
-		res = interpreter.build_CODE_response nil
+		req = interpreter.build_prog_request '/users', 'get', {}, {}, {}, {}
+		res = interpreter.build_prog_response nil
 
 		# Bypasses the normal HTTP dispatch path (which always extracts matching url_params from the URL), so it's the only way to hit this branch: an :id param declared on the route but missing from url_params.
 		assert_raises Prog::Route_Param_Expected_But_Not_Found do

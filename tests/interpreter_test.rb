@@ -2833,6 +2833,66 @@ class Interpreter_Test < Base_Test
 		assert_match 'String', err.message
 	end
 
+	# `x: A | B` union annotations -- a composition chain in the annotation position (`Int | Nil`)
+	# used to mis-parse the *whole* `x: Int` expression as the left operand of `|`, crashing.
+	# Satisfying any *one* alternative is enough (OR), unlike composition's usual is-both merge --
+	# nothing can literally be both an Int and a String at once.
+	def test_union_type_annotation_accepts_either_alternative
+		assert_equal 1, Backend.interp('x: Int | Nil = 1, x')
+		assert_nil Backend.interp('x: Int | Nil = nil, x')
+	end
+
+	def test_union_type_annotation_rejects_value_satisfying_neither_alternative
+		err = assert_raises Prog::Type_Contract_Violation do
+			Backend.interp 'x: Int | String = true'
+		end
+		assert_match 'Int | String', err.message
+		assert_match 'Bool', err.message
+	end
+
+	def test_union_type_annotation_reassignment_is_also_checked
+		assert_raises Prog::Type_Contract_Violation do
+			Backend.interp 'x: Int | String = 1, x = true'
+		end
+		# Either alternative is still fine on reassignment, once the union is locked in.
+		assert_equal 'hi', Backend.interp('x: Int | String = 1, x = "hi", x')
+	end
+
+	def test_union_return_type_accepts_either_alternative
+		src = <<~CODE
+		    f ( n := nil -> Int | Nil;
+		    	return n
+		    )
+		    (f(4), f())
+		CODE
+		out = Backend.interp src
+		assert_equal [4, nil], out.values
+	end
+
+	def test_union_return_type_rejects_value_satisfying_neither_alternative
+		err = assert_raises Prog::Type_Contract_Violation do
+			Backend.interp "f (-> Int | Nil; 'oops' ), f()"
+		end
+		assert_match 'Int | Nil', err.message
+		assert_match 'String', err.message
+	end
+
+	def test_union_type_annotation_in_destructuring_target
+		out = Backend.interp '(x: Int | Nil, y) := (1, 2), (x, y)'
+		assert_equal [1, 2], out.values
+
+		out = Backend.interp '(a: Int | Nil, b) := (nil, 5), (a, b)'
+		assert_equal [nil, 5], out.values
+	end
+
+	# Regression: `x: Int | Nil = 42` used to crash with a raw Ruby RuntimeError
+	# (Helpers#type_of_identifier: unknown identifier type nil) rather than working or raising a
+	# proper Backend error -- `| Nil` was silently mis-parsed as composing the whole `x: Int`
+	# expression instead of continuing the annotation.
+	def test_union_type_annotation_does_not_crash_regression
+		assert_equal 42, Backend.interp('x: Int | Nil = 42, x')
+	end
+
 	# `x: Number = 'oops'` (a literal RHS) is caught statically before the interpreter ever runs (see type_checker_test.rb) -- these cover the gap that leaves open: a *non-literal* RHS (an identifier, a function, ..) whose actual value mismatches the annotation on the very first, self-declaring assignment. The static checker silently skips non-literal RHS entirely, so this has to be caught dynamically in #interp_infix_assignment, the same place reassignment already is.
 	def test_first_assignment_type_contract_with_non_literal_rhs
 		# Plain nominal annotation.
@@ -3272,10 +3332,12 @@ class Interpreter_Test < Base_Test
 		assert_equal %w(Number Number), out.param_types
 		assert_equal 'String', out.return_type
 
-		# Named param with no type annotation is a malformed signature — every param slot in a signature literal must carry a type.
-		assert_raises Prog::Invalid_Func_Signature do
-			Backend.interp '(a -> String;)'
-		end
+		# A named param with no type annotation is no longer rejected -- its own name stands in for a
+		# type (Interpreter#describe_param_type), so `f (a, b; ...)` and `f (b, c; ...)` read as
+		# distinct signatures instead of both being unrepresentable.
+		out = Backend.interp '(a -> String;)'
+		assert_equal ['a'], out.param_types
+		assert_equal 'String', out.return_type
 
 		# Bare as a top-level expression, not just as the RHS of :=.
 		out = Backend.interp '(Number -> String;)'
@@ -3299,6 +3361,35 @@ class Interpreter_Test < Base_Test
 		    Person().greet()
 		CODE
 		assert_equal 'hi', out
+	end
+
+	# An untyped param in a signature falls back to its own declared name -- lets two same-arity,
+	# differently-named declarations of the same func name (`f (a, b; ...)` / `f (b, c; ...)`) read as
+	# distinct shapes instead of both collapsing to a blank, unrepresentable `(,;)`.
+	def test_untyped_signature_param_falls_back_to_its_own_name
+		out = Backend.interp 'func (a,b -> Int;)'
+		assert_kind_of Prog::Func_Signature, out
+		assert_equal %w(a b), out.param_types
+		assert_equal 'Int', out.return_type
+		assert_equal '(a, b -> Int;)', out.to_s
+
+		# Typed and untyped params can mix in the same signature -- only the untyped slot falls back.
+		out = Backend.interp 'func (a, b, c: String -> Int;)'
+		assert_equal %w(a b String), out.param_types
+	end
+
+	# Regression: a signature-literal param slot that's itself a nested, unnamed signature (`(Any,
+	# (Any,Any;) -> Any;)`) used to silently vanish from `param_types`/`#to_s` -- `param.type&.value`
+	# is nil for a func-shaped param type, not a plain type name, so the nested shape was dropped
+	# entirely instead of rendered back out.
+	def test_nested_signature_param_type_is_not_dropped
+		out = Backend.interp 'watch: (Any, (Any,Any;) -> Any;)'
+		assert_kind_of Prog::Func_Signature, out
+		assert_equal 2, out.param_types.length
+		assert_equal 'Any', out.param_types.first
+		assert_kind_of Prog::Func_Signature, out.param_types[1]
+		assert_equal %w(Any Any), out.param_types[1].param_types
+		assert_equal '(Any, (Any, Any;) -> Any;)', out.to_s
 	end
 
 	def test_function_return_type_enforcement
@@ -3420,7 +3511,7 @@ class Interpreter_Test < Base_Test
 			CODE
 		end
 		assert_equal '(Number -> String;)', error.contract
-		assert_equal '(, -> ;)', error.actual
+		assert_equal '(x, y;)', error.actual
 
 		# Reassigning an already-valid signature-typed identifier to a mismatched shape raises too, comparing structurally rather than as a plain type name.
 		error = assert_raises Prog::Type_Contract_Violation do
@@ -3432,7 +3523,7 @@ class Interpreter_Test < Base_Test
 			CODE
 		end
 		assert_equal '(Number -> String;)', error.contract
-		assert_equal '(, -> ;)', error.actual
+		assert_equal '(x, y;)', error.actual
 
 		# Ordinary nominal type annotations are unaffected by signature resolution.
 		out = Backend.interp <<~CODE

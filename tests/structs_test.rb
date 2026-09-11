@@ -75,7 +75,7 @@ class Structs_Test < Base_Test
 		assert_equal 'Number', out.type_objects[1].name
 	end
 
-	def test_struct_instance_types_accessible_from_CODE
+	def test_struct_instance_types_accessible_from_context
 		out = Backend.interp "g := <String, Number>
 		g.@types"
 		assert_equal 'String', out.values[0].name
@@ -1322,5 +1322,41 @@ class Structs_Test < Base_Test
 		out = Backend.interp "s := <a := 456>
 		(s.0, s.a)"
 		assert_equal [456, 456], out.values
+	end
+
+	# `nil` is a reserved lowercase keyword, not a TYPE_IDENTIFIER, so its own trailing tag used to go
+	# unconsumed by the parser entirely -- the leftover `\<...>` silently mis-split the rest of the
+	# statement into unrelated garbage instead of raising or tagging anything. `nil\<...>` is sugar for
+	# tagging the real `Nil` type.
+	def test_nil_can_be_tagged_like_any_other_type
+		out = Backend.interp "nil\\<reason := 'Broken'>.tag.reason"
+		assert_equal 'Broken', out
+	end
+
+	def test_nil_tag_reference_matches_a_capitalized_nil_reference
+		src = <<~CODE
+		    Error <message: String>
+		    e1 := nil\\Error()
+		    e2 := Nil\\Error()
+		    (e1.@composed_types == e2.@composed_types, e1.tag =>= Error, e2.tag =>= Error)
+		CODE
+		out = Backend.interp src
+		assert_equal true, out.values[0]
+		assert_equal out.values[2], out.values[1] # whatever it is, nil\ and Nil\ agree
+	end
+
+	def test_bare_nil_tag_reference_still_composes_nil
+		out = Backend.interp "nil\\<reason := 'x'> =>= Nil"
+		assert_equal true, out
+	end
+
+	# Regression: `x := 1, x = nil\<reason := 'Broken'>` used to crash with a raw Ruby RuntimeError
+	# (Helpers#type_of_identifier: unknown identifier type nil) instead of a proper Backend error --
+	# the unconsumed `\<...>` got reparsed as a bogus `\ < reason` comparison, then `:= 'Broken'`
+	# declared onto *that*. Now it's an ordinary, correctly-typed contract violation.
+	def test_bare_nil_tag_mismatched_assignment_raises_cleanly_regression
+		assert_raises Prog::Type_Contract_Violation do
+			Backend.interp "x := 1, x = nil\\<reason := 'Broken'>"
+		end
 	end
 end
