@@ -14,3 +14,7 @@ group :development do
 	gem 'minitest', '5.25.4'
 	gem 'rake',     '13.3.0'
 end
+
+group :gamedev do
+	gem 'raylib-bindings' # needed if you are going to @load one of the raylib libraries
+end

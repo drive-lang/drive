@@ -1,0 +1,57 @@
+# Implemented by Claude
+#
+# Same surface as frontend/raylib.prog, backed by backend/proxies/raylib_ffi.rb instead -- a hand-rolled
+# FFI binding straight against the system-installed `libraylib` (plain `ffi` gem, `attach_function`
+# per C function) rather than the `raylib-bindings` gem. Two examples of binding an external library,
+# side by side. Not part of the standard library -- opt in with `@load 'frontend/raylib_ffi'`. Requires
+# `gem install ffi` (usually already present) and `libraylib` installed on the system (e.g.
+# `brew install raylib` on macOS); the library itself is only touched the first time one of these is
+# actually called.
+#
+# A color is a plain Array -- [r, g, b, a] or [r, g, b] (alpha defaults to opaque, 255).
+#
+#   @load 'frontend/raylib_ffi'
+#
+#   Raylib_FFI.init_window(800, 450, 'hello raylib_ffi')
+#   Raylib_FFI.set_target_fps(60)
+#
+#   until Raylib_FFI.window_should_close?()
+#       Raylib_FFI.begin_drawing()
+#       Raylib_FFI.clear_background([245, 245, 245])
+#       Raylib_FFI.draw_circle(400, 225, 40, [230, 41, 55])
+#       Raylib_FFI.draw_text('hello from Backend', 20, 20, 20, [0, 0, 0])
+#       Raylib_FFI.end_drawing()
+#   end
+#
+#   Raylib_FFI.close_window()
+
+Raylib_FFI {
+	# --- Window / lifecycle ---
+	Self.init_window ( width: Number, height: Number, title: String; @ruby )
+	Self.close_window ( ; @ruby )
+	Self.window_should_close? ( -> Bool; @ruby )
+	Self.set_target_fps ( fps: Number; @ruby )
+	Self.get_frame_time ( -> Number; @ruby )
+
+	# --- Drawing ---
+	Self.begin_drawing ( ; @ruby )
+	Self.end_drawing ( ; @ruby )
+	Self.clear_background ( color: Array; @ruby )
+
+	# --- Shapes ---
+	Self.draw_circle ( x: Number, y: Number, radius: Number, color: Array; @ruby )
+	Self.draw_circle_lines ( x: Number, y: Number, radius: Number, color: Array; @ruby )
+	Self.draw_rectangle ( x: Number, y: Number, width: Number, height: Number, color: Array; @ruby )
+	Self.draw_rectangle_lines ( x: Number, y: Number, width: Number, height: Number, color: Array; @ruby )
+	Self.draw_line ( x1: Number, y1: Number, x2: Number, y2: Number, color: Array; @ruby )
+
+	# --- Text ---
+	Self.draw_text ( text: String, x: Number, y: Number, size: Number, color: Array; @ruby )
+	Self.measure_text ( text: String, size: Number -> Number; @ruby )
+	Self.draw_fps ( x: Number, y: Number; @ruby )
+
+	# --- Input ---
+	Self.is_key_down? ( key: Symbol -> Bool; @ruby ) # e.g. Raylib_FFI.is_key_down?(:right)
+	Self.is_key_pressed? ( key: Symbol -> Bool; @ruby )
+	Self.key ( name: Symbol -> Number; @ruby ) # e.g. Raylib_FFI.key(:right) -> raylib's real KEY_RIGHT integer
+}

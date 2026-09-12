@@ -1,4 +1,9 @@
-+ Raylib speedrun
++ Implement https://github.com/tsoding/triangle-coordinates
++ Implement https://github.com/tsoding/leaf-venation
++ Implement https://github.com/tsoding/bpe
++ Ruby proxies should become frontend/ and current frontend/ holding .prog files should become the standard library that gets its own folder.
++ Since `ident...` is varargs, I think `...ident` should be used on the calling end when you want to splat ident's members at the callsite
++ Typechecker doesn't check static declarations at all
 + Write Rope data structure for fun
 + Write an Ast walker that identifies functions that are contained, and ones that make calls elsewhere. 
 + Rename extension from .prog to .code because .code is NOT taken!
@@ -148,3 +153,4 @@
 - Type aliases resolve in contract checks: `-> Int` returning an `Integer`, `x: Int = 4`, `x: Dec = Decimal(...)` all pass. Runtime `type_contract_satisfied?` resolves an alias to its real type's composed set; the static checker gets a small `TYPE_ALIASES` map.
 - A `@splat`/`@splatr` param's `: Type` / `: <...>` annotation is enforced at the call (`check_splat_param_type_contract`) -- wrong shape raises `Type_Contract_Violation` there, not an `Undeclared_Identifier` deep in the body. `Type_Contract_Violation` now carries a source location.
 - `bin/drive` self-heals the Ruby version -- run through the `/usr/local/bin/drive` symlink from any directory and it re-execs under `.ruby-version` if the shim picked a different one.
+- Raylib speedrun

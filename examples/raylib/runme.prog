@@ -1,0 +1,135 @@
+# Implemented by Claude, edited by me
+#
+# A moving rectangle, two shaders stacked on top of it:
+#   - invert.vert:  moves its actual corners around each frame (an "underwater" wobble) -- a vertex
+#                   shader, unlike the fragment-only wave the sway/wave pair used earlier, so the
+#                   rectangle's own silhouette distorts, not just texture content inside a fixed shape.
+#   - invert.frag:  paints it as the literal inverse color of whatever's already rendered behind it.
+#                   Needs a *second* texture (the plain background, rendered to its own offscreen
+#                   target first) bound as a uniform -- see set_shader_value_texture.
+#
+# Movement is WASD/arrow keys, normalized so a diagonal isn't faster than a cardinal direction.
+
+@load 'frontend/raylib'
+
+SCREEN_WIDTH := 800
+SCREEN_HEIGHT := 600
+RECT_SIZE := 128
+
+x := 400
+y := 225
+speed := 200
+wobble_speed := 8.0*4
+sin_mult := 10.0
+cos_mult := 10.0
+
+Game {
+	background_target,
+	invert_shader,
+
+	time_loc,
+	wobble_speed_loc,
+	sin_mult_loc, cos_mult_loc,
+
+	total_time,
+	dt,
+
+	Self (;
+		Raylib.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, 'Underwater Invert Rectangle')
+		Raylib.set_target_fps(60)
+
+		# Offscreen copy of the plain background -- exists purely so invert.frag has a texture to
+		# sample "what's behind the rectangle" from (there's no way to read the real screen back
+		# mid-frame in raylib's immediate-mode API).
+		background_target = Raylib.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
+		invert_shader = Raylib.load_shader('examples/raylib/shaders/invert.vert', 'examples/raylib/shaders/invert.frag')
+
+		# The background texture's handle never changes frame to frame (only its *content* is
+		# re-rendered each frame, in draw), so this only needs binding once, here.
+		background_loc  := Raylib.get_shader_location(self.invert_shader, 'background')
+		time_loc         = Raylib.get_shader_location(self.invert_shader, 'u_time')
+		wobble_speed_loc = Raylib.get_shader_location(self.invert_shader, 'wobble_speed')
+		sin_mult_loc     = Raylib.get_shader_location(self.invert_shader, 'sin_mult')
+		cos_mult_loc     = Raylib.get_shader_location(self.invert_shader, 'cos_mult')
+
+		Raylib.set_shader_value_float(self.invert_shader, self.sin_mult_loc, sin_mult)
+		Raylib.set_shader_value_float(self.invert_shader, self.cos_mult_loc, cos_mult)
+		Raylib.set_shader_value_texture(self.invert_shader, background_loc, Raylib.render_texture_texture(self.background_target))
+
+		self.total_time = 0.0
+	)
+
+	run (;
+		until Raylib.window_should_close?()
+			dt = Raylib.get_frame_time()
+			total_time += dt
+
+			if Raylib.is_key_pressed?(:escape)
+				stop
+			end
+
+			update()
+			draw()
+		end
+
+		cleanup()
+	)
+
+	update (;
+		dx := 0
+		dy := 0
+
+		if Raylib.is_key_down?(:right) || Raylib.is_key_down?(:d)
+			dx += 1
+		end
+		if Raylib.is_key_down?(:left) || Raylib.is_key_down?(:a)
+			dx -= 1
+		end
+		if Raylib.is_key_down?(:down) || Raylib.is_key_down?(:s)
+			dy += 1
+		end
+		if Raylib.is_key_down?(:up) || Raylib.is_key_down?(:w)
+			dy -= 1
+		end
+
+		# Normalized -- without this, holding two keys at once (a diagonal) moves sqrt(2) times
+		# faster than holding just one, since x and y would each get the *full* speed independently.
+		if dx != 0 || dy != 0
+			length := (dx * dx + dy * dy).sqrt()
+			x += (dx / length) * speed * dt
+			y += (dy / length) * speed * dt
+		end
+
+		Raylib.set_shader_value_float(self.invert_shader, self.time_loc, self.total_time)
+	)
+
+	draw (;
+		# PASS 1: the plain background, rendered to its own texture -- never drawn to the real screen
+		# directly, only read back by invert.frag.
+		Raylib.begin_texture_mode(self.background_target)
+		Raylib.clear_background([0, 0, 0, 255])
+		Raylib.end_texture_mode()
+
+		# PASS 2: the real screen -- same plain black background, then the wobbling invert-rectangle
+		# on top of it.
+		Raylib.begin_drawing()
+		Raylib.clear_background([0, 0, 0, 255])
+
+		Raylib.begin_shader_mode(self.invert_shader)
+		# The fill color here doesn't matter -- invert.frag ignores it and computes its own output
+		# entirely from the background texture.
+		Raylib.draw_rectangle(x, y, RECT_SIZE, RECT_SIZE, [255, 255, 255])
+		Raylib.end_shader_mode()
+
+		Raylib.draw_fps(10, 10)
+		Raylib.end_drawing()
+	)
+
+	cleanup (;
+		Raylib.unload_render_texture(self.background_target)
+		Raylib.unload_shader(self.invert_shader)
+		Raylib.close_window()
+	)
+}
+
+Game().run()

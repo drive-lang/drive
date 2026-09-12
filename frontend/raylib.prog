@@ -1,0 +1,79 @@
+# Implemented by Claude
+#
+# useful: https://www.raylib.com/cheatsheet/cheatsheet.html
+#
+#
+# Thin bindings over the `raylib-bindings` gem (window/drawing/input primitives). Not part of the
+# standard library -- opt in with `@load 'frontend/raylib'`. Requires `gem install raylib-bindings`;
+# the native library itself is only touched the first time one of these is actually called.
+#
+# A color is a plain Array -- [r, g, b, a] or [r, g, b] (alpha defaults to opaque, 255).
+#
+#   @load 'frontend/raylib'
+#
+#   Raylib.init_window(800, 450, 'hello raylib')
+#   Raylib.set_target_fps(60)
+#
+#   until Raylib.window_should_close?()
+#       Raylib.begin_drawing()
+#       Raylib.clear_background([245, 245, 245])
+#       Raylib.draw_circle(400, 225, 40, [230, 41, 55])
+#       Raylib.draw_text('hello from Backend', 20, 20, 20, [0, 0, 0])
+#       Raylib.end_drawing()
+#   end
+#
+#   Raylib.close_window()
+
+Raylib {
+	# --- Window / lifecycle ---
+	Self.init_window ( width: Number, height: Number, title: String; @ruby )
+	Self.close_window ( ; @ruby )
+	Self.window_should_close? ( -> Bool; @ruby )
+	Self.set_target_fps ( fps: Number; @ruby )
+	Self.get_frame_time ( -> Number; @ruby )
+
+	# --- Drawing ---
+	Self.begin_drawing ( ; @ruby )
+	Self.end_drawing ( ; @ruby )
+	Self.clear_background ( color: Array; @ruby )
+
+	# --- Shapes ---
+	Self.draw_circle ( x: Number, y: Number, radius: Number, color: Array; @ruby )
+	Self.draw_circle_lines ( x: Number, y: Number, radius: Number, color: Array; @ruby )
+	Self.draw_rectangle ( x: Number, y: Number, width: Number, height: Number, color: Array; @ruby )
+	Self.draw_rectangle_lines ( x: Number, y: Number, width: Number, height: Number, color: Array; @ruby )
+	Self.draw_line ( x1: Number, y1: Number, x2: Number, y2: Number, color: Array; @ruby )
+
+	# --- Text ---
+	Self.draw_text ( text: String, x: Number, y: Number, size: Number, color: Array; @ruby )
+	Self.measure_text ( text: String, size: Number -> Number; @ruby )
+	Self.draw_fps ( x: Number, y: Number; @ruby )
+
+	# --- Textures / Shaders / Render targets ---
+	# A texture/render texture/shader value is opaque to Backend -- hold onto whatever these hand back
+	# and pass it straight into the next call, the same way you'd pass around a file handle.
+	Self.load_texture ( path: String -> Any; @ruby )
+	Self.gen_color_texture ( width: Number, height: Number, color: Array -> Any; @ruby ) # a placeholder texture, no image file needed -- flat color, so a UV-shift distortion shader has nothing to visibly displace on it
+	Self.gen_checked_texture ( width: Number, height: Number, checks_x: Number, checks_y: Number, color1: Array, color2: Array -> Any; @ruby ) # same, but a checkerboard -- has detail a distortion shader can actually show
+	Self.load_render_texture ( width: Number, height: Number -> Any; @ruby )
+	Self.render_texture_texture ( render_texture: Any -> Any; @ruby )
+	Self.load_shader ( vertex_path: String, fragment_path: String -> Any; @ruby ) # either path may be nil
+	Self.get_shader_location ( shader: Any, name: String -> Number; @ruby )
+	Self.set_shader_value_float ( shader: Any, location: Number, value: Number; @ruby )
+	Self.set_shader_value_texture ( shader: Any, location: Number, texture: Any; @ruby ) # binds a texture uniform -- for sampling a *different* texture than whatever's naturally being drawn
+	Self.begin_texture_mode ( render_texture: Any; @ruby )
+	Self.end_texture_mode ( ; @ruby )
+	Self.begin_shader_mode ( shader: Any; @ruby )
+	Self.end_shader_mode ( ; @ruby )
+	Self.draw_texture ( texture: Any, x: Number, y: Number, color: Array; @ruby )
+	# `source`/`dest` are [x, y, width, height] Arrays, `origin` an [x, y] Array.
+	Self.draw_texture_pro ( texture: Any, source: Array, dest: Array, origin: Array, rotation: Number, color: Array; @ruby )
+	Self.unload_texture ( texture: Any; @ruby )
+	Self.unload_render_texture ( render_texture: Any; @ruby )
+	Self.unload_shader ( shader: Any; @ruby )
+
+	# --- Input ---
+	Self.is_key_down? ( key: Symbol -> Bool; @ruby ) # e.g. Raylib.is_key_down?(:right)
+	Self.is_key_pressed? ( key: Symbol -> Bool; @ruby )
+	Self.key ( name: Symbol -> Number; @ruby ) # e.g. Raylib.key(:right) -> raylib's real KEY_RIGHT integer
+}
