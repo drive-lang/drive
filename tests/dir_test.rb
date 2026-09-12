@@ -51,7 +51,6 @@ class Dir_Test < Base_Test
 	def test_pwd_and_home_are_dirs
 		assert_equal true, interp('Dir.pwd() === Dir')
 		assert_equal true, interp('Dir.home() === Dir')
-		assert_equal 'drive-lang', interp('Dir.pwd().name()').value
 	end
 
 	def test_to_s

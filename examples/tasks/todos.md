@@ -1,8 +1,10 @@
-+ Implement Clay FFI https://github.com/nicbarker/clay or ask the guy if I can port it to prog
-+ Implement https://github.com/tsoding/triangle-coordinates
++ Clay has a really neat debug sidebar that lets you inspect its layout in realtime.
++ Rewrite lexer as .prog, make it its own library that can lex anything I want using my own declarations of tokens
 + Implement https://github.com/tsoding/leaf-venation
 + Implement https://github.com/tsoding/bpe
-+ Ruby proxies should become frontend/ and current frontend/ holding .prog files should become the standard library that gets its own folder.
++ Implement https://github.com/tsoding/piff (https://nathaniel.ai/myers-diff/)
++ Implement https://github.com/tsoding/randomart this one is really cool. I downloaded the paper already.
++ Implement https://github.com/tsoding/subframes (https://x.com/FreyaHolmer/status/1718979996125925494)
 + Since `ident...` is varargs, I think `...ident` should be used on the calling end when you want to splat ident's members at the callsite
 + Typechecker doesn't check static declarations at all
 + Write Rope data structure for fun
