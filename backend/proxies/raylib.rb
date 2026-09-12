@@ -100,6 +100,11 @@ module Prog
 			self.class.lib.DrawFPS x, y
 		end
 
+
+		def proxy_get_fps
+			self.class.lib.GetFPS
+		end
+
 		# --- Textures / Shaders / Render targets ---
 		#
 		# Texture2D / RenderTexture2D / Shader / Image values are opaque to Backend -- these methods

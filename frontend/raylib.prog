@@ -76,4 +76,7 @@ Raylib {
 	Self.is_key_down? ( key: Symbol -> Bool; @ruby ) # e.g. Raylib.is_key_down?(:right)
 	Self.is_key_pressed? ( key: Symbol -> Bool; @ruby )
 	Self.key ( name: Symbol -> Number; @ruby ) # e.g. Raylib.key(:right) -> raylib's real KEY_RIGHT integer
+
+	# --- Useful ---
+	Self.get_fps (-> Number; @ruby)
 }

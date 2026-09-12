@@ -121,7 +121,9 @@ Game {
 		Raylib.draw_rectangle(x, y, RECT_SIZE, RECT_SIZE, [255, 255, 255])
 		Raylib.end_shader_mode()
 
-		Raylib.draw_fps(10, 10)
+		fps_label := "FPS: `Raylib.get_fps()`"
+		fps_color := <100, 100, 100, 255> # This works too
+		Raylib.draw_text(fps_label, 10, 10, 32.0, fps_color)
 		Raylib.end_drawing()
 	)
 
